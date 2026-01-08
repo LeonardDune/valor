@@ -102,10 +102,12 @@ describe('ConversationalOnboarding', () => {
       const user = userEvent.setup()
       render(<ConversationalOnboarding {...defaultProps} />)
 
-      const continueButton = screen.getByRole('button', { name: /continue/i })
-      await user.click(continueButton)
+      // Click through all steps: welcome → approach → ai-assistance → examples → complete
+      await user.click(screen.getByRole('button', { name: /continue/i })) // welcome → approach
+      await user.click(screen.getByRole('button', { name: /continue/i })) // approach → ai-assistance
+      await user.click(screen.getByRole('button', { name: /continue/i })) // ai-assistance → examples
+      await user.click(screen.getByRole('button', { name: /complete/i })) // examples → complete (calls onComplete)
 
-      // Test will fail until multi-step flow is implemented
       expect(mockOnComplete).toHaveBeenCalledTimes(1)
     })
 

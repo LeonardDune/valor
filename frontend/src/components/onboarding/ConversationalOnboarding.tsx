@@ -1,33 +1,82 @@
-import React, { useState } from 'react'
+import React, { useState, ErrorInfo, ReactNode } from 'react'
 
 interface ConversationalOnboardingProps {
   onComplete?: () => void
   onSkip?: () => void
 }
 
+// Error Boundary Component
+class OnboardingErrorBoundary extends React.Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { hasError: false }
+  }
+
+  static getDerivedStateFromError(_: Error) {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('Onboarding error:', error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <main className="card max-w-2xl w-full" role="main">
+          <h1 className="text-2xl font-bold text-red-900 mb-4">
+            Something went wrong
+          </h1>
+          <p className="text-gov-700 mb-6">
+            We're sorry, but there was an error loading the onboarding. Please try refreshing the page.
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="btn-primary"
+          >
+            Refresh Page
+          </button>
+        </main>
+      )
+    }
+
+    return this.props.children
+  }
+}
+
 type OnboardingStep = 'welcome' | 'approach' | 'ai-assistance' | 'examples' | 'complete'
 
 export function ConversationalOnboarding({ onComplete, onSkip }: ConversationalOnboardingProps) {
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('welcome')
+  const [isTransitioning, setIsTransitioning] = useState(false)
 
   const handleContinue = () => {
-    switch (currentStep) {
-      case 'welcome':
-        setCurrentStep('approach')
-        break
-      case 'approach':
-        setCurrentStep('ai-assistance')
-        break
-      case 'ai-assistance':
-        setCurrentStep('examples')
-        break
-      case 'examples':
-        setCurrentStep('complete')
-        onComplete?.()
-        break
-      default:
-        break
-    }
+    if (isTransitioning) return
+    setIsTransitioning(true)
+    // Small delay for smooth transition
+    setTimeout(() => {
+      switch (currentStep) {
+        case 'welcome':
+          setCurrentStep('approach')
+          break
+        case 'approach':
+          setCurrentStep('ai-assistance')
+          break
+        case 'ai-assistance':
+          setCurrentStep('examples')
+          break
+        case 'examples':
+          setCurrentStep('complete')
+          onComplete?.()
+          break
+        default:
+          break
+      }
+      setIsTransitioning(false)
+    }, 150)
   }
 
   const handleSkip = () => {
@@ -169,31 +218,35 @@ export function ConversationalOnboarding({ onComplete, onSkip }: ConversationalO
   }
 
   return (
-    <main className="card max-w-2xl w-full" role="main" aria-labelledby="onboarding-title">
-      {getStepIndicator()}
-      {renderCurrentStep()}
+    <OnboardingErrorBoundary>
+      <main className="card max-w-2xl w-full" role="main" aria-labelledby="onboarding-title">
+        {getStepIndicator()}
+        {renderCurrentStep()}
 
-      <div className="flex justify-between mt-8">
-        <button
-          onClick={handleSkip}
-          className="btn-secondary"
-          aria-label="Skip onboarding and go directly to VALOR"
-        >
-          Skip
-        </button>
-        <button
-          onClick={handleContinue}
-          className="btn-primary"
-          aria-label={currentStep === 'complete' ? 'Finish onboarding' : currentStep === 'examples' ? 'Complete onboarding' : 'Continue to next step'}
-        >
-          {currentStep === 'complete' ? 'Get Started' : currentStep === 'examples' ? 'Complete' : 'Continue'}
-        </button>
-      </div>
+        <div className="flex justify-between mt-8">
+          <button
+            onClick={handleSkip}
+            className="btn-secondary"
+            disabled={isTransitioning}
+            aria-label="Skip onboarding and go directly to VALOR"
+          >
+            Skip
+          </button>
+          <button
+            onClick={handleContinue}
+            className="btn-primary"
+            disabled={isTransitioning}
+            aria-label={currentStep === 'complete' ? 'Finish onboarding' : currentStep === 'examples' ? 'Complete onboarding' : 'Continue to next step'}
+          >
+            {isTransitioning ? '...' : (currentStep === 'complete' ? 'Get Started' : currentStep === 'examples' ? 'Complete' : 'Continue')}
+          </button>
+        </div>
 
-      {/* Screen reader announcements for step changes */}
-      <div className="sr-only" aria-live="polite" aria-atomic="true">
-        {currentStep === 'complete' ? 'Onboarding completed successfully' : `Step ${['welcome', 'approach', 'ai-assistance', 'examples', 'complete'].indexOf(currentStep) + 1} of 5`}
-      </div>
-    </main>
+        {/* Screen reader announcements for step changes */}
+        <div className="sr-only" aria-live="polite" aria-atomic="true">
+          {currentStep === 'complete' ? 'Onboarding completed successfully' : `Step ${['welcome', 'approach', 'ai-assistance', 'examples', 'complete'].indexOf(currentStep) + 1} of 5`}
+        </div>
+      </main>
+    </OnboardingErrorBoundary>
   )
 }
