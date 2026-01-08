@@ -1,0 +1,93 @@
+# generated: 2026-01-08
+# project: valor
+# project_key: valor
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Implementation complete, ready for review
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-01-08
+project: valor
+project_key: valor
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  epic-1: in-progress
+  1-1-conversational-reasoning-onboarding: in-progress
+  1-2-natural-language-causal-claim-input: backlog
+  1-3-ai-facilitation-with-fallback: backlog
+  1-4-conversation-navigation-and-threading: backlog
+  epic-1-retrospective: optional
+  epic-2: backlog
+  2-1-multi-user-session-setup: backlog
+  2-2-real-time-collaboration-updates: backlog
+  2-3-user-role-management: backlog
+  2-4-access-control-implementation: backlog
+  2-5-conflict-resolution-system: backlog
+  epic-2-retrospective: optional
+  epic-3: backlog
+  3-1-model-visualization-interface: backlog
+  3-2-model-editing-capabilities: backlog
+  3-3-uncertainty-level-management: backlog
+  3-4-scenario-simulation-engine: backlog
+  3-5-advanced-analysis-features: backlog
+  3-6-model-export-functionality: backlog
+  epic-3-retrospective: optional
+  epic-4: backlog
+  4-1-agent-communication-protocols: backlog
+  4-2-valor-agent-integration: backlog
+  4-3-cross-agent-data-exchange: backlog
+  4-4-ecosystem-coordination: backlog
+  epic-4-retrospective: optional
+  epic-5: backlog
+  5-1-workspace-management-system: backlog
+  5-2-compliance-audit-framework: backlog
+  5-3-user-administration-tools: backlog
+  5-4-reporting-and-analytics: backlog
+  5-5-data-governance-controls: backlog
+  epic-5-retrospective: optional
+  epic-6: backlog
+  6-1-data-import-export-system: backlog
+  6-2-search-and-discovery-engine: backlog
+  6-3-analytics-dashboard: backlog
+  6-4-intelligence-integration: backlog
+  6-5-data-validation-framework: backlog
+  6-6-performance-monitoring: backlog
+  epic-6-retrospective: optional
+  epic-7: backlog
+  7-1-external-tool-integration: backlog
+  7-2-mobile-device-support: backlog
+  7-3-workflow-management: backlog
+  7-4-backup-and-recovery: backlog
+  7-5-cross-device-continuity: backlog
+  7-6-operational-reliability: backlog
+  7-7-template-library-management: backlog
+  epic-7-retrospective: optional

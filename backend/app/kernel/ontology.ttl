@@ -1,0 +1,113 @@
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix skos:  <http://www.w3.org/2004/02/skos/core#> .
+@prefix xsd:   <http://www.w3.org/2001/XMLSchema#> .
+@prefix meta:  <https://example.org/waardemodel/metamodel/> .
+
+#################################################################
+# Kernconcepten
+#################################################################
+
+meta:AnalyseContext a rdfs:Class ;
+    skos:prefLabel "Analysecontext"@nl ;
+    skos:definition "Een afgebakende context waarin een waardegedreven analyse wordt uitgevoerd, zoals een vraagstuk, project, beleidsdomein of casus."@nl .
+
+meta:PubliekeWaarde a rdfs:Class ;
+    skos:prefLabel "Publieke waarde"@nl ;
+    skos:definition "Een normatief uitgangspunt dat domeinoverstijgend geldt en richting geeft aan publieke besluitvorming en beoordeling."@nl .
+
+meta:WaardeInterpretatie a rdfs:Class ;
+    skos:prefLabel "Waarde-interpretatie"@nl ;
+    skos:definition "De contextspecifieke operationalisering van een publieke waarde, inclusief criteria, normen en weging binnen een analysecontext."@nl .
+
+meta:Factor a rdfs:Class ;
+    skos:prefLabel "Factor"@nl ;
+    skos:definition "Een conceptuele grootheid die relevant is voor het begrijpen, verklaren of beïnvloeden van een analysecontext."@nl .
+
+meta:Indicator a rdfs:Class ;
+    skos:prefLabel "Indicator"@nl ;
+    skos:definition "Een concrete meetbare operationalisering van een factor, inclusief meetniveau en meeteenheid."@nl .
+
+meta:CausaleRelatie a rdfs:Class ;
+    skos:prefLabel "Causale relatie"@nl ;
+    skos:definition "Een verondersteld causaal verband tussen twee factoren, inclusief richting, aannames en onzekerheid."@nl .
+
+meta:CausalLoop a rdfs:Class ;
+    skos:prefLabel "Causale lus"@nl ;
+    skos:definition "Een samenhangende set causale relaties die gezamenlijk een dynamisch patroon of systeemgedrag beschrijven."@nl .
+
+meta:Waardering a rdfs:Class ;
+    skos:prefLabel "Waardering"@nl ;
+    skos:definition "Een expliciete normatieve claim dat een factor of verandering daarin bijdraagt aan of afbreuk doet aan een publieke waarde binnen een specifieke context."@nl .
+
+meta:Onderzoeksvraag a rdfs:Class ;
+    skos:prefLabel "Onderzoeksvraag"@nl ;
+    skos:definition "Een expliciete vraag die onzekerheid adresseert over causaliteit, waardering of samenhang binnen een analysecontext."@nl .
+
+meta:Claim a rdfs:Class ;
+    skos:prefLabel "Claim"@nl ;
+    skos:definition "Een expliciete stelling die een causale of normatieve bewering onderbouwt en betwistbaar maakt."@nl .
+
+#################################################################
+# Relaties tussen concepten
+#################################################################
+
+meta:heeftContext a rdf:Property ;
+    skos:prefLabel "heeft context"@nl ;
+    skos:definition "Verbindt een analyse-element met de analysecontext waarin het wordt gebruikt."@nl ;
+    rdfs:domain rdfs:Resource ;
+    rdfs:range meta:AnalyseContext .
+
+meta:interpreteertWaarde a rdf:Property ;
+    skos:prefLabel "interpreteert waarde"@nl ;
+    skos:definition "Verbindt een waarde-interpretatie met de publieke waarde die zij contextueel operationaliseert."@nl ;
+    rdfs:domain meta:WaardeInterpretatie ;
+    rdfs:range meta:PubliekeWaarde .
+
+meta:heeftWaardeInterpretatie a rdf:Property ;
+    skos:prefLabel "heeft waarde-interpretatie"@nl ;
+    skos:definition "Verbindt een analysecontext met de waarde-interpretaties die daarin gelden."@nl ;
+    rdfs:domain meta:AnalyseContext ;
+    rdfs:range meta:WaardeInterpretatie .
+
+meta:heeftIndicator a rdf:Property ;
+    skos:prefLabel "heeft indicator"@nl ;
+    skos:definition "Verbindt een factor met één of meer indicatoren die deze factor operationaliseren."@nl ;
+    rdfs:domain meta:Factor ;
+    rdfs:range meta:Indicator .
+
+meta:veroorzaakt a rdf:Property ;
+    skos:prefLabel "veroorzaakt"@nl ;
+    skos:definition "Legt een causale relatie vast tussen twee factoren."@nl ;
+    rdfs:domain meta:CausaleRelatie ;
+    rdfs:range meta:Factor .
+
+meta:maaktDeelUitVan a rdf:Property ;
+    skos:prefLabel "maakt deel uit van"@nl ;
+    skos:definition "Geeft aan dat een causale relatie onderdeel is van een causale lus."@nl ;
+    rdfs:domain meta:CausaleRelatie ;
+    rdfs:range meta:CausalLoop .
+
+meta:waardeertFactor a rdf:Property ;
+    skos:prefLabel "waardeert factor"@nl ;
+    skos:definition "Verbindt een waardering met de factor waarop de normatieve beoordeling betrekking heeft."@nl ;
+    rdfs:domain meta:Waardering ;
+    rdfs:range meta:Factor .
+
+meta:verwijstNaarWaardeInterpretatie a rdf:Property ;
+    skos:prefLabel "verwijst naar waarde-interpretatie"@nl ;
+    skos:definition "Verbindt een waardering met de waarde-interpretatie waarop zij is gebaseerd."@nl ;
+    rdfs:domain meta:Waardering ;
+    rdfs:range meta:WaardeInterpretatie .
+
+meta:bevraagt a rdf:Property ;
+    skos:prefLabel "bevraagt"@nl ;
+    skos:definition "Geeft aan welk analyse-element door een onderzoeksvraag ter discussie of nadere toetsing wordt gesteld."@nl ;
+    rdfs:domain meta:Onderzoeksvraag ;
+    rdfs:range rdfs:Resource .
+
+meta:onderbouwt a rdf:Property ;
+    skos:prefLabel "onderbouwt"@nl ;
+    skos:definition "Verbindt een claim met de causale relatie of waardering die zij motiveert of legitimeert."@nl ;
+    rdfs:domain meta:Claim ;
+    rdfs:range rdfs:Resource .

@@ -1,6 +1,11 @@
 _bmad
-.agent
-.claude
-.clinerules
+.agent/
+.claude/
+.clinerules/
+.github/
+.vscode/
 .env
 .env.local
+**/.env.example
+**/node_modules/
+**/venv/
