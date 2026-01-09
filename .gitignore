@@ -6,6 +6,5 @@ _bmad
 .vscode/
 .env
 .env.local
-**/.env.example
 **/node_modules/
 **/venv/

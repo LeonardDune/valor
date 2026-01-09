@@ -42,7 +42,7 @@ story_location: _bmad-output/implementation-artifacts
 development_status:
   epic-1: in-progress
   1-1-conversational-reasoning-onboarding: done
-  1-2-natural-language-causal-claim-input: review
+  1-2-natural-language-causal-claim-input: done
   1-3-ai-facilitation-with-fallback: backlog
   1-4-conversation-navigation-and-threading: backlog
   epic-1-retrospective: optional

@@ -1,0 +1,10 @@
+// Constraints
+CREATE CONSTRAINT user_id IF NOT EXISTS FOR (u:User) REQUIRE u.id IS NODE KEY;
+CREATE CONSTRAINT claim_id IF NOT EXISTS FOR (c:Claim) REQUIRE c.id IS NODE KEY;
+CREATE CONSTRAINT factor_id IF NOT EXISTS FOR (f:Factor) REQUIRE f.id IS NODE KEY;
+CREATE CONSTRAINT thread_id IF NOT EXISTS FOR (t:ConversationThread) REQUIRE t.id IS NODE KEY;
+
+// Indexes
+CREATE INDEX claim_confidence IF NOT EXISTS FOR (c:Claim) ON (c.confidence);
+CREATE INDEX factor_name IF NOT EXISTS FOR (f:Factor) ON (f.name);
+CREATE FULLTEXT INDEX claim_text IF NOT EXISTS FOR (c:Claim) ON EACH [c.statement];
