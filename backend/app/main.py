@@ -99,3 +99,63 @@ async def list_themes(project_id: str):
 async def create_new_theme(project_id: str, theme: ThemeCreate):
     tid = await create_theme(project_id, theme.name, theme.description)
     return {"id": tid, "name": theme.name}
+
+# Manual Editing Endpoints
+
+from app.db.crud import (
+    create_factor_manual, update_factor_manual,
+    create_claim_manual, update_claim_manual, delete_claim_manual
+)
+
+class FactorManualCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class FactorUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+class ClaimManualCreate(BaseModel):
+    conversation_id: str
+    source_id: str
+    target_id: str
+    statement: str
+    polarity: Optional[str] = "+"
+    confidence: Optional[float] = 1.0
+
+class ClaimUpdate(BaseModel):
+    statement: Optional[str] = None
+    polarity: Optional[str] = None
+    confidence: Optional[float] = None
+
+@app.post("/factors")
+async def create_factor(factor: FactorManualCreate):
+    fid = await create_factor_manual(factor.name, factor.description)
+    return {"id": fid, "name": factor.name}
+
+@app.patch("/factors/{factor_id}")
+async def update_factor_route(factor_id: str, factor: FactorUpdate):
+    await update_factor_manual(factor_id, factor.name, factor.description)
+    return {"status": "updated"}
+
+@app.post("/claims_manual")
+async def create_claim(claim: ClaimManualCreate):
+    await create_claim_manual(
+        claim.conversation_id, 
+        claim.source_id, 
+        claim.target_id, 
+        claim.statement, 
+        claim.polarity, 
+        claim.confidence
+    )
+    return {"status": "created"}
+
+@app.patch("/claims/{claim_id}")
+async def update_claim_route(claim_id: str, claim: ClaimUpdate):
+    await update_claim_manual(claim_id, claim.statement, claim.polarity, claim.confidence)
+    return {"status": "updated"}
+
+@app.delete("/claims/{claim_id}")
+async def delete_claim_route(claim_id: str):
+    await delete_claim_manual(claim_id)
+    return {"status": "deleted"}

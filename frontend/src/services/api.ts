@@ -19,6 +19,12 @@ export interface ConversationResponse {
     extracted_claims: Claim[];
 }
 
+export interface Factor {
+    id: string;
+    name: string;
+    description: string;
+}
+
 export const api = {
     healthCheck: async () => {
         const response = await axios.get(`${API_URL}/health`);
@@ -31,6 +37,43 @@ export const api = {
             conversation_id: conversationId,
             topic
         });
+        return response.data;
+    },
+
+    // Manual Editing
+    createFactor: async (name: string, description?: string) => {
+        const response = await axios.post(`${API_URL}/factors`, { name, description });
+        return response.data;
+    },
+
+    updateFactor: async (id: string, name?: string, description?: string) => {
+        const response = await axios.patch(`${API_URL}/factors/${id}`, { name, description });
+        return response.data;
+    },
+
+    createClaimManual: async (data: {
+        conversation_id: string;
+        source_id: string;
+        target_id: string;
+        statement: string;
+        polarity?: string;
+        confidence?: number;
+    }) => {
+        const response = await axios.post(`${API_URL}/claims_manual`, data);
+        return response.data;
+    },
+
+    updateClaim: async (id: string, data: {
+        statement?: string;
+        polarity?: string;
+        confidence?: number;
+    }) => {
+        const response = await axios.patch(`${API_URL}/claims/${id}`, data);
+        return response.data;
+    },
+
+    deleteClaim: async (id: string) => {
+        const response = await axios.delete(`${API_URL}/claims/${id}`);
         return response.data;
     }
 };

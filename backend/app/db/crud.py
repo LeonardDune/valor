@@ -217,3 +217,105 @@ async def get_project_themes(project_id: str):
     except Exception as e:
         logger.error(f"Failed to get themes: {e}")
         return []
+
+# Manual Factor & Claim Management
+
+async def create_factor_manual(name: str, description: Optional[str] = None) -> str:
+    driver = get_driver()
+    fid = str(uuid.uuid4())
+    query = """
+    MERGE (f:Factor {name: $name})
+    ON CREATE SET f.id = $fid, 
+                  f.description = $desc
+    ON MATCH SET f.description = coalesce($desc, f.description)
+    RETURN f.id as id
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"name": name, "desc": description, "fid": fid})
+            record = result.single()
+            return record["id"] if record else None
+    except Exception as e:
+        logger.error(f"Failed to create factor manually: {e}")
+        raise e
+
+async def update_factor_manual(factor_id: str, name: Optional[str] = None, description: Optional[str] = None):
+    driver = get_driver()
+    query = """
+    MATCH (f:Factor {id: $fid})
+    SET f.name = coalesce($name, f.name),
+        f.description = coalesce($desc, f.description)
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {"fid": factor_id, "name": name, "desc": description})
+    except Exception as e:
+        logger.error(f"Failed to update factor: {e}")
+        raise e
+
+async def create_claim_manual(conversation_id: str, source_id: str, target_id: str, statement: str, polarity: str = "+", confidence: float = 1.0):
+    driver = get_driver()
+    cid = str(uuid.uuid4())
+    query = """
+    MATCH (s:Factor {id: $sid})
+    MATCH (t:Factor {id: $tid})
+    MATCH (thread:ConversationThread {id: $thread_id})
+    
+    MERGE (c:Claim {id: $cid})
+    SET c.statement = $statement,
+        c.polarity = $polarity,
+        c.confidence = $confidence,
+        c.relationship_type = 'CAUSES',
+        c.created_at = datetime()
+        
+    MERGE (s)-[:CLAIMS]-(c)
+    MERGE (c)-[:TO]->(t)
+    MERGE (thread)-[:GENERATED]->(c)
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {
+                "sid": source_id, 
+                "tid": target_id, 
+                "thread_id": conversation_id,
+                "statement": statement,
+                "polarity": polarity,
+                "confidence": confidence,
+                "cid": cid
+            })
+    except Exception as e:
+        logger.error(f"Failed to create claim manually: {e}")
+        raise e
+
+async def update_claim_manual(claim_id: str, statement: Optional[str] = None, polarity: Optional[str] = None, confidence: Optional[float] = None):
+    driver = get_driver()
+    query = """
+    MATCH (c:Claim {id: $cid})
+    SET c.statement = coalesce($statement, c.statement),
+        c.polarity = coalesce($polarity, c.polarity),
+        c.confidence = coalesce($confidence, c.confidence)
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {
+                "cid": claim_id, 
+                "statement": statement, 
+                "polarity": polarity, 
+                "confidence": confidence
+            })
+    except Exception as e:
+        logger.error(f"Failed to update claim: {e}")
+        raise e
+
+async def delete_claim_manual(claim_id: str):
+    driver = get_driver()
+    query = """
+    MATCH (c:Claim {id: $cid})
+    DETACH DELETE c
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {"cid": claim_id})
+    except Exception as e:
+        logger.error(f"Failed to delete claim: {e}")
+        raise e

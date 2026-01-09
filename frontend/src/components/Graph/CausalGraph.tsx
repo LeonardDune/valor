@@ -9,9 +9,11 @@ interface GraphData {
 
 interface CausalGraphProps {
     claims: Claim[];
+    onSelect?: (selection: { type: 'node' | 'link'; data: any } | null) => void;
+    selectedId?: string | null;
 }
 
-const CausalGraph: React.FC<CausalGraphProps> = ({ claims }) => {
+const CausalGraph: React.FC<CausalGraphProps> = ({ claims, onSelect, selectedId }) => {
     const graphRef = useRef<any>(null);
     const [data, setData] = useState<GraphData>({ nodes: [], links: [] });
     const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
@@ -19,7 +21,7 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims }) => {
 
     useEffect(() => {
         // Transform claims into graph data
-        const nodesMap = new Map<string, { id: string; name: string; val: number }>();
+        const nodesMap = new Map<string, { id: string; name: string; val: number; nodeId?: string }>();
         const links: any[] = [];
 
         claims.forEach(claim => {
@@ -31,11 +33,14 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims }) => {
             }
 
             links.push({
+                id: claim.id,
                 source: claim.source_node,
                 target: claim.target_node,
                 type: claim.relationship_type,
                 polarity: claim.polarity,
-                explanation: claim.statement // Argumentation for hover
+                confidence: claim.confidence,
+                statement: claim.statement,
+                explanation: claim.statement
             });
         });
 
@@ -71,6 +76,18 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims }) => {
         return () => window.removeEventListener('resize', updateDimensions);
     }, []);
 
+    const handleNodeClick = (node: any) => {
+        if (onSelect) onSelect({ type: 'node', data: node });
+    };
+
+    const handleLinkClick = (link: any) => {
+        if (onSelect) onSelect({ type: 'link', data: link });
+    };
+
+    const handleBackgroundClick = () => {
+        if (onSelect) onSelect(null);
+    };
+
     return (
 
         <div ref={containerRef} className="w-full h-full bg-slate-50 border rounded-xl overflow-hidden shadow-inner relative">
@@ -80,21 +97,27 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims }) => {
                 height={containerDimensions.height}
                 graphData={data}
                 nodeRelSize={6}
-                nodeColor={() => '#eff6ff'} // Blue-50
+                nodeColor={(node: any) => node.id === selectedId ? '#2563eb' : '#eff6ff'}
                 nodeLabel="name"
                 linkLabel={(link: any) => `<div style="padding: 4px; color: #fff; border-radius: 4px; background: rgba(0,0,0,0.8); max-width: 200px; font-size: 12px;"><strong>Argumentatie:</strong><br/>${link.explanation || 'Geen toelichting'}</div>`}
+
+                onNodeClick={handleNodeClick}
+                onLinkClick={handleLinkClick}
+                onBackgroundClick={handleBackgroundClick}
 
                 // Custom Node Rendering to show labels
                 nodeCanvasObject={(node: any, ctx, globalScale) => {
                     const label = node.name;
                     const fontSize = 12 / globalScale;
+                    const isSelected = node.id === selectedId;
+
                     ctx.font = `${fontSize}px Sans-Serif`;
 
                     // Text wrapping
                     const words = label.split(' ');
                     const lines: string[] = [];
                     let currentLine = words[0];
-                    const maxLineWidth = fontSize * 10; // Allow roughly 10-15 em width
+                    const maxLineWidth = fontSize * 10;
 
                     for (let i = 1; i < words.length; i++) {
                         const word = words[i];
@@ -115,14 +138,23 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims }) => {
                     const boxWidth = maxWidth + fontSize * 0.8;
                     const boxHeight = totalHeight + fontSize * 0.4;
 
+                    // Draw Node Highlight if selected
+                    if (isSelected) {
+                        ctx.beginPath();
+                        ctx.arc(node.x, node.y, 8, 0, 2 * Math.PI, false);
+                        ctx.strokeStyle = '#2563eb';
+                        ctx.lineWidth = 2 / globalScale;
+                        ctx.stroke();
+                    }
+
                     // Draw Node Circle
                     ctx.beginPath();
                     ctx.arc(node.x, node.y, 5, 0, 2 * Math.PI, false);
-                    ctx.fillStyle = '#3b82f6'; // Blue-500
+                    ctx.fillStyle = isSelected ? '#2563eb' : '#3b82f6';
                     ctx.fill();
 
                     // Draw Label Background
-                    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+                    ctx.fillStyle = isSelected ? 'rgba(37, 99, 235, 0.1)' : 'rgba(255, 255, 255, 0.85)';
                     ctx.fillRect(
                         node.x - boxWidth / 2,
                         node.y - boxHeight / 2,
@@ -130,10 +162,16 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims }) => {
                         boxHeight
                     );
 
+                    if (isSelected) {
+                        ctx.strokeStyle = '#2563eb';
+                        ctx.lineWidth = 1 / globalScale;
+                        ctx.strokeRect(node.x - boxWidth / 2, node.y - boxHeight / 2, boxWidth, boxHeight);
+                    }
+
                     // Draw Text
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
-                    ctx.fillStyle = '#1e293b'; // Slate-800
+                    ctx.fillStyle = isSelected ? '#1d4ed8' : '#1e293b';
 
                     lines.forEach((line, i) => {
                         const yOffset = (i - (lines.length - 1) / 2) * lineHeight;
@@ -143,40 +181,31 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims }) => {
                 nodeCanvasObjectMode={() => 'replace'}
 
                 // Link Styling
-                linkColor={(link: any) => link.polarity === '+' ? '#10b981' : '#ef4444'} // Green or Red
-                linkWidth={2}
+                linkColor={(link: any) => {
+                    if (link.id === selectedId) return '#2563eb';
+                    return link.polarity === '+' ? '#10b981' : '#ef4444';
+                }}
+                linkWidth={(link: any) => link.id === selectedId ? 4 : 2}
                 linkDirectionalArrowLength={3.5}
                 linkDirectionalArrowRelPos={1}
-                // Dynamic Link Curvature to prevent overlap
                 linkCurvature={(link: any) => {
-                    // Use component state 'data' to get all links, avoiding signature mismatch
                     const links = data.links;
-
                     const source = typeof link.source === 'object' ? link.source.id : link.source;
                     const target = typeof link.target === 'object' ? link.target.id : link.target;
-
-                    // Find all links between these two nodes
                     const siblings = links.filter((l: any) => {
                         const s = typeof l.source === 'object' ? l.source.id : l.source;
                         const t = typeof l.target === 'object' ? l.target.id : l.target;
                         return (s === source && t === target) || (s === target && t === source);
                     });
-
                     const numSiblings = siblings.length;
-                    if (numSiblings <= 1) return 0; // Straight line if only one connection
-
+                    if (numSiblings <= 1) return 0;
                     const index = siblings.indexOf(link);
-                    // Spread curvature: 0.2, -0.2, 0.4, -0.4, etc.
                     const step = 0.2;
-                    // Distribute around 0
-                    const curvature = (index - (numSiblings - 1) / 2) * step;
-
-                    return curvature;
+                    return (index - (numSiblings - 1) / 2) * step;
                 }}
-
-                // Physics
                 d3VelocityDecay={0.3}
                 cooldownTicks={100}
+                linkHoverPrecision={10}
                 onEngineStop={() => {
                     // Zoom to fit only when engine stops to avoid jumpiness, 
                     // and limit the max zoom to prevent giant nodes

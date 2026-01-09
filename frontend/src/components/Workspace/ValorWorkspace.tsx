@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import ChatInterface from '../Chat/ChatInterface';
 import CausalGraph from '../Graph/CausalGraph';
-import type { Claim } from '../../services/api';
+import { InspectorSidebar } from '../Graph/InspectorSidebar';
+import { api, type Claim } from '../../services/api';
 
 interface ValorWorkspaceProps {
     projectId: string;
@@ -16,6 +17,7 @@ type AgentType = 'CAUSA' | 'AXIA' | 'ACTOR' | 'PRAXIS';
 export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectName, themeName, onBack }) => {
     const [activeAgent, setActiveAgent] = useState<AgentType>('CAUSA');
     const [claims, setClaims] = useState<Claim[]>([]);
+    const [selection, setSelection] = useState<{ type: 'node' | 'link'; data: any } | null>(null);
 
     // TODO: Fetch claims for this specific theme/session on mount
 
@@ -27,6 +29,19 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectName, the
             const filteredNew = newClaims.filter(c => !existingIds.has(c.id));
             return [...prev, ...filteredNew];
         });
+    };
+
+    const handleCreateFactor = async () => {
+        const name = window.prompt('Naam van de nieuwe factor:');
+        if (!name) return;
+        try {
+            await api.createFactor(name);
+            // Refresh logic: for now just re-fetch factors if we had such a function
+            // Or rely on the next chat turn
+            alert('Factor aangemaakt. Gebruik de chat of de editor om deze te verbinden.');
+        } catch (error) {
+            console.error('Failed to create factor', error);
+        }
     };
 
     return (
@@ -76,22 +91,45 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectName, the
             {/* Main Workspace Content */}
             <div className="flex-1 flex overflow-hidden relative">
 
-                {activeAgent === 'CAUSA' && (
-                    <>
-                        {/* Left: Chat Interface */}
-                        <div className="w-[400px] border-r border-slate-200 bg-white flex flex-col h-full shrink-0">
-                            <ChatInterface topic={themeName} onClaimsUpdate={handleClaimsUpdate} />
-                        </div>
+                <>
+                    {/* Left: Chat Interface */}
+                    <div className="w-[400px] border-r border-slate-200 bg-white flex flex-col h-full shrink-0">
+                        <ChatInterface topic={themeName} onClaimsUpdate={handleClaimsUpdate} />
+                    </div>
 
-                        {/* Right: Causal Graph */}
-                        <div className="flex-1 bg-slate-50 h-full relative">
-                            <div className="absolute top-4 left-4 z-10 bg-white/80 backdrop-blur border border-slate-200 px-3 py-1 rounded-full text-xs font-medium text-slate-600 shadow-sm">
+                    {/* Right: Causal Graph */}
+                    <div className="flex-1 bg-slate-50 h-full relative">
+                        <div className="absolute top-4 left-4 z-10 flex gap-2">
+                            <div className="bg-white/80 backdrop-blur border border-slate-200 px-3 py-1 rounded-full text-xs font-medium text-slate-600 shadow-sm">
                                 Causaal Model
                             </div>
-                            <CausalGraph claims={claims} />
+                            <button
+                                onClick={handleCreateFactor}
+                                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-full text-xs font-medium shadow-sm transition-colors"
+                            >
+                                + Nieuwe Factor
+                            </button>
                         </div>
-                    </>
-                )}
+                        <CausalGraph
+                            claims={claims}
+                            onSelect={setSelection}
+                            selectedId={selection?.data?.id}
+                        />
+                    </div>
+
+                    {/* Inspector Sidebar (Conditional) */}
+                    {selection && (
+                        <InspectorSidebar
+                            selection={selection}
+                            onClose={() => setSelection(null)}
+                            onRefresh={() => {
+                                // In a real app, we would re-fetch the claims for this session
+                                // For now, we rely on the state being somewhat in sync or the user refreshing
+                                console.log('Refresh requested after edit');
+                            }}
+                        />
+                    )}
+                </>
 
                 {/* Future Agent Placeholders */}
                 {activeAgent !== 'CAUSA' && (
