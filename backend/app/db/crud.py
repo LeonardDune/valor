@@ -1,4 +1,5 @@
 import logging
+import uuid
 from typing import List, Optional
 from app.db.utils import get_driver
 from app.models.domain import Claim, ChatMessage
@@ -145,3 +146,74 @@ async def get_conversation_topic(conversation_id: str) -> Optional[str]:
     except Exception as e:
         logger.error(f"Failed to get topic: {e}")
         return None
+
+# Project & Theme Hierarchy Management
+
+async def create_project(name: str, description: Optional[str] = None) -> str:
+    driver = get_driver()
+    pid = str(uuid.uuid4())
+    query = """
+    MERGE (p:Project {id: $pid})
+    ON CREATE SET p.name = $name, 
+                  p.description = $desc,
+                  p.created_at = datetime()
+    RETURN p.id as id
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"pid": pid, "name": name, "desc": description})
+            return result.single()["id"]
+    except Exception as e:
+        logger.error(f"Failed to create project: {e}")
+        raise e
+
+async def get_projects():
+    driver = get_driver()
+    query = """
+    MATCH (p:Project)
+    RETURN p.id as id, p.name as name, p.description as description, p.created_at as created_at
+    ORDER BY p.created_at DESC
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query)
+            return [dict(record) for record in result]
+    except Exception as e:
+        logger.error(f"Failed to get projects: {e}")
+        return []
+
+async def create_theme(project_id: str, name: str, description: Optional[str] = None) -> str:
+    driver = get_driver()
+    tid = str(uuid.uuid4())
+    query = """
+    MATCH (p:Project {id: $pid})
+    MERGE (t:Theme {name: $name})
+    ON CREATE SET t.id = $tid, 
+                  t.description = $desc,
+                  t.created_at = datetime()
+    MERGE (p)-[:HAS_THEME]->(t)
+    RETURN t.id as id
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"pid": project_id, "name": name, "desc": description, "tid": tid})
+            record = result.single()
+            return record["id"] if record else None
+    except Exception as e:
+        logger.error(f"Failed to create theme: {e}")
+        raise e
+
+async def get_project_themes(project_id: str):
+    driver = get_driver()
+    query = """
+    MATCH (p:Project {id: $pid})-[:HAS_THEME]->(t:Theme)
+    RETURN t.id as id, t.name as name, t.description as description
+    ORDER BY t.created_at DESC
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"pid": project_id})
+            return [dict(record) for record in result]
+    except Exception as e:
+        logger.error(f"Failed to get themes: {e}")
+        return []

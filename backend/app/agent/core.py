@@ -8,12 +8,16 @@ from datetime import datetime
 from app.models.domain import Claim, ConversationResponse
 from app.db.crud import fetch_existing_factors, get_conversation_topic, save_claims, revoke_claims
 
+class Revocation(BaseModel):
+    source: str = Field(description="The exact name of the source factor")
+    target: str = Field(description="The exact name of the target factor")
+
 # Simplified output model for the LLM ensuring strict schema adherence
 class CausalExtraction(BaseModel):
     thought_process: str = Field(description="Analyze step-by-step: 1. Identify User's Concepts. 2. MAP to Existing Factors if meaning is >80% similar. 3. DETECT CORRECTIONS: Did user negate a previous link?")
     reply: str = Field(description="A helpful, conversational reply to the user, confirming understanding.")
     claims: List[Claim] = Field(description="List of NEW causal claims.", default=[])
-    revocations: List[dict] = Field(description="List of claims to REMOVE. Format: [{'source': 'A', 'target': 'B'}]", default=[])
+    revocations: List[Revocation] = Field(description="List of claims to REMOVE.", default=[])
 
 def get_agent_chain():
     api_key = os.getenv("OPENAI_API_KEY")
@@ -126,7 +130,8 @@ async def process_user_message(message: str, conversation_id: str) -> Conversati
     
     # Handle revocations if any
     if result.revocations:
-        await revoke_claims(conversation_id, result.revocations)
+        rev_data = [r.model_dump() for r in result.revocations]
+        await revoke_claims(conversation_id, rev_data)
 
     return ConversationResponse(
         conversation_id=conversation_id,
