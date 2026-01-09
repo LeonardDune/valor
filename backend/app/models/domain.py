@@ -7,9 +7,18 @@ class ClaimType(str):
     CAUSAL = "causal"
     CORRELATION = "correlation"
 
+from enum import Enum
+
+class FactorType(str, Enum):
+    MEANS = "middel"
+    EXTERNAL = "extern"
+    ELEMENT = "systeemelement"
+    CRITERIA = "criterium"
+
 class FactorBase(BaseModel):
     name: str
     description: Optional[str] = None
+    type: FactorType = FactorType.ELEMENT
 
 class Factor(FactorBase):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -18,7 +27,11 @@ class ClaimBase(BaseModel):
     statement: str
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     source_node: str # Name of the cause factor
+    source_id: Optional[str] = None # UUID of the cause factor
+    source_type: Optional[FactorType] = None
     target_node: str # Name of the effect factor
+    target_id: Optional[str] = None # UUID of the effect factor
+    target_type: Optional[FactorType] = None
     relationship_type: str = "CAUSES" # CAUSES, MENTIONS
     polarity: str = "+" # +, -, or ?
 

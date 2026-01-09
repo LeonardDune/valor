@@ -15,8 +15,13 @@ async def save_claims(conversation_id: str, claims: List[Claim]):
     UNWIND $claims AS claim
     MERGE (source:Factor {name: claim.source_node})
     ON CREATE SET source.id = randomUUID()
+    SET source.id = coalesce(source.id, randomUUID()),
+        source.type = coalesce(claim.source_type, source.type, 'systeemelement')
+    
     MERGE (target:Factor {name: claim.target_node})
     ON CREATE SET target.id = randomUUID()
+    SET target.id = coalesce(target.id, randomUUID()),
+        target.type = coalesce(claim.target_type, target.type, 'systeemelement')
     
     MERGE (c:Claim {id: claim.id})
     SET c.statement = claim.statement,
@@ -28,9 +33,16 @@ async def save_claims(conversation_id: str, claims: List[Claim]):
     MERGE (source)-[:CLAIMS]-(c)
     MERGE (c)-[:TO]->(target)
     
-    WITH c, claim
+    WITH c, claim, source, target
     MATCH (t:ConversationThread {id: $conversation_id})
     MERGE (t)-[:GENERATED]->(c)
+    
+    WITH source, target, t
+    OPTIONAL MATCH (t)-[:BELONGS_TO]->(th:Theme)
+    FOREACH (_ IN CASE WHEN th IS NOT NULL THEN [1] ELSE [] END |
+        MERGE (th)-[:HAS_FACTOR]->(source)
+        MERGE (th)-[:HAS_FACTOR]->(target)
+    )
     """
     
     # Prepare data for Neo4j (dict serialization)
@@ -75,7 +87,7 @@ async def get_claims_for_conversation(conversation_id: str) -> List[Claim]:
     query = """
     MATCH (t:ConversationThread {id: $cid})-[:GENERATED]->(c:Claim)
     MATCH (s:Factor)-[:CLAIMS]-(c)-[:TO]->(t_node:Factor)
-    RETURN c, s.name as source, t_node.name as target
+    RETURN c, s.name as source, s.id as source_id, t_node.name as target, t_node.id as target_id
     """
     
     try:
@@ -84,15 +96,61 @@ async def get_claims_for_conversation(conversation_id: str) -> List[Claim]:
             claims = []
             for record in result:
                 node = record["c"]
-                # Reconstruct Claim object
-                # Note: node properties are Dict
                 claim_data = dict(node)
                 claim_data['source_node'] = record["source"]
+                claim_data['source_id'] = record["source_id"]
                 claim_data['target_node'] = record["target"]
+                claim_data['target_id'] = record["target_id"]
                 claims.append(Claim(**claim_data))
             return claims
     except Exception as e:
         logger.error(f"Failed to fetch claims: {e}")
+        return []
+
+async def get_claims_for_theme(theme_id: str) -> List[Claim]:
+    driver = get_driver()
+    # Fetch claims across all threads in this theme
+    query = """
+    MATCH (th:Theme {id: $tid})<-[:BELONGS_TO]-(t:ConversationThread)-[:GENERATED]->(c:Claim)
+    MATCH (s:Factor)-[:CLAIMS]-(c)-[:TO]->(t_node:Factor)
+    RETURN c, s.name as source, s.id as source_id, s.type as s_type, 
+           t_node.name as target, t_node.id as target_id, t_node.type as t_type
+    """
+    
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"tid": theme_id})
+            claims = []
+            for record in result:
+                node = record["c"]
+                claim_data = dict(node)
+                claim_data['source_node'] = record["source"]
+                claim_data['source_id'] = record["source_id"]
+                claim_data['source_type'] = record["s_type"]
+                claim_data['target_node'] = record["target"]
+                claim_data['target_id'] = record["target_id"]
+                claim_data['target_type'] = record["t_type"]
+                # Convert neo4j datetime to string for Pydantic if necessary
+                if 'created_at' in claim_data and hasattr(claim_data['created_at'], 'isoformat'):
+                    claim_data['created_at'] = claim_data['created_at'].isoformat()
+                claims.append(Claim(**claim_data))
+            return claims
+    except Exception as e:
+        logger.error(f"Failed to fetch theme claims: {e}")
+        return []
+
+async def get_factors_for_theme(theme_id: str) -> List[dict]:
+    driver = get_driver()
+    query = """
+    MATCH (th:Theme {id: $tid})-[:HAS_FACTOR]->(f:Factor)
+    RETURN f.id as id, f.name as name, f.description as description, f.type as type
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"tid": theme_id})
+            return [dict(record) for record in result]
+    except Exception as e:
+        logger.error(f"Failed to fetch theme factors: {e}")
         return []
 
 async def fetch_existing_factors(conversation_id: str) -> List[str]:
@@ -105,12 +163,12 @@ async def fetch_existing_factors(conversation_id: str) -> List[str]:
     WITH coalesce(other_t, t) as scope_thread
     MATCH (scope_thread)-[:GENERATED]->(c:Claim)
     MATCH (c)-[:TO|CLAIMS]-(f:Factor)
-    RETURN DISTINCT f.name as name
+    RETURN DISTINCT f.name as name, f.type as type
     """
     try:
         with driver.session() as session:
             result = session.run(query, {"cid": conversation_id})
-            return [record["name"] for record in result]
+            return [f"{record['name']} ({record['type']})" for record in result]
     except Exception as e:
         logger.error(f"Failed to fetch factors: {e}")
         return []
@@ -122,6 +180,8 @@ async def set_conversation_topic(conversation_id: str, topic: str):
     ON CREATE SET t.created_at = datetime()
     
     MERGE (th:Theme {name: $topic})
+    ON CREATE SET th.id = randomUUID(), th.created_at = datetime()
+    SET th.id = coalesce(th.id, randomUUID())
     MERGE (t)-[:BELONGS_TO]->(th)
     """
     try:
@@ -191,6 +251,8 @@ async def create_theme(project_id: str, name: str, description: Optional[str] = 
     ON CREATE SET t.id = $tid, 
                   t.description = $desc,
                   t.created_at = datetime()
+    ON MATCH SET t.id = coalesce(t.id, $tid, randomUUID()),
+                 t.description = coalesce($desc, t.description)
     MERGE (p)-[:HAS_THEME]->(t)
     RETURN t.id as id
     """
@@ -220,46 +282,68 @@ async def get_project_themes(project_id: str):
 
 # Manual Factor & Claim Management
 
-async def create_factor_manual(name: str, description: Optional[str] = None) -> str:
+async def create_factor_manual(name: str, description: Optional[str] = None, type: str = "systeemelement", theme_id: Optional[str] = None) -> str:
     driver = get_driver()
     fid = str(uuid.uuid4())
     query = """
     MERGE (f:Factor {name: $name})
     ON CREATE SET f.id = $fid, 
-                  f.description = $desc
-    ON MATCH SET f.description = coalesce($desc, f.description)
+                  f.description = $desc,
+                  f.type = $type
+    ON MATCH SET f.id = coalesce(f.id, $fid, randomUUID()),
+                 f.description = coalesce($desc, f.description),
+                 f.type = coalesce($type, f.type)
+    WITH f
+    OPTIONAL MATCH (th:Theme {id: $tid})
+    FOREACH (ignored in CASE WHEN th IS NOT NULL THEN [1] ELSE [] END |
+        MERGE (th)-[:HAS_FACTOR]->(f)
+    )
     RETURN f.id as id
     """
     try:
         with driver.session() as session:
-            result = session.run(query, {"name": name, "desc": description, "fid": fid})
+            result = session.run(query, {"name": name, "desc": description, "fid": fid, "type": type, "tid": theme_id})
             record = result.single()
             return record["id"] if record else None
     except Exception as e:
         logger.error(f"Failed to create factor manually: {e}")
         raise e
 
-async def update_factor_manual(factor_id: str, name: Optional[str] = None, description: Optional[str] = None):
+async def update_factor_manual(factor_id: str, name: Optional[str] = None, description: Optional[str] = None, type: Optional[str] = None):
     driver = get_driver()
     query = """
-    MATCH (f:Factor {id: $fid})
+    MATCH (f:Factor) WHERE f.id = $fid OR f.name = $fid
     SET f.name = coalesce($name, f.name),
-        f.description = coalesce($desc, f.description)
+        f.description = coalesce($desc, f.description),
+        f.type = coalesce($type, f.type)
     """
     try:
         with driver.session() as session:
-            session.run(query, {"fid": factor_id, "name": name, "desc": description})
+            session.run(query, {"fid": factor_id, "name": name, "desc": description, "type": type})
     except Exception as e:
         logger.error(f"Failed to update factor: {e}")
         raise e
 
-async def create_claim_manual(conversation_id: str, source_id: str, target_id: str, statement: str, polarity: str = "+", confidence: float = 1.0):
+async def create_claim_manual(theme_id: str, source_id: str, target_id: str, statement: str, polarity: str = "+", confidence: float = 1.0):
     driver = get_driver()
     cid = str(uuid.uuid4())
+    # Match by ID or Name as fallback
     query = """
-    MATCH (s:Factor {id: $sid})
-    MATCH (t:Factor {id: $tid})
-    MATCH (thread:ConversationThread {id: $thread_id})
+    MATCH (th:Theme {id: $theme_id})
+    
+    // Find Source (by ID or Name)
+    OPTIONAL MATCH (s:Factor) WHERE s.id = $sid OR s.name = $sid
+    
+    // Find Target (by ID or Name)
+    OPTIONAL MATCH (t:Factor) WHERE t.id = $tid OR t.name = $tid
+    
+    WITH th, s, t
+    WHERE s IS NOT NULL AND t IS NOT NULL
+    
+    // Create or find a manual edits thread for this theme
+    MERGE (thread:ConversationThread {id: "manual_" + $theme_id})
+    ON CREATE SET thread.created_at = datetime(), thread.name = "Manual Edits"
+    MERGE (thread)-[:BELONGS_TO]->(th)
     
     MERGE (c:Claim {id: $cid})
     SET c.statement = $statement,
@@ -271,29 +355,57 @@ async def create_claim_manual(conversation_id: str, source_id: str, target_id: s
     MERGE (s)-[:CLAIMS]-(c)
     MERGE (c)-[:TO]->(t)
     MERGE (thread)-[:GENERATED]->(c)
+    
+    // Ensure factors are linked to the theme
+    MERGE (th)-[:HAS_FACTOR]->(s)
+    MERGE (th)-[:HAS_FACTOR]->(t)
+    RETURN c.id as id
     """
     try:
         with driver.session() as session:
-            session.run(query, {
+            result = session.run(query, {
                 "sid": source_id, 
                 "tid": target_id, 
-                "thread_id": conversation_id,
+                "theme_id": theme_id,
                 "statement": statement,
                 "polarity": polarity,
                 "confidence": confidence,
                 "cid": cid
             })
+            record = result.single()
+            if not record:
+                logger.warning(f"Failed to create manual claim: Theme, Source or Target not found. theme_id={theme_id}, sid={source_id}, tid={target_id}")
+                return None
+            return record["id"]
     except Exception as e:
         logger.error(f"Failed to create claim manually: {e}")
         raise e
 
-async def update_claim_manual(claim_id: str, statement: Optional[str] = None, polarity: Optional[str] = None, confidence: Optional[float] = None):
+async def update_claim_manual(claim_id: str, statement: Optional[str] = None, polarity: Optional[str] = None, confidence: Optional[float] = None, source_id: Optional[str] = None, target_id: Optional[str] = None):
     driver = get_driver()
     query = """
     MATCH (c:Claim {id: $cid})
     SET c.statement = coalesce($statement, c.statement),
         c.polarity = coalesce($polarity, c.polarity),
         c.confidence = coalesce($confidence, c.confidence)
+    
+    WITH c
+    CALL {
+        WITH c
+        WITH c WHERE $sid IS NOT NULL
+        MATCH (s_new:Factor {id: $sid})
+        OPTIONAL MATCH (s_old:Factor)-[r1:CLAIMS]-(c)
+        DELETE r1
+        MERGE (s_new)-[:CLAIMS]-(c)
+    }
+    CALL {
+        WITH c
+        WITH c WHERE $tid IS NOT NULL
+        MATCH (t_new:Factor {id: $tid})
+        OPTIONAL MATCH (c)-[r2:TO]->(t_old:Factor)
+        DELETE r2
+        MERGE (c)-[:TO]->(t_new)
+    }
     """
     try:
         with driver.session() as session:
@@ -301,10 +413,27 @@ async def update_claim_manual(claim_id: str, statement: Optional[str] = None, po
                 "cid": claim_id, 
                 "statement": statement, 
                 "polarity": polarity, 
-                "confidence": confidence
+                "confidence": confidence,
+                "sid": source_id,
+                "tid": target_id
             })
     except Exception as e:
         logger.error(f"Failed to update claim: {e}")
+        raise e
+
+async def delete_factor_manual(factor_id: str):
+    driver = get_driver()
+    # Detach delete factor and also any claims that ONLY belonged to this factor
+    query = """
+    MATCH (f:Factor) WHERE f.id = $fid OR f.name = $fid
+    OPTIONAL MATCH (f)-[:CLAIMS|TO]-(c:Claim)
+    DETACH DELETE f, c
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {"fid": factor_id})
+    except Exception as e:
+        logger.error(f"Failed to delete factor: {e}")
         raise e
 
 async def delete_claim_manual(claim_id: str):

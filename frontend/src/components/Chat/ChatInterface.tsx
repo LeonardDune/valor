@@ -20,6 +20,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onClaimsUpdate, topic }) 
     const [loading, setLoading] = useState(false);
     const [conversationId, setConversationId] = useState<string | undefined>(undefined);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
     const hasInitialized = useRef(false);
 
     // Initial Active Greeting when topic is set
@@ -29,9 +30,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onClaimsUpdate, topic }) 
             const initChat = async () => {
                 setLoading(true);
                 try {
-                    // Send a hidden system instruction to the agent
                     const response = await api.chat(
-                        `[SYSTEM_START] Het thema is: "${topic}". Geef een korte introductie en doe 3 suggesties voor concrete factoren om mee te beginnen.`,
+                        `[SYSTEM_START] Het thema is: "${topic}". Geef een korte introductie en doe 3 suggesties voor concrete factoren om mee te beginnen. (Belangrijk: leg nog geen verbindingen in de data en voeg nog geen factoren toe, geef ze alleen als suggestie in tekst zodat de gebruiker zelf kan kiezen).`,
                         undefined,
                         topic
                     );
@@ -48,11 +48,26 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onClaimsUpdate, topic }) 
         }
     }, [topic]);
 
+    // Auto-resize textarea
+    useEffect(() => {
+        if (textareaRef.current) {
+            textareaRef.current.style.height = 'auto';
+            textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+        }
+    }, [input]);
+
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     };
 
     useEffect(scrollToBottom, [messages]);
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSubmit(e as any);
+        }
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -60,6 +75,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onClaimsUpdate, topic }) 
 
         const userMsg = input.trim();
         setInput('');
+        if (textareaRef.current) textareaRef.current.style.height = 'auto';
+
         setMessages(prev => [...prev, { role: 'user', content: userMsg }]);
         setLoading(true);
 
@@ -100,7 +117,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onClaimsUpdate, topic }) 
                                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                                 </div>
                             ) : (
-                                <p>{msg.content}</p>
+                                <p className="whitespace-pre-wrap">{msg.content}</p>
                             )}
                         </div>
                     </div>
@@ -116,18 +133,20 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onClaimsUpdate, topic }) 
             </div>
 
             <form onSubmit={handleSubmit} className="p-4 border-t border-slate-100">
-                <div className="relative">
-                    <input
-                        type="text"
+                <div className="relative flex items-end gap-2 bg-slate-50 border-slate-200 border rounded-xl focus-within:ring-2 focus-within:ring-indigo-500 focus-within:bg-white transition-all shadow-sm pr-2">
+                    <textarea
+                        ref={textareaRef}
+                        rows={1}
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        placeholder="Typ je causale bewering..."
-                        className="w-full pl-4 pr-12 py-3 bg-slate-50 border-slate-200 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all shadow-sm"
+                        onKeyDown={handleKeyDown}
+                        placeholder="Typ je causale bewering of argument..."
+                        className="w-full pl-4 py-3 bg-transparent border-none focus:outline-none resize-none min-h-[48px] max-h-[200px] text-sm overflow-y-auto"
                     />
                     <button
                         type="submit"
                         disabled={!input.trim() || loading}
-                        className="absolute right-2 top-2 p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="mb-1.5 p-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
                     >
                         <Send className="w-5 h-5" />
                     </button>
