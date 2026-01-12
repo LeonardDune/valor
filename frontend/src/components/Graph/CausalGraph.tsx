@@ -411,15 +411,30 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
                 nodes.forEach(n => {
                     n.fx = undefined;
                     n.fy = undefined;
+                    // No need to manually reset x/y/vx/vy anymore because key={layoutMode} 
+                    // forces a fresh component mount, which handles initialization perfectly.
                 });
 
-                fg.d3Force('charge', d3.forceManyBody().strength(-1500));
-                fg.d3Force('collide', d3.forceCollide(160));
-                fg.d3Force('link', d3.forceLink().distance(180));
+                // 1. Repulsion: Stronger range to separate local clumps
+                // 1. Repulsion: Moderate range to separate local clumps without excessive spreading
+                fg.d3Force('charge', d3.forceManyBody().strength(-500).distanceMax(2000));
+
+                // 2. Collision: Prevent overlap (Card diag is ~170)
+                fg.d3Force('collide', d3.forceCollide(140));
+
+                // 3. Links: Longer to accommodate card size without fighting collision
+                fg.d3Force('link', d3.forceLink().distance(200).strength(0.5));
+
+                // 4. Center: Use forceCenter to keep the whole graph in view, 
+                // but use VERY weak gravity so clusters can drift apart.
                 fg.d3Force('center', d3.forceCenter());
-                fg.d3Force('x', d3.forceX(0).strength(0.08));
-                fg.d3Force('y', d3.forceY(0).strength(0.08));
-                fg.d3Force('boxing', null); // Disable boxing
+                fg.d3Force('x', d3.forceX(0).strength(0.005));
+                fg.d3Force('y', d3.forceY(0).strength(0.005));
+
+                // Disable System Mode forces
+                fg.d3Force('boxing', null);
+                fg.d3Force('center_gravity_x', null);
+                fg.d3Force('center_gravity_y', null);
             }
 
             fg.d3ReheatSimulation();
@@ -616,6 +631,7 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
         >
             <ForceGraph2D
                 ref={graphRef}
+                key={layoutMode} // FORCE RE-MOUNT on mode change to fully reset simulation state
                 width={containerDimensions.width}
                 height={containerDimensions.height}
                 graphData={graphData}
