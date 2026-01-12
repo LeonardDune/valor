@@ -66,7 +66,7 @@ export const InspectorSidebar: React.FC<InspectorSidebarProps> = ({ selection, f
         try {
             if (selection.type === 'node') {
                 const factorId = selection.data.dbId || selection.data.id;
-                await api.updateFactor(factorId, name, description, type);
+                await api.updateFactor(factorId, name, description, type, themeId);
             } else {
                 await api.updateClaim(selection.data.id, {
                     statement,

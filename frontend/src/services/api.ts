@@ -63,8 +63,8 @@ export const api = {
         return response.data;
     },
 
-    updateFactor: async (id: string, name?: string, description?: string, type?: FactorType) => {
-        const response = await axios.patch(`${API_URL}/factors/${id}`, { name, description, type });
+    updateFactor: async (id: string, name?: string, description?: string, type?: FactorType, themeId?: string) => {
+        const response = await axios.patch(`${API_URL}/factors/${id}`, { name, description, type, theme_id: themeId });
         return response.data;
     },
 

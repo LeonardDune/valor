@@ -129,6 +129,7 @@ class FactorUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     type: Optional[str] = None
+    theme_id: Optional[str] = None
 
 class ClaimManualCreate(BaseModel):
     theme_id: str
@@ -153,7 +154,7 @@ async def create_factor(factor: FactorManualCreate):
 
 @app.patch("/factors/{factor_id}")
 async def update_factor_route(factor_id: str, factor: FactorUpdate):
-    await update_factor_manual(factor_id, factor.name, factor.description, factor.type)
+    await update_factor_manual(factor_id, factor.name, factor.description, factor.type, factor.theme_id)
     return {"status": "updated"}
 
 @app.delete("/factors/{factor_id}")

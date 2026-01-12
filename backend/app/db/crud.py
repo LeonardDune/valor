@@ -15,13 +15,11 @@ async def save_claims(conversation_id: str, claims: List[Claim]):
     UNWIND $claims AS claim
     MERGE (source:Factor {name: claim.source_node})
     ON CREATE SET source.id = randomUUID()
-    SET source.id = coalesce(source.id, randomUUID()),
-        source.type = coalesce(claim.source_type, source.type, 'systeemelement')
+    SET source.id = coalesce(source.id, randomUUID())
     
     MERGE (target:Factor {name: claim.target_node})
     ON CREATE SET target.id = randomUUID()
-    SET target.id = coalesce(target.id, randomUUID()),
-        target.type = coalesce(claim.target_type, target.type, 'systeemelement')
+    SET target.id = coalesce(target.id, randomUUID())
     
     MERGE (c:Claim {id: claim.id})
     SET c.statement = claim.statement,
@@ -37,11 +35,13 @@ async def save_claims(conversation_id: str, claims: List[Claim]):
     MATCH (t:ConversationThread {id: $conversation_id})
     MERGE (t)-[:GENERATED]->(c)
     
-    WITH source, target, t
+    WITH source, target, t, claim
     OPTIONAL MATCH (t)-[:BELONGS_TO]->(th:Theme)
     FOREACH (_ IN CASE WHEN th IS NOT NULL THEN [1] ELSE [] END |
-        MERGE (th)-[:HAS_FACTOR]->(source)
-        MERGE (th)-[:HAS_FACTOR]->(target)
+        MERGE (th)-[r1:HAS_FACTOR]->(source)
+        SET r1.role = coalesce(claim.source_type, r1.role, 'systeemelement')
+        MERGE (th)-[r2:HAS_FACTOR]->(target)
+        SET r2.role = coalesce(claim.target_type, r2.role, 'systeemelement')
     )
     """
     
@@ -113,8 +113,10 @@ async def get_claims_for_theme(theme_id: str) -> List[Claim]:
     query = """
     MATCH (th:Theme {id: $tid})<-[:BELONGS_TO]-(t:ConversationThread)-[:GENERATED]->(c:Claim)
     MATCH (s:Factor)-[:CLAIMS]-(c)-[:TO]->(t_node:Factor)
-    RETURN c, s.name as source, s.id as source_id, s.type as s_type, 
-           t_node.name as target, t_node.id as target_id, t_node.type as t_type
+    OPTIONAL MATCH (th)-[rs:HAS_FACTOR]->(s)
+    OPTIONAL MATCH (th)-[rt:HAS_FACTOR]->(t_node)
+    RETURN c, s.name as source, s.id as source_id, rs.role as s_type, 
+           t_node.name as target, t_node.id as target_id, rt.role as t_type
     """
     
     try:
@@ -142,8 +144,8 @@ async def get_claims_for_theme(theme_id: str) -> List[Claim]:
 async def get_factors_for_theme(theme_id: str) -> List[dict]:
     driver = get_driver()
     query = """
-    MATCH (th:Theme {id: $tid})-[:HAS_FACTOR]->(f:Factor)
-    RETURN f.id as id, f.name as name, f.description as description, f.type as type
+    MATCH (th:Theme {id: $tid})-[r:HAS_FACTOR]->(f:Factor)
+    RETURN f.id as id, f.name as name, f.description as description, r.role as type
     """
     try:
         with driver.session() as session:
@@ -291,12 +293,12 @@ async def create_factor_manual(name: str, description: Optional[str] = None, typ
                   f.description = $desc,
                   f.type = $type
     ON MATCH SET f.id = coalesce(f.id, $fid, randomUUID()),
-                 f.description = coalesce($desc, f.description),
-                 f.type = coalesce($type, f.type)
+                 f.description = coalesce($desc, f.description)
     WITH f
     OPTIONAL MATCH (th:Theme {id: $tid})
     FOREACH (ignored in CASE WHEN th IS NOT NULL THEN [1] ELSE [] END |
-        MERGE (th)-[:HAS_FACTOR]->(f)
+        MERGE (th)-[r:HAS_FACTOR]->(f)
+        SET r.role = $type
     )
     RETURN f.id as id
     """
@@ -309,17 +311,27 @@ async def create_factor_manual(name: str, description: Optional[str] = None, typ
         logger.error(f"Failed to create factor manually: {e}")
         raise e
 
-async def update_factor_manual(factor_id: str, name: Optional[str] = None, description: Optional[str] = None, type: Optional[str] = None):
+async def update_factor_manual(factor_id: str, name: Optional[str] = None, description: Optional[str] = None, type: Optional[str] = None, theme_id: Optional[str] = None):
     driver = get_driver()
-    query = """
+    # Update Node properties
+    query_node = """
     MATCH (f:Factor) WHERE f.id = $fid OR f.name = $fid
     SET f.name = coalesce($name, f.name),
-        f.description = coalesce($desc, f.description),
-        f.type = coalesce($type, f.type)
+        f.description = coalesce($desc, f.description)
     """
+    
+    # Update Relationship Role (if theme_id is provided)
+    query_rel = """
+    MATCH (f:Factor) WHERE f.id = $fid OR f.name = $fid
+    MATCH (th:Theme {id: $tid})-[r:HAS_FACTOR]-(f)
+    SET r.role = coalesce($type, r.role)
+    """
+    
     try:
         with driver.session() as session:
-            session.run(query, {"fid": factor_id, "name": name, "desc": description, "type": type})
+            session.run(query_node, {"fid": factor_id, "name": name, "desc": description})
+            if theme_id and type:
+                 session.run(query_rel, {"fid": factor_id, "tid": theme_id, "type": type})
     except Exception as e:
         logger.error(f"Failed to update factor: {e}")
         raise e
@@ -357,8 +369,10 @@ async def create_claim_manual(theme_id: str, source_id: str, target_id: str, sta
     MERGE (thread)-[:GENERATED]->(c)
     
     // Ensure factors are linked to the theme
-    MERGE (th)-[:HAS_FACTOR]->(s)
-    MERGE (th)-[:HAS_FACTOR]->(t)
+    MERGE (th)-[r1:HAS_FACTOR]->(s)
+    SET r1.role = coalesce(r1.role, 'systeemelement')
+    MERGE (th)-[r2:HAS_FACTOR]->(t)
+    SET r2.role = coalesce(r2.role, 'systeemelement')
     RETURN c.id as id
     """
     try:
