@@ -156,27 +156,102 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
         onSelect?.(null);
     };
 
+    // --- LAYOUT MODES ---
+    const [layoutMode, setLayoutMode] = useState<'force' | 'system'>('force');
+
     // 4. Force Simulation Tuning
     useEffect(() => {
         if (graphRef.current) {
             const fg = graphRef.current;
-            // Use much gentler forces for a compact layout
-            fg.d3Force('charge', d3.forceManyBody().strength(-1500));
-            fg.d3Force('collide', d3.forceCollide(160));
-            fg.d3Force('link', d3.forceLink().distance(180));
-            fg.d3Force('center', d3.forceCenter());
-            fg.d3Force('x', d3.forceX(0).strength(0.08));
-            fg.d3Force('y', d3.forceY(0).strength(0.08));
+            const nodes = graphData.nodes;
+
+            if (layoutMode === 'system') {
+                // --- SYSTEM DIAGRAM LAYOUT ---
+
+                // Define Scope Dimensions
+                const SCOPE_W = 1000;
+                const SCOPE_H = 700;
+
+                // Categorize Nodes
+                const middelen = nodes.filter(n => (n.type || 'systeemelement') === 'middel');
+                const externen = nodes.filter(n => (n.type || 'systeemelement') === 'extern');
+                const criteria = nodes.filter(n => (n.type || 'systeemelement') === 'criterium');
+                const systemElements = nodes.filter(n => (n.type || 'systeemelement') === 'systeemelement');
+
+                // 1. Position "Middel" (Left Side) - ON THE BORDER
+                middelen.forEach((n, i) => {
+                    n.fx = -(SCOPE_W / 2);
+                    n.fy = ((i + 0.5) / middelen.length - 0.5) * (SCOPE_H * 0.8);
+                });
+
+                // 2. Position "Extern" (Top Side) - ON THE BORDER
+                externen.forEach((n, i) => {
+                    n.fx = ((i + 0.5) / externen.length - 0.5) * (SCOPE_W * 0.8);
+                    n.fy = -(SCOPE_H / 2);
+                });
+
+                // 3. Position "Criterium" (Right Side) - ON THE BORDER
+                criteria.forEach((n, i) => {
+                    n.fx = (SCOPE_W / 2);
+                    n.fy = ((i + 0.5) / criteria.length - 0.5) * (SCOPE_H * 0.8);
+                });
+
+                // 4. Position "Systeemelement" (Inside Scope - Semi-dynamic)
+                // We remove fx/fy to let them float, but add a strong center force
+                systemElements.forEach(n => {
+                    n.fx = undefined;
+                    n.fy = undefined;
+                });
+
+                // Apply standard forces for the inner elements
+                fg.d3Force('charge', d3.forceManyBody().strength(-800));
+                fg.d3Force('collide', d3.forceCollide(100));
+                fg.d3Force('link', d3.forceLink().distance(150));
+
+                // Add bounding box force for system elements
+                // Custom force to keep them inside the dotted rectangle
+                const boxingForce = () => {
+                    const padding = 20;
+                    // To prevent overlap, the center of the inner node must be at least 
+                    // CARD_WIDTH away from the center of the border node (which is at SCOPE_W/2).
+                    // Calculation: Limit = (Scope/2) - (CardWidth/2 "border node inner half") - (CardWidth/2 "inner node outer half") - padding
+                    // Simplifies to: Limit = (Scope/2) - CardWidth - padding
+
+                    const maxX = (SCOPE_W / 2) - CARD_WIDTH - padding;
+                    const maxY = (SCOPE_H / 2) - CARD_HEIGHT - padding;
+
+                    for (const node of systemElements) {
+                        // Strict Clamping
+                        if (node.x < -maxX) { node.x = -maxX; node.vx *= 0.1; }
+                        if (node.x > maxX) { node.x = maxX; node.vx *= 0.1; }
+                        if (node.y < -maxY) { node.y = -maxY; node.vy *= 0.1; }
+                        if (node.y > maxY) { node.y = maxY; node.vy *= 0.1; }
+                    }
+                };
+                fg.d3Force('boxing', boxingForce);
+
+            } else {
+                // --- FORCE DIRECTED LAYOUT ---
+                nodes.forEach(n => {
+                    n.fx = undefined;
+                    n.fy = undefined;
+                });
+
+                fg.d3Force('charge', d3.forceManyBody().strength(-1500));
+                fg.d3Force('collide', d3.forceCollide(160));
+                fg.d3Force('link', d3.forceLink().distance(180));
+                fg.d3Force('center', d3.forceCenter());
+                fg.d3Force('x', d3.forceX(0).strength(0.08));
+                fg.d3Force('y', d3.forceY(0).strength(0.08));
+                fg.d3Force('boxing', null); // Disable boxing
+            }
 
             fg.d3ReheatSimulation();
 
-            // Zoom to fit on data change
-            const timer = setTimeout(() => {
-                fg.zoomToFit(800, 150);
-            }, 600);
-            return () => clearTimeout(timer);
+            // Auto zoom/pan to fit
+            setTimeout(() => fg.zoomToFit(800, 150), 600);
         }
-    }, [graphData.nodes.length, graphData.links.length]);
+    }, [graphData, layoutMode]);
 
     useEffect(() => {
         const up = () => { if (containerRef.current) setContainerDimensions({ width: containerRef.current.clientWidth, height: containerRef.current.clientHeight }); };
@@ -251,13 +326,40 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
         if (img) ctx.drawImage(img, x + CARD_WIDTH - 28, y + CARD_HEIGHT - 28, 18, 18);
 
         ctx.restore();
-    }, [selectedId, hoverNodeId, iconImages]);
+    }, [selectedId, hoverNodeId, iconImages, layoutMode]); // Re-render when layout changes (though not strictly needed for nodes)
+
+    const drawScopeBox = useCallback((ctx: CanvasRenderingContext2D) => {
+        if (layoutMode !== 'system') return;
+
+        const SCOPE_W = 1000;
+        const SCOPE_H = 700;
+        const x = -SCOPE_W / 2;
+        const y = -SCOPE_H / 2;
+
+        ctx.save();
+        ctx.strokeStyle = '#94a3b8';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 8]); // Dashed line
+        ctx.strokeRect(x, y, SCOPE_W, SCOPE_H);
+
+        // Label
+        ctx.font = 'bold 14px Inter, sans-serif';
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText('SCOPE / SYSTEEMGRENS', x + 10, y - 10);
+        ctx.restore();
+    }, [layoutMode]);
 
     // Link Rendering with Highlights & Polarity
     const linkCanvasObject = useCallback((link: any, ctx: CanvasRenderingContext2D) => {
         const s = link.source;
         const t = link.target;
         if (typeof s.x !== 'number' || typeof t.x !== 'number') return;
+
+        // Draw Scope Box FIRST (hacky but works since links are drawn after background?)
+        // Actually, links are drawn per frame. Better to use onRenderFramePost if possible, 
+        // but force-graph doesn't expose a dedicated background draw easily.
+        // We will draw it once on the first link (inefficient) or just rely on a separate canvas layer if needed.
+        // For now, let's skip drawing it inside link loop to avoid 100x draws.
 
         const isSelected = String(link.id) === String(selectedId);
         const isHovered = String(link.id) === hoverLinkId;
@@ -351,6 +453,9 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
                 linkCanvasObject={linkCanvasObject}
                 linkCanvasObjectMode={() => 'replace'}
 
+                // Render Scope Box before nodes (behind them)
+                onRenderFramePre={(ctx) => drawScopeBox(ctx)}
+
                 // Minimal library hit-test to avoid conflicts
                 nodeRelSize={0.1}
                 linkHoverPrecision={0}
@@ -359,10 +464,26 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
                 cooldownTicks={200}
             />
 
-            <div className="absolute bottom-6 left-6 z-20">
+            {/* Layout Controls - Bottom Right */}
+            <div className="absolute bottom-6 right-6 z-20 flex gap-4 items-end">
+
+                {/* Mode Selector */}
+                <div className="bg-white border border-slate-200 rounded-xl shadow-lg p-1.5 flex flex-col gap-1">
+                    <label className="text-[10px] uppercase font-bold text-slate-400 px-2 pt-1">Layout</label>
+                    <select
+                        value={layoutMode}
+                        onChange={(e) => setLayoutMode(e.target.value as any)}
+                        className="bg-slate-50 border border-slate-200 text-slate-700 text-xs rounded-lg block w-full p-2.5 outline-none focus:ring-2 focus:ring-blue-500/20 font-bold cursor-pointer"
+                    >
+                        <option value="force">⚡ Force Directed</option>
+                        <option value="system">🏗️ System Diagram</option>
+                    </select>
+                </div>
+
                 <button
                     onClick={(e) => { e.stopPropagation(); graphRef.current?.zoomToFit(400, 100); }}
                     className="w-10 h-10 bg-white border border-slate-200 rounded-xl shadow-lg flex items-center justify-center text-slate-500 hover:text-blue-600 transition-all active:scale-95"
+                    title="Fit to Screen"
                 >
                     <Maximize size={20} />
                 </button>
