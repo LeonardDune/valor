@@ -4,7 +4,7 @@ import CausalGraph from '../Graph/CausalGraph';
 import { InspectorSidebar } from '../Graph/InspectorSidebar';
 import { api, type Claim } from '../../services/api';
 import { FactorModal } from '../Graph/FactorModal';
-import { Maximize2, Minimize2 } from 'lucide-react';
+import { Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
 interface ValorWorkspaceProps {
     projectId: string;
@@ -22,6 +22,7 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
     const [factors, setFactors] = useState<any[]>([]);
     const [selection, setSelection] = useState<{ type: 'node' | 'link'; data: any } | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isChatOpen, setIsChatOpen] = useState(true);
     const [focusMode, setFocusMode] = useState(false);
 
     const refreshData = useCallback(async () => {
@@ -97,15 +98,26 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                 {activeAgent === 'CAUSA' ? (
                     <div className="flex-1 flex overflow-hidden">
                         {/* Left: Chat */}
-                        {!focusMode && (
-                            <div className="w-[400px] border-r border-slate-200 bg-white flex flex-col h-full shrink-0 z-10 transition-all duration-300">
+                        {/* Left: Chat - Always rendered but hidden via CSS width to persist state */}
+                        <div
+                            className={`border-r border-slate-200 bg-white flex flex-col h-full shrink-0 z-10 transition-all duration-300 ease-in-out overflow-hidden ${!focusMode && isChatOpen ? 'w-[400px] opacity-100' : 'w-0 opacity-0 border-none'
+                                }`}
+                        >
+                            <div className="w-[400px] h-full">
                                 <ChatInterface topic={themeName} onClaimsUpdate={handleClaimsUpdate} />
                             </div>
-                        )}
+                        </div>
 
                         {/* Middle: Graph */}
                         <div className="flex-1 bg-slate-50 h-full relative overflow-hidden transition-all duration-300">
-                            <div className="absolute top-4 left-4 z-20 flex gap-2">
+                            <div className="absolute top-4 left-4 z-20 flex gap-2 items-center">
+                                <button
+                                    onClick={() => setIsChatOpen(!isChatOpen)}
+                                    className="bg-white/90 backdrop-blur-md border border-slate-200 p-1.5 rounded-lg text-slate-500 shadow-sm hover:bg-slate-50 hover:text-blue-600 transition-colors"
+                                    title={isChatOpen ? "Verberg Agent" : "Toon Agent"}
+                                >
+                                    {isChatOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
+                                </button>
                                 <div className="bg-white/90 backdrop-blur-md border border-slate-200 px-3 py-1.5 rounded-full text-[10px] font-bold text-slate-500 shadow-sm uppercase tracking-wider">
                                     Causaal Model
                                 </div>
