@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { Wrench, Cloud, Cpu, Target, HelpCircle, Maximize } from 'lucide-react';
+import { Wrench, Cloud, Cpu, Target, HelpCircle, Maximize, Plus, Minus } from 'lucide-react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import * as d3 from 'd3';
 import type { Claim } from '../../services/api';
@@ -22,6 +22,13 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
     const [hoverLinkId, setHoverLinkId] = useState<string | null>(null);
     const nodesRef = useRef<any[]>([]);
     const linksRef = useRef<any[]>([]);
+
+    const dragNode = useRef<any | null>(null);
+    const isDragging = useRef<boolean>(false);
+
+    // Constants for System Layout (must match layout logic)
+    // removed static constants, now dynamic
+
 
     // 1. Prepare Icons (Cached)
     useEffect(() => {
@@ -73,6 +80,25 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
         console.log('TRANSFORM: GraphData update', { nodes: nodes.length, links: links.length });
         return data;
     }, [claims, factors]);
+
+    // 2b. Dynamic System Layout Calculations
+    const systemLayoutData = useMemo(() => {
+        const nodes = graphData.nodes as any[];
+        const middelen = nodes.filter(n => (n.type || 'systeemelement') === 'middel');
+        const externen = nodes.filter(n => (n.type || 'systeemelement') === 'extern');
+        const criteria = nodes.filter(n => (n.type || 'systeemelement') === 'criterium');
+        const systemElements = nodes.filter(n => (n.type || 'systeemelement') === 'systeemelement');
+
+        const MIN_W = 1000;
+        const MIN_H = 700;
+        const ITEM_SPACING = 180; // Card (140) + Gap (40)
+
+        // Calculate needed dimensions
+        const neededW = Math.max(MIN_W, externen.length * ITEM_SPACING);
+        const neededH = Math.max(MIN_H, Math.max(middelen.length, criteria.length) * ITEM_SPACING);
+
+        return { middelen, externen, criteria, systemElements, scopeW: neededW, scopeH: neededH };
+    }, [graphData.nodes]);
 
     // Keep nodesRef in sync with simulation values (for manual hit testing)
     useEffect(() => {
@@ -126,9 +152,141 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
         return null;
     }, []);
 
+    const handleMouseDown = (e: React.MouseEvent) => {
+        const node = findNodeAt(e.clientX, e.clientY);
+        if (node) {
+            dragNode.current = node;
+            isDragging.current = false; // Reset drag status (it's just a click so far)
+
+            // Fix position immediately
+            node.fx = node.x;
+            node.fy = node.y;
+        }
+    }
+
+
+    const snapSystemNodes = useCallback(() => {
+        if (!graphRef.current) return;
+
+        const { middelen, externen, criteria, scopeW, scopeH } = systemLayoutData;
+
+        // Helper to snap a group
+        const snapGroup = (group: any[], axis: 'x' | 'y', fixedValue: number) => {
+            // 1. Sort by current position on the axis
+            group.sort((a, b) => {
+                const posA = axis === 'y' ? (a.fy ?? a.y) : (a.fx ?? a.x);
+                const posB = axis === 'y' ? (b.fy ?? b.y) : (b.fx ?? b.x);
+                return posA - posB;
+            });
+
+            // 2. Redistribute evenly
+            const totalLen = axis === 'y' ? scopeH : scopeW;
+            // Use 80% of the edge to avoid corners
+            const usableLen = totalLen * 0.85;
+
+            group.forEach((n, i) => {
+                const offset = ((i + 0.5) / group.length - 0.5) * usableLen;
+
+                if (axis === 'y') {
+                    n.fx = fixedValue;
+                    n.fy = offset;
+                } else {
+                    n.fx = offset;
+                    n.fy = fixedValue;
+                }
+            });
+        };
+
+        // Snap all groups
+        snapGroup(middelen, 'y', -scopeW / 2);      // Left
+        snapGroup(externen, 'x', -scopeH / 2);      // Top
+        snapGroup(criteria, 'y', scopeW / 2);       // Right
+
+        // Don't need to snap systemElements (they float)
+
+        graphRef.current.d3ReheatSimulation();
+    }, [systemLayoutData]);
+
+    const handleMouseUp = () => {
+        if (dragNode.current) {
+            const node = dragNode.current;
+
+            // If in System Mode and it's a Systeemelement, release it to float
+            if (layoutMode === 'system') {
+                if ((node.type || 'systeemelement') === 'systeemelement') {
+                    node.fx = undefined;
+                    node.fy = undefined;
+                    if (graphRef.current) graphRef.current.d3ReheatSimulation();
+                } else {
+                    // It's a border node! Snap everything to grid to resolve overlaps
+                    snapSystemNodes();
+                }
+            }
+
+            dragNode.current = null;
+        }
+    };
+
     const handleMouseMove = (e: React.MouseEvent) => {
+        // 1. Handle Dragging
+        if (dragNode.current) {
+            isDragging.current = true;
+            const node = dragNode.current;
+
+            if (!graphRef.current || !containerRef.current) return;
+            const rect = containerRef.current.getBoundingClientRect();
+            const { x: gx, y: gy } = graphRef.current.screen2GraphCoords(e.clientX - rect.left, e.clientY - rect.top);
+
+            if (layoutMode === 'system') {
+                // --- CONSTRAINED DRAGGING ---
+                const { scopeW, scopeH } = systemLayoutData;
+                const type = (node.type || 'systeemelement');
+
+                if (type === 'middel') {
+                    node.fx = -scopeW / 2; // Locked X
+                    node.fy = gy; // Free Y
+                } else if (type === 'extern') {
+                    node.fx = gx; // Free X
+                    node.fy = -scopeH / 2; // Locked Y
+                } else if (type === 'criterium') {
+                    node.fx = scopeW / 2; // Locked X
+                    node.fy = gy; // Free Y
+                } else {
+                    // Systeemelement: Constrained to Box
+                    const padding = 20;
+                    const maxX = (scopeW / 2) - CARD_WIDTH - padding;
+                    const maxY = (scopeH / 2) - CARD_HEIGHT - padding;
+
+                    // Clamp
+                    node.fx = Math.max(-maxX, Math.min(maxX, gx));
+                    node.fy = Math.max(-maxY, Math.min(maxY, gy));
+                }
+            } else {
+                // --- FREE DRAGGING ---
+                node.fx = gx;
+                node.fy = gy;
+            }
+
+            // Reheat simulation to resolve overlaps/links smoothly
+            graphRef.current.d3ReheatSimulation();
+            return;
+        }
+
+        // 2. Handle Hover (only if not dragging)
         const node = findNodeAt(e.clientX, e.clientY);
         const link = !node ? findLinkAt(e.clientX, e.clientY) : null;
+
+        // --- INTERACTION CONFLICT FIX ---
+        // If we are over a node/link OR dragging, disable the library's canvas interaction
+        // so it doesn't hijack the event for Panning/Zooming.
+        const canvas = containerRef.current?.querySelector('canvas');
+        if (canvas) {
+            if (node || link || isDragging.current) {
+                canvas.style.pointerEvents = 'none';
+            } else {
+                canvas.style.pointerEvents = 'all';
+            }
+        }
 
         const newNodeId = node ? String(node.id) : null;
         const newLinkId = link ? String(link.id) : null;
@@ -136,11 +294,13 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
         if (newNodeId !== hoverNodeId || newLinkId !== hoverLinkId) {
             setHoverNodeId(newNodeId);
             setHoverLinkId(newLinkId);
-            if (containerRef.current) containerRef.current.style.cursor = (node || link) ? 'pointer' : 'grab';
+            if (containerRef.current) containerRef.current.style.cursor = (node || link) ? 'pointer' : 'default';
         }
     };
 
     const handleClick = (e: React.MouseEvent) => {
+        if (isDragging.current) return; // Ignore clicks if we just dragged
+
         const node = findNodeAt(e.clientX, e.clientY);
         if (node) {
             onSelect?.({ type: 'node', data: node });
@@ -168,33 +328,24 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
             if (layoutMode === 'system') {
                 // --- SYSTEM DIAGRAM LAYOUT ---
 
-                // Define Scope Dimensions
-                const SCOPE_W = 1000;
-                const SCOPE_H = 700;
-
-                // Categorize Nodes
-                const middelen = nodes.filter(n => (n.type || 'systeemelement') === 'middel');
-                const externen = nodes.filter(n => (n.type || 'systeemelement') === 'extern');
-                const criteria = nodes.filter(n => (n.type || 'systeemelement') === 'criterium');
-                const systemElements = nodes.filter(n => (n.type || 'systeemelement') === 'systeemelement');
+                // Use calculated Layout Data
+                const { middelen, externen, criteria, systemElements, scopeW, scopeH } = systemLayoutData;
 
                 // 1. Position "Middel" (Left Side) - ON THE BORDER
-                middelen.forEach((n, i) => {
-                    n.fx = -(SCOPE_W / 2);
-                    n.fy = ((i + 0.5) / middelen.length - 0.5) * (SCOPE_H * 0.8);
-                });
+                // Initial distribution (Snap logic will refine this on drag)
+                // We re-use logic similar to snapSystemNodes but driven by index for default stability
+                const distribute = (group: any[], axis: 'x' | 'y', fixedVal: number, len: number) => {
+                    const usableLen = len * 0.85;
+                    group.forEach((n, i) => {
+                        const offset = ((i + 0.5) / group.length - 0.5) * usableLen;
+                        if (axis === 'y') { n.fx = fixedVal; n.fy = offset; }
+                        else { n.fx = offset; n.fy = fixedVal; }
+                    });
+                };
 
-                // 2. Position "Extern" (Top Side) - ON THE BORDER
-                externen.forEach((n, i) => {
-                    n.fx = ((i + 0.5) / externen.length - 0.5) * (SCOPE_W * 0.8);
-                    n.fy = -(SCOPE_H / 2);
-                });
-
-                // 3. Position "Criterium" (Right Side) - ON THE BORDER
-                criteria.forEach((n, i) => {
-                    n.fx = (SCOPE_W / 2);
-                    n.fy = ((i + 0.5) / criteria.length - 0.5) * (SCOPE_H * 0.8);
-                });
+                distribute(middelen, 'y', -scopeW / 2, scopeH);
+                distribute(externen, 'x', -scopeH / 2, scopeW);
+                distribute(criteria, 'y', scopeW / 2, scopeH);
 
                 // 4. Position "Systeemelement" (Inside Scope - Semi-dynamic)
                 // We remove fx/fy to let them float, but add a strong center force
@@ -217,8 +368,8 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
                     // Calculation: Limit = (Scope/2) - (CardWidth/2 "border node inner half") - (CardWidth/2 "inner node outer half") - padding
                     // Simplifies to: Limit = (Scope/2) - CardWidth - padding
 
-                    const maxX = (SCOPE_W / 2) - CARD_WIDTH - padding;
-                    const maxY = (SCOPE_H / 2) - CARD_HEIGHT - padding;
+                    const maxX = (scopeW / 2) - CARD_WIDTH - padding;
+                    const maxY = (scopeH / 2) - CARD_HEIGHT - padding;
 
                     for (const node of systemElements) {
                         // Strict Clamping
@@ -251,7 +402,7 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
             // Auto zoom/pan to fit
             setTimeout(() => fg.zoomToFit(800, 150), 600);
         }
-    }, [graphData, layoutMode]);
+    }, [graphData, layoutMode, systemLayoutData]);
 
     useEffect(() => {
         const up = () => { if (containerRef.current) setContainerDimensions({ width: containerRef.current.clientWidth, height: containerRef.current.clientHeight }); };
@@ -331,23 +482,23 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
     const drawScopeBox = useCallback((ctx: CanvasRenderingContext2D) => {
         if (layoutMode !== 'system') return;
 
-        const SCOPE_W = 1000;
-        const SCOPE_H = 700;
-        const x = -SCOPE_W / 2;
-        const y = -SCOPE_H / 2;
+        const { scopeW, scopeH } = systemLayoutData;
+
+        const x = -scopeW / 2;
+        const y = -scopeH / 2;
 
         ctx.save();
         ctx.strokeStyle = '#94a3b8';
         ctx.lineWidth = 2;
         ctx.setLineDash([8, 8]); // Dashed line
-        ctx.strokeRect(x, y, SCOPE_W, SCOPE_H);
+        ctx.strokeRect(x, y, scopeW, scopeH);
 
         // Label
         ctx.font = 'bold 14px Inter, sans-serif';
         ctx.fillStyle = '#94a3b8';
         ctx.fillText('SCOPE / SYSTEEMGRENS', x + 10, y - 10);
         ctx.restore();
-    }, [layoutMode]);
+    }, [layoutMode, systemLayoutData]);
 
     // Link Rendering with Highlights & Polarity
     const linkCanvasObject = useCallback((link: any, ctx: CanvasRenderingContext2D) => {
@@ -433,6 +584,9 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
             ref={containerRef}
             className="w-full h-full border rounded-xl overflow-hidden relative bg-[#f8fafc] miro-grid"
             onMouseMove={handleMouseMove}
+            onMouseDown={handleMouseDown}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
             onClick={handleClick}
         >
             <ForceGraph2D
@@ -442,7 +596,9 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
                 graphData={graphData}
 
                 // --- DISABLE LIBRARY EVENT ENGINE ---
+                // --- DISABLE LIBRARY EVENT ENGINE ---
                 enablePointerInteraction={true}
+                enablePanInteraction={true}
                 nodeLabel={() => ''}
                 onNodeClick={() => { }}
                 onNodeHover={() => { }}
@@ -480,13 +636,29 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
                     </select>
                 </div>
 
-                <button
-                    onClick={(e) => { e.stopPropagation(); graphRef.current?.zoomToFit(400, 100); }}
-                    className="w-10 h-10 bg-white border border-slate-200 rounded-xl shadow-lg flex items-center justify-center text-slate-500 hover:text-blue-600 transition-all active:scale-95"
-                    title="Fit to Screen"
-                >
-                    <Maximize size={20} />
-                </button>
+                <div className="flex flex-col gap-2">
+                    <button
+                        onClick={(e) => { e.stopPropagation(); graphRef.current?.zoom(graphRef.current.zoom() * 1.2, 200); }}
+                        className="w-10 h-10 bg-white border border-slate-200 rounded-xl shadow-lg flex items-center justify-center text-slate-500 hover:text-blue-600 transition-all active:scale-95"
+                        title="Zoom In"
+                    >
+                        <Plus size={20} />
+                    </button>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); graphRef.current?.zoom(graphRef.current.zoom() / 1.2, 200); }}
+                        className="w-10 h-10 bg-white border border-slate-200 rounded-xl shadow-lg flex items-center justify-center text-slate-500 hover:text-blue-600 transition-all active:scale-95"
+                        title="Zoom Out"
+                    >
+                        <Minus size={20} />
+                    </button>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); graphRef.current?.zoomToFit(400, 100); }}
+                        className="w-10 h-10 bg-white border border-slate-200 rounded-xl shadow-lg flex items-center justify-center text-slate-500 hover:text-blue-600 transition-all active:scale-95"
+                        title="Fit to Screen"
+                    >
+                        <Maximize size={20} />
+                    </button>
+                </div>
             </div>
 
             <style>{`

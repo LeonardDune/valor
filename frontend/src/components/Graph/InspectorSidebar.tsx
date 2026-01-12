@@ -28,9 +28,13 @@ export const InspectorSidebar: React.FC<InspectorSidebarProps> = ({ selection, f
 
     useEffect(() => {
         if (selection?.type === 'node') {
-            setName(selection.data.name || '');
-            setDescription(selection.data.description || '');
-            setType(selection.data.type || 'systeemelement');
+            // Find fresh data for the selected node
+            const currentId = selection.data.dbId || selection.data.id;
+            const freshFactor = factors.find(f => (f.dbId || f.id) === currentId) || selection.data;
+
+            setName(freshFactor.name || '');
+            setDescription(freshFactor.description || '');
+            setType(freshFactor.type || 'systeemelement');
             setSourceId(''); // Clear sourceId to avoid confusion in node view
 
             // Reset relationship properties for the "Verbinding Leggen" form
@@ -39,7 +43,6 @@ export const InspectorSidebar: React.FC<InspectorSidebarProps> = ({ selection, f
             setConfidence(0.5);
 
             // Initialize targetId for the "Add Connection" dropdown if not already set or invalid
-            const currentId = selection.data.dbId || selection.data.id;
             const firstOther = factors.find(f => (f.dbId || f.id) !== currentId);
             if (!targetId || !factors.find(f => f.id === targetId) || targetId === currentId) {
                 setTargetId(firstOther?.id || '');

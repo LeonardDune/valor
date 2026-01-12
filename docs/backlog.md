@@ -55,7 +55,7 @@ Users can visualize, edit, and analyze structured causal models.
     *   **Notities**: Vereist aanpassing van de rendering-engine naar Bézier-paden en optimalisatie van curvatuur om overlap met nodes te voorkomen.
 *   **[US-02] Interactief verslepen van nodes**: Als een modelleur, wil ik individuele nodes kunnen verslepen waarbij de force-directed layout zich dynamisch aanpast aan de nieuwe posities, zodat ik de belangrijkste factoren centraal kan zetten zonder de rest van de structuur te verloren.
     *   **Prioriteit**: Hoog
-    *   **Status**: Backlog
+    *   **Status**: Gereed
     *   **Notities**: Vereist implementatie van drag-events in de handmatige interactie-laag en het tijdelijk fixeren (fx/fy) van nodes tijdens en na het slepen.
 *   **[US-03] Hiërarchische Layout Flow**: Als een modelleur, wil ik kunnen schakelen tussen verschillende layout-vormen, specifiek een hiërarchische weergave die de flow van 'extern/systeem' naar 'middel' naar 'criterium' visualiseert, zodat de logische opbouw van het beleidsmodel direct duidelijk is.
     *   **Prioriteit**: Medium
