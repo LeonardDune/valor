@@ -93,12 +93,30 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
         const MIN_H = 700;
         const ITEM_SPACING = 180; // Card (140) + Gap (40)
 
-        // Calculate needed dimensions
+        // Calculate needed dimensions based on content
         const neededW = Math.max(MIN_W, externen.length * ITEM_SPACING);
         const neededH = Math.max(MIN_H, Math.max(middelen.length, criteria.length) * ITEM_SPACING);
 
-        return { middelen, externen, criteria, systemElements, scopeW: neededW, scopeH: neededH };
-    }, [graphData.nodes]);
+        // Aspect preservation (aim for ~1.6 or container ratio)
+        const targetAspect = containerDimensions.width && containerDimensions.height
+            ? containerDimensions.width / containerDimensions.height
+            : 1.6;
+
+        let finalW = neededW;
+        let finalH = neededW / targetAspect;
+
+        // Ensure Height compliance
+        if (finalH < neededH) {
+            finalH = neededH;
+            finalW = finalH * targetAspect;
+        }
+
+        // Ensure MIN dimensions again (redundant but safe)
+        finalW = Math.max(MIN_W, finalW);
+        finalH = Math.max(MIN_H, finalH);
+
+        return { middelen, externen, criteria, systemElements, scopeW: finalW, scopeH: finalH };
+    }, [graphData.nodes, containerDimensions]);
 
     // Keep nodesRef in sync with simulation values (for manual hit testing)
     useEffect(() => {
@@ -355,9 +373,16 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
                 });
 
                 // Apply standard forces for the inner elements
-                fg.d3Force('charge', d3.forceManyBody().strength(-800));
-                fg.d3Force('collide', d3.forceCollide(100));
-                fg.d3Force('link', d3.forceLink().distance(150));
+                // Limit charge distance so top nodes don't push bottom nodes forever
+                fg.d3Force('charge', d3.forceManyBody().strength(-300).distanceMax(500));
+                fg.d3Force('collide', d3.forceCollide(80));
+                fg.d3Force('link', d3.forceLink().distance(100).strength(0.5));
+                fg.d3Force('center', null); // IMPORTANT: Disable auto-centering of mass
+
+                // Centering "Gravity" to prevent sinking
+                fg.d3Force('center_gravity_x', d3.forceX(0).strength(0.05));
+                fg.d3Force('center_gravity_y', d3.forceY(0).strength(0.2)); // Moderate pull is now enough due to limited charge
+
 
                 // Add bounding box force for system elements
                 // Custom force to keep them inside the dotted rectangle
