@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-    ChevronsLeft, ChevronsRight, Home, Layers,
+    ChevronsLeft, ChevronsRight, Home,
     Settings, LogOut, ChevronRight, Layout, Folder
 } from 'lucide-react';
 import { useOrganization } from '../../context/OrganizationContext';
@@ -99,7 +99,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                             icon={<Layout size={18} />}
                             label={selectedThemeName}
                             isActive={true}
-                            onClick={() => { }}
+                            onClick={onNavigateTheme}
                             isCollapsed={isCollapsed}
                             subItem
                         />
