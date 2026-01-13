@@ -239,7 +239,19 @@ export const UserList: React.FC<UserListProps> = ({ organizationId }) => {
                             <tbody className="divide-y divide-slate-100">
                                 {users.map(user => (
                                     <tr key={user.id} className="hover:bg-slate-50 transition-colors">
-                                        <td className="px-6 py-4 font-medium text-slate-800">{user.name || "-"}</td>
+                                        <td className="px-6 py-4 font-medium text-slate-800">
+                                            {editingUserId === user.id ? (
+                                                <input
+                                                    type="text"
+                                                    value={editName}
+                                                    onChange={(e) => setEditName(e.target.value)}
+                                                    className="px-2 py-1 border border-slate-300 rounded text-sm w-32"
+                                                    placeholder="Naam"
+                                                />
+                                            ) : (
+                                                user.name || "-"
+                                            )}
+                                        </td>
                                         <td className="px-6 py-4 text-slate-600">{user.email}</td>
                                         <td className="px-6 py-4">
                                             {editingUserId === user.id ? (
