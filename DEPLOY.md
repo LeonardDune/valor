@@ -17,8 +17,7 @@ Render zal vragen om de waarden voor de variabelen die in `render.yaml` als `syn
 *   `NEO4J_USERNAME`: `neo4j`
 *   `NEO4J_PASSWORD`: (Je wachtwoord)
 *   `SUPABASE_URL`: (Van Supabase dashboard)
-*   `SUPABASE_KEY`: (Anon key van Supabase)
-*   `JWT_SECRET`: (Je Supabase JWT secret, zie API instellingen)
+*   `OPENAI_API_KEY`: (Je OpenAI API Key, beginnend met sk-...)
 
 ---
 
