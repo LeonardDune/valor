@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { api, type User } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 interface UserListProps {
     organizationId: string;
@@ -16,6 +17,10 @@ export const UserList: React.FC<UserListProps> = ({ organizationId }) => {
     const [activeTab, setActiveTab] = useState<'users' | 'details'>('users');
     const [orgName, setOrgName] = useState('');
     const [orgDesc, setOrgDesc] = useState('');
+
+    // Auth Check
+    const { user: currentUser } = useAuth();
+    const [isAdmin, setIsAdmin] = useState(false);
 
     useEffect(() => {
         fetchUsers();
@@ -41,6 +46,18 @@ export const UserList: React.FC<UserListProps> = ({ organizationId }) => {
         try {
             const data = await api.getOrganizationUsers(organizationId);
             setUsers(data);
+
+            // Check if current user is admin
+            if (currentUser) {
+                const myMembership = data.find(u => u.email === currentUser.email); // Assuming email match or ID match if available in both
+                // The `users` list from API has our app's internal ID, Supabase has auth ID. 
+                // However, emails should match.
+                if (myMembership && myMembership.role === 'admin') {
+                    setIsAdmin(true);
+                } else {
+                    setIsAdmin(false);
+                }
+            }
         } catch (error) {
             console.error('Failed to fetch users', error);
         } finally {
@@ -128,7 +145,8 @@ export const UserList: React.FC<UserListProps> = ({ organizationId }) => {
                                 type="text"
                                 value={orgName}
                                 onChange={(e) => setOrgName(e.target.value)}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                                disabled={!isAdmin}
+                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-50 disabled:text-slate-500"
                             />
                         </div>
                         <div>
@@ -136,14 +154,22 @@ export const UserList: React.FC<UserListProps> = ({ organizationId }) => {
                             <textarea
                                 value={orgDesc}
                                 onChange={(e) => setOrgDesc(e.target.value)}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none h-24 resize-none"
+                                disabled={!isAdmin}
+                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none h-24 resize-none disabled:bg-slate-50 disabled:text-slate-500"
                             />
                         </div>
-                        <div className="pt-4">
-                            <button className="bg-slate-900 text-white px-4 py-2 rounded-lg font-medium hover:bg-slate-800 transition-colors">
-                                Opslaan
-                            </button>
-                        </div>
+                        {isAdmin && (
+                            <div className="pt-4">
+                                <button className="bg-slate-900 text-white px-4 py-2 rounded-lg font-medium hover:bg-slate-800 transition-colors">
+                                    Opslaan
+                                </button>
+                            </div>
+                        )}
+                        {!isAdmin && (
+                            <div className="pt-4 text-sm text-slate-500 italic">
+                                Alleen beheerders kunnen deze gegevens wijzigen.
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
