@@ -146,7 +146,10 @@ async def list_organizations(user: dict = Depends(get_current_user)):
     email = user.get("email")
     if not email:
         return []
-    return await get_user_organizations(email)
+    logger.info(f"Checking organizations for user: {email}")
+    orgs = await get_user_organizations(email)
+    logger.info(f"Found {len(orgs)} organizations for user {email}")
+    return orgs
 
 @app.post("/organizations")
 async def create_new_organization(org: OrganizationCreate, user: dict = Depends(get_current_user)):
