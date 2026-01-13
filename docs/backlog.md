@@ -113,12 +113,15 @@ Workspace management, compliance, and data intelligence.
     *   **Status**: Backlog
 *   **[US-25] Gebruikersadministratie**: Als een IT-beheerder, wil ik gebruikersaccounts en machtigingen beheren, zodat de organisatorische toegangscontrole correct wordt gehandhaafd.
     *   **Prioriteit**: Medium
-    *   **Status**: Backlog
+    *   **Status**: In Progress
 *   **[US-26] Rapportage en Analytics**: Als een leidinggevende, wil ik organisatorisch gebruik en impact kunnen monitoren, zodat ik de waarde en effectiviteit van de implementatie kan begrijpen.
     *   **Prioriteit**: Laag
     *   **Status**: Backlog
 *   **[US-27] Data Governance Beheer**: Als een datasteward, wil ik dataclassificatie en retentie beheren, zodat gevoelige overheidsinformatie goed wordt beschermd.
     *   **Prioriteit**: Hoog
+    *   **Status**: Backlog
+*   **[US-48] Geavanceerde Gebruikersinstellingen**: Als een gebruiker, wil ik mijn account kunnen beheren (verwijderen), thema's kunnen kiezen (dark/light), notificatievoorkeuren instellen en mijn standaard organisatie kiezen, zodat de applicatie aansluit bij mijn persoonlijke werkvoorkeuren.
+    *   **Prioriteit**: Laag
     *   **Status**: Backlog
 
 
@@ -165,6 +168,33 @@ External tools, mobile support, and reliability.
 *   **[US-39] Template Bibliotheek Beheer**: Als een kennismanager, wil ik redeneertemplates beheren, zodat best practices kunnen worden gedeeld en hergebruikt binnen de organisatie.
     *   **Prioriteit**: Laag
     *   **Status**: Backlog
+
+    *   **Status**: Backlog
+
+### Epic 8: Multi-Organization Ecosystem
+Collaboration and governance across organizational boundaries.
+
+*   **[US-40] Multi-Organisatie Architectuur**: Als een systeembeheerder, wil ik dat het platform meerdere organisaties ondersteunt die elk hun eigen projecten en thema's beheren, zodat data en beheer gescheiden en schaalbaar zijn.
+    *   **Prioriteit**: Hoog
+    *   **Status**: Gereed
+    *   **Notities**: Fundament voor multi-tenancy.
+*   **[US-41] Hiërarchisch Rechtenbeheer**: Als een organisatiebeheerder, wil ik gebruikers kunnen autoriseren op Organisatie-, Project- of Themaniveau, en Projectbeheerders kunnen aanwijzen die op hun beurt Themabeheerders kunnen aanstellen, zodat verantwoordelijkheden gedelegeerd kunnen worden.
+    *   **Prioriteit**: Hoog
+    *   **Status**: Backlog
+*   **[US-42] Externe Samenwerking (Invites)**: Als een beheerder (op elk niveau), wil ik personen van binnen of buiten mijn organisatie kunnen uitnodigen om deel te nemen, zodat we flexibel expertise kunnen betrekken.
+    *   **Prioriteit**: Medium
+    *   **Status**: Backlog
+*   **[US-43] Gedeelde Projecten & Thema's (Federatie)**: Als een beheerder, wil ik een project of thema kunnen delen met een andere organisatie, zodat we gezamenlijk aan één 'Shared Entity' kunnen werken vanuit onze eigen omgevingen.
+    *   **Prioriteit**: Medium
+    *   **Status**: Backlog
+*   **[US-44] Master-Governance van Gedeelde Entiteiten**: Als de 'eigenaar' (creator) van een gedeeld project/thema, wil ik fungeren als hoofdbeheerder die rechten van andere organisaties kan intrekken of deze rol kan overdragen, zodat de controle altijd duidelijk belegd is.
+    *   **Prioriteit**: Medium
+    *   **Status**: Backlog
+
+*   **[US-45] Organisatiebeheer Dashboard**: Als een systeembeheerder, wil ik organisaties kunnen aanmaken, wijzigen en deactiveren via een dashboard, zodat ik nieuwe klanten kan onboarden zonder database-scripts.
+    *   **Prioriteit**: Hoog
+    *   **Status**: Backlog
+    *   **Notities**: Inclusief het instellen van een hoofdbeheerder bij aanmaak.
 
 ---
 

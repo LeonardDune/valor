@@ -211,34 +211,207 @@ async def get_conversation_topic(conversation_id: str) -> Optional[str]:
 
 # Project & Theme Hierarchy Management
 
-async def create_project(name: str, description: Optional[str] = None) -> str:
+async def create_organization(name: str, description: Optional[str] = None, owner_email: Optional[str] = None) -> str:
+    driver = get_driver()
+    oid = str(uuid.uuid4())
+    query = """
+    MERGE (o:Organization {name: $name})
+    ON CREATE SET o.id = $oid, 
+                  o.description = $desc,
+                  o.created_at = datetime()
+    ON MATCH SET o.id = coalesce(o.id, $oid, randomUUID())
+    
+    WITH o
+    // If owner_email is provided, link them as admin
+    CALL {
+        WITH o
+        WITH o WHERE $owner_email IS NOT NULL
+        MERGE (u:User {email: $owner_email})
+        ON CREATE SET u.id = randomUUID(), u.created_at = datetime()
+        MERGE (u)-[r:MEMBER_OF]->(o)
+        SET r.role = 'admin', r.joined_at = datetime()
+    }
+    
+    RETURN o.id as id
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"oid": oid, "name": name, "desc": description, "owner_email": owner_email})
+            return result.single()["id"]
+    except Exception as e:
+        logger.error(f"Failed to create organization: {e}")
+        raise e
+
+async def get_organizations():
+    driver = get_driver()
+    query = """
+    MATCH (o:Organization)
+    RETURN o.id as id, o.name as name, o.description as description, o.created_at as created_at
+    ORDER BY o.created_at DESC
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query)
+            return [dict(record) for record in result]
+    except Exception as e:
+        logger.error(f"Failed to get organizations: {e}")
+        return []
+
+async def get_user_organizations(user_email: str):
+    driver = get_driver()
+    query = """
+    MATCH (u:User {email: $email})-[:MEMBER_OF]->(o:Organization)
+    RETURN o.id as id, o.name as name, o.description as description, o.created_at as created_at
+    ORDER BY o.created_at DESC
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"email": user_email})
+            return [dict(record) for record in result]
+    except Exception as e:
+        logger.error(f"Failed to get user organizations: {e}")
+        return []
+
+async def create_user(email: str, name: Optional[str] = None) -> str:
+    driver = get_driver()
+    uid = str(uuid.uuid4())
+    query = """
+    MERGE (u:User {email: $email})
+    ON CREATE SET u.id = $uid, 
+                  u.name = $name,
+                  u.created_at = datetime()
+    ON MATCH SET u.name = coalesce($name, u.name)
+    RETURN u.id as id
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"uid": uid, "email": email, "name": name})
+            return result.single()["id"]
+    except Exception as e:
+        logger.error(f"Failed to create user: {e}")
+        raise e
+
+async def update_user_profile(email: str, first_name: Optional[str] = None, last_name: Optional[str] = None, username: Optional[str] = None):
+    driver = get_driver()
+    # Combine first and last name for display name if provided, else keep existing
+    # This logic assumes 'name' is display name.
+    
+    query = """
+    MERGE (u:User {email: $email})
+    SET u.first_name = coalesce($fname, u.first_name),
+        u.last_name = coalesce($lname, u.last_name),
+        u.username = coalesce($uname, u.username),
+        u.updated_at = datetime()
+    
+    with u
+    // Update display name if first/last provided
+    SET u.name = CASE 
+        WHEN $fname IS NOT NULL OR $lname IS NOT NULL 
+        THEN trim(coalesce($fname, u.first_name, '') + ' ' + coalesce($lname, u.last_name, ''))
+        ELSE u.name 
+    END
+    RETURN u.id as id
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {"email": email, "fname": first_name, "lname": last_name, "uname": username})
+    except Exception as e:
+        logger.error(f"Failed to update user profile: {e}")
+        raise e
+
+async def add_user_to_organization(user_id_or_email: str, org_id_or_name: str, role: str = "member"):
+    driver = get_driver()
+    # First ensure user exists if email is provided
+    if "@" in user_id_or_email:
+        await create_user(user_id_or_email, user_id_or_email.split("@")[0])
+        
+    query = """
+    MATCH (u:User) WHERE u.id = $uid OR u.email = $uid
+    MATCH (o:Organization {id: $oid})
+    MERGE (u)-[r:MEMBER_OF]->(o)
+    SET r.role = $role, r.joined_at = datetime()
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {"uid": user_id_or_email, "oid": org_id_or_name, "role": role})
+    except Exception as e:
+        logger.error(f"Failed to add user to org: {e}")
+        raise e
+
+async def get_organization_users(organization_id: str):
+    driver = get_driver()
+    query = """
+    MATCH (o:Organization {id: $oid})<-[r:MEMBER_OF]-(u:User)
+    RETURN u.id as id, u.name as name, u.email as email, r.role as role, r.joined_at as joined_at
+    ORDER BY u.name ASC
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"oid": organization_id})
+            return [dict(record) for record in result]
+    except Exception as e:
+        logger.error(f"Failed to get org users: {e}")
+        return []
+
+async def update_org_member_role(organization_id: str, user_id: str, new_role: str):
+    driver = get_driver()
+    query = """
+    MATCH (o:Organization {id: $oid})<-[r:MEMBER_OF]-(u:User {id: $uid})
+    SET r.role = $role
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {"oid": organization_id, "uid": user_id, "role": new_role})
+    except Exception as e:
+        logger.error(f"Failed to update member role: {e}")
+        raise e
+
+async def remove_user_from_organization(organization_id: str, user_id: str):
+    driver = get_driver()
+    query = """
+    MATCH (o:Organization {id: $oid})<-[r:MEMBER_OF]-(u:User {id: $uid})
+    DELETE r
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {"oid": organization_id, "uid": user_id})
+    except Exception as e:
+        logger.error(f"Failed to remove user from org: {e}")
+        raise e
+
+async def create_project(name: str, organization_id: str, description: Optional[str] = None) -> str:
     driver = get_driver()
     pid = str(uuid.uuid4())
     query = """
+    MATCH (o:Organization {id: $oid})
     MERGE (p:Project {id: $pid})
     ON CREATE SET p.name = $name, 
                   p.description = $desc,
                   p.created_at = datetime()
+    MERGE (o)-[:OWNS]->(p)
     RETURN p.id as id
     """
     try:
         with driver.session() as session:
-            result = session.run(query, {"pid": pid, "name": name, "desc": description})
-            return result.single()["id"]
+            result = session.run(query, {"pid": pid, "name": name, "desc": description, "oid": organization_id})
+            record = result.single()
+            if not record:
+                raise Exception(f"Organization not found with id {organization_id}")
+            return record["id"]
     except Exception as e:
         logger.error(f"Failed to create project: {e}")
         raise e
 
-async def get_projects():
+async def get_projects(organization_id: str):
     driver = get_driver()
     query = """
-    MATCH (p:Project)
+    MATCH (o:Organization {id: $oid})-[:OWNS]->(p:Project)
     RETURN p.id as id, p.name as name, p.description as description, p.created_at as created_at
     ORDER BY p.created_at DESC
     """
     try:
         with driver.session() as session:
-            result = session.run(query)
+            result = session.run(query, {"oid": organization_id})
             return [dict(record) for record in result]
     except Exception as e:
         logger.error(f"Failed to get projects: {e}")

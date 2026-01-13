@@ -172,14 +172,14 @@ const AgentButton = ({ label, isActive, onClick, isDisabled = false }: any) => (
         onClick={onClick}
         disabled={isDisabled}
         className={`
-            px-3 py-1.5 text-xs font-medium rounded-md transition-all
+            px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center
             ${isActive
-                ? 'bg-white text-blue-600 shadow-sm'
-                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200/50'}
-            ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}
+                ? 'bg-white text-blue-600 shadow-sm border border-slate-200'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200'}
+            ${isDisabled ? 'opacity-60 cursor-not-allowed' : ''}
         `}
     >
         {label}
-        {isDisabled && <span className="ml-1 text-[10px] opacity-70">(Binnenkort)</span>}
+        {isDisabled && <span className="ml-1.5 text-[9px] uppercase tracking-wide opacity-70 bg-slate-100 px-1 rounded border border-slate-200">Soon</span>}
     </button>
 );

@@ -9,7 +9,7 @@ services:
     volumes:
       - ./backend:/app
     env_file:
-      - .env
+      - backend/.env
     dns:
       - 8.8.8.8
       - 8.8.4.4

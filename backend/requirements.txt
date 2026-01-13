@@ -6,3 +6,5 @@ python-dotenv
 pydantic
 openai
 langchain-openai
+pyjwt
+cryptography

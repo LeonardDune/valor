@@ -10,6 +10,8 @@ import uuid
 
 from contextlib import asynccontextmanager
 from app.db.utils import close_driver, verify_connectivity
+from app.auth import get_current_user
+from fastapi import Depends
 import logging
 
 # Configure logging
@@ -21,10 +23,48 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting up...")
     await verify_connectivity()
+    await startup_migration()
     yield
     # Shutdown
     logger.info("Shutting down...")
     close_driver()
+
+async def startup_migration():
+    """Ensures a default organization and user exist, and links orphaned projects."""
+    try:
+        from app.db.crud import create_organization, create_user, get_organizations, get_driver
+        
+        # 1. Ensure Default Organization
+        orgs = await get_organizations()
+        default_org_id = None
+        if not orgs:
+            logger.info("No organizations found. Creating Default Organization.")
+            default_org_id = await create_organization("Default Organization", "Auto-created during migration")
+        else:
+            default_org_id = orgs[0]['id']
+            
+        # 2. Ensure Admin User
+        # We don't have a get_users yet, so we just try to create (merge handles duplicates)
+        # Actually create_user uses MERGE on email, so it's safe.
+        await create_user("admin@valor.local", "System Admin")
+        
+        # 3. Link Orphaned Projects
+        driver = get_driver()
+        query = """
+        MATCH (p:Project)
+        WHERE NOT (p)<-[:OWNS]-(:Organization)
+        MATCH (o:Organization {id: $oid})
+        MERGE (o)-[:OWNS]->(p)
+        RETURN count(p) as count
+        """
+        with driver.session() as session:
+            result = session.run(query, {"oid": default_org_id})
+            count = result.single()["count"]
+            if count > 0:
+                logger.info(f"Migrated {count} orphaned projects to Default Organization ({default_org_id})")
+                
+    except Exception as e:
+        logger.error(f"Migration failed: {e}")
 
 load_dotenv()
 
@@ -71,12 +111,28 @@ async def chat_endpoint(request: ConversationRequest):
 # Hierarchy Endpoints
 
 from app.db.crud import (
-    create_project, get_projects, create_theme, get_project_themes,
-    get_claims_for_theme
+    get_claims_for_theme, create_organization, get_organizations, create_user,
+    get_organization_users, add_user_to_organization, update_org_member_role,
+    remove_user_from_organization, update_user_profile, get_user_organizations,
+    get_projects, create_project, get_project_themes, create_theme
 )
 from pydantic import BaseModel
 
+class OrganizationCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class UserCreate(BaseModel):
+    email: str
+    name: Optional[str] = None
+
+class UserProfileUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    username: Optional[str] = None
+
 class ProjectCreate(BaseModel):
+    organization_id: str
     name: str
     description: Optional[str] = None
 
@@ -85,13 +141,68 @@ class ThemeCreate(BaseModel):
     name: str
     description: Optional[str] = None
 
+@app.get("/organizations")
+async def list_organizations(user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    if not email:
+        return []
+    return await get_user_organizations(email)
+
+@app.post("/organizations")
+async def create_new_organization(org: OrganizationCreate, user: dict = Depends(get_current_user)):
+    # Use email from token to link owner
+    email = user.get("email")
+    oid = await create_organization(org.name, org.description, owner_email=email)
+    return {"id": oid, "name": org.name}
+
+@app.post("/users")
+async def create_new_user(user: UserCreate, user_auth: dict = Depends(get_current_user)):
+    # Note: Logic might need update to map auth provider ID
+    uid = await create_user(user.email, user.name)
+    return {"id": uid, "email": user.email}
+
+@app.put("/users/me")
+async def update_my_profile(profile: UserProfileUpdate, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="User email not found in token")
+        
+    await update_user_profile(email, profile.first_name, profile.last_name, profile.username)
+    return {"status": "updated", "email": email}
+
+class AddMemberRequest(BaseModel):
+    email: str
+    role: str = "member"
+
+@app.get("/organizations/{org_id}/users")
+async def list_org_users(org_id: str, user: dict = Depends(get_current_user)):
+    return await get_organization_users(org_id)
+
+@app.post("/organizations/{org_id}/users")
+async def add_org_member(org_id: str, member: AddMemberRequest, user: dict = Depends(get_current_user)):
+    await add_user_to_organization(member.email, org_id, member.role)
+    return {"status": "added", "email": member.email, "role": member.role}
+
+class UpdateMemberRequest(BaseModel):
+    role: str
+
+@app.put("/organizations/{org_id}/users/{user_id}")
+async def update_member(org_id: str, user_id: str, data: UpdateMemberRequest, user: dict = Depends(get_current_user)):
+    await update_org_member_role(org_id, user_id, data.role)
+    return {"status": "updated", "user_id": user_id, "role": data.role}
+
+@app.delete("/organizations/{org_id}/users/{user_id}")
+async def remove_member(org_id: str, user_id: str, user: dict = Depends(get_current_user)):
+    await remove_user_from_organization(org_id, user_id)
+    return {"status": "removed", "user_id": user_id}
+
 @app.get("/projects")
-async def list_projects():
-    return await get_projects()
+async def list_projects(organization_id: str, user: dict = Depends(get_current_user)):
+    return await get_projects(organization_id)
 
 @app.post("/projects")
-async def create_new_project(project: ProjectCreate):
-    pid = await create_project(project.name, project.description)
+async def create_new_project(project: ProjectCreate, user: dict = Depends(get_current_user)):
+    pid = await create_project(project.name, project.organization_id, project.description)
     return {"id": pid, "name": project.name}
 
 @app.get("/projects/{project_id}/themes")

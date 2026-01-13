@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { api } from '../../services/api';
+import { useOrganization } from '../../context/OrganizationContext';
 
 interface Project {
     id: string;
@@ -12,6 +14,7 @@ interface ProjectListProps {
 }
 
 export const ProjectList: React.FC<ProjectListProps> = ({ onSelectProject }) => {
+    const { activeOrganization } = useOrganization();
     const [projects, setProjects] = useState<Project[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isCreating, setIsCreating] = useState(false);
@@ -19,13 +22,16 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onSelectProject }) => 
     const [newProjectDesc, setNewProjectDesc] = useState('');
 
     useEffect(() => {
-        fetchProjects();
-    }, []);
+        if (activeOrganization) {
+            fetchProjects();
+        }
+    }, [activeOrganization]);
 
     const fetchProjects = async () => {
+        if (!activeOrganization) return;
+        setIsLoading(true);
         try {
-            const res = await fetch('http://localhost:8000/projects');
-            const data = await res.json();
+            const data = await api.getProjects(activeOrganization.id);
             setProjects(data);
         } catch (error) {
             console.error('Failed to fetch projects', error);
@@ -36,20 +42,14 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onSelectProject }) => 
 
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newProjectName) return;
+        if (!newProjectName || !activeOrganization) return;
 
         try {
-            const res = await fetch('http://localhost:8000/projects', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: newProjectName, description: newProjectDesc }),
-            });
-            if (res.ok) {
-                setNewProjectName('');
-                setNewProjectDesc('');
-                setIsCreating(false);
-                fetchProjects();
-            }
+            await api.createProject(newProjectName, activeOrganization.id, newProjectDesc);
+            setNewProjectName('');
+            setNewProjectDesc('');
+            setIsCreating(false);
+            fetchProjects();
         } catch (error) {
             console.error('Failed to create project', error);
         }
@@ -62,7 +62,9 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onSelectProject }) => 
             <div className="flex justify-between items-center mb-8">
                 <div>
                     <h1 className="text-3xl font-bold text-slate-900">Mijn Projecten</h1>
-                    <p className="text-slate-500 mt-2">Beheer je VALOR projecten en dossiers.</p>
+                    <p className="text-slate-500 mt-2">
+                        Beheer projecten voor <span className="font-semibold text-blue-600">{activeOrganization?.name}</span>.
+                    </p>
                 </div>
                 <button
                     onClick={() => setIsCreating(true)}
@@ -134,12 +136,12 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onSelectProject }) => 
                         </div>
                     </div>
                 ))}
-                {projects.length === 0 && !isCreating && (
-                    <div className="col-span-full text-center py-12 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">
-                        Nog geen projecten. Maak er eentje aan om te beginnen!
-                    </div>
-                )}
             </div>
+            {projects.length === 0 && !isCreating && (
+                <div className="mt-8 text-center py-12 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">
+                    Nog geen projecten in <span className="font-semibold">{activeOrganization?.name}</span>.
+                </div>
+            )}
         </div>
     );
 };

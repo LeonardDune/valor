@@ -54,10 +54,23 @@ class ConversationResponse(BaseModel):
     reply: str
     extracted_claims: List[Claim] = []
 
+class Organization(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    description: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+
+class User(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    email: str
+    name: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+
 class Project(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     description: Optional[str] = None
+    organization_id: str # Required link to Organization
     created_at: datetime = Field(default_factory=datetime.now)
 
 class Theme(BaseModel):
