@@ -126,7 +126,7 @@ export const InspectorSidebar: React.FC<InspectorSidebarProps> = ({ selection, f
                             </h3>
                             {!isNode && (
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold text-white shadow-sm ${polarity === '-' ? 'bg-red-500' : (polarity === '+' ? 'bg-emerald-500' : 'bg-slate-400')}`}>
-                                    {polarity}
+                                    {polarity === '-' ? '—' : polarity}
                                 </span>
                             )}
                         </div>
@@ -305,7 +305,7 @@ export const InspectorSidebar: React.FC<InspectorSidebarProps> = ({ selection, f
                                         className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm"
                                     >
                                         <option value="+">Versterkend (+)</option>
-                                        <option value="-">Remmend (-)</option>
+                                        <option value="-">Remmend (—)</option>
                                         <option value="?">Onbekend (?)</option>
                                     </select>
                                 </div>

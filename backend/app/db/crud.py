@@ -348,20 +348,42 @@ async def get_organization_users(organization_id: str):
     try:
         with driver.session() as session:
             result = session.run(query, {"oid": organization_id})
-            return [dict(record) for record in result]
+            results = []
+            for record in result:
+                d = dict(record)
+                # Serialize Date
+                if d.get('joined_at'):
+                    d['joined_at'] = d['joined_at'].isoformat()
+                
+                # Fallback Name
+                if not d.get('name'):
+                    # Use part of email if name is empty
+                    if d.get('email'):
+                        d['name'] = d.get('email').split('@')[0]
+                
+                results.append(d)
+                
+            return results
     except Exception as e:
         logger.error(f"Failed to get org users: {e}")
         return []
 
-async def update_org_member_role(organization_id: str, user_id: str, new_role: str):
+async def update_org_member_role(organization_id: str, user_id: str, new_role: str, new_name: Optional[str] = None):
     driver = get_driver()
     query = """
     MATCH (o:Organization {id: $oid})<-[r:MEMBER_OF]-(u:User {id: $uid})
     SET r.role = $role
+    WITH u
+    // Conditionally update name if provided
+    CALL {
+        WITH u
+        WITH u WHERE $name IS NOT NULL
+        SET u.name = $name
+    }
     """
     try:
         with driver.session() as session:
-            session.run(query, {"oid": organization_id, "uid": user_id, "role": new_role})
+            session.run(query, {"oid": organization_id, "uid": user_id, "role": new_role, "name": new_name})
     except Exception as e:
         logger.error(f"Failed to update member role: {e}")
         raise e

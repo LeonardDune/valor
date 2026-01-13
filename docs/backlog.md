@@ -4,8 +4,6 @@ Dit document bevat de user stories voor toekomstige gewenste functionaliteiten b
 
 ## User Stories
 
-## User Stories
-
 ### Epic 1: Conversational Reasoning Foundation
 Users can engage in AI-facilitated causal reasoning through natural dialogue.
 
