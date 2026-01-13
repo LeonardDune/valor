@@ -264,8 +264,6 @@ export const UserList: React.FC<UserListProps> = ({ organizationId }) => {
                                                         <option value="member">Lid</option>
                                                         <option value="admin">Beheerder</option>
                                                     </select>
-                                                    <button onClick={() => saveEdit(user.id)} className="text-green-600 hover:text-green-800 text-xs font-bold">OK</button>
-                                                    <button onClick={() => setEditingUserId(null)} className="text-slate-400 hover:text-slate-600 text-xs">X</button>
                                                 </div>
                                             ) : (
                                                 <span className={`px-2 py-1 rounded-full text-xs font-semibold ${user.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
@@ -278,20 +276,29 @@ export const UserList: React.FC<UserListProps> = ({ organizationId }) => {
                                             {user.joined_at ? new Date(user.joined_at).toLocaleDateString() : '-'}
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <button
-                                                onClick={() => startEditing(user)}
-                                                className="text-slate-400 hover:text-blue-600 mr-3"
-                                                title="Bewerken"
-                                            >
-                                                ✎
-                                            </button>
-                                            <button
-                                                onClick={() => deleteUser(user.id)}
-                                                className="text-slate-400 hover:text-red-600"
-                                                title="Verwijderen"
-                                            >
-                                                🗑
-                                            </button>
+                                            {editingUserId === user.id ? (
+                                                <div className="flex justify-end gap-2">
+                                                    <button onClick={() => saveEdit(user.id)} className="text-green-600 hover:text-green-800 font-bold" title="Opslaan">✔</button>
+                                                    <button onClick={() => setEditingUserId(null)} className="text-slate-400 hover:text-slate-600 font-bold" title="Annuleren">✕</button>
+                                                </div>
+                                            ) : (
+                                                <>
+                                                    <button
+                                                        onClick={() => startEditing(user)}
+                                                        className="text-slate-400 hover:text-blue-600 mr-3"
+                                                        title="Bewerken"
+                                                    >
+                                                        ✎
+                                                    </button>
+                                                    <button
+                                                        onClick={() => deleteUser(user.id)}
+                                                        className="text-slate-400 hover:text-red-600"
+                                                        title="Verwijderen"
+                                                    >
+                                                        🗑
+                                                    </button>
+                                                </>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}
