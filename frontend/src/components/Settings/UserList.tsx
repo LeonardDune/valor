@@ -14,11 +14,23 @@ export const UserList: React.FC<UserListProps> = ({ organizationId }) => {
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
     const [editRole, setEditRole] = useState('member');
     const [activeTab, setActiveTab] = useState<'users' | 'details'>('users');
-    const [orgName, setOrgName] = useState('My Organization');
+    const [orgName, setOrgName] = useState('');
 
     useEffect(() => {
         fetchUsers();
+        fetchOrgDetails();
     }, [organizationId]);
+
+    const fetchOrgDetails = async () => {
+        try {
+            // Since we don't have getOrganization(id), we list all and find (not efficient but checking API limits)
+            const orgs = await api.getOrganizations();
+            const current = orgs.find(o => o.id === organizationId);
+            if (current) setOrgName(current.name);
+        } catch (error) {
+            console.error('Failed to fetch org details', error);
+        }
+    };
 
     const fetchUsers = async () => {
         setIsLoading(true);
