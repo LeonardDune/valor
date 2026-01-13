@@ -622,7 +622,8 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
         ctx.font = 'bold 14px Inter, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(polarity, 0, 0.5);
+        const displayPolarity = polarity === '-' ? '—' : polarity;
+        ctx.fillText(displayPolarity, 0, 0.5);
         ctx.restore();
 
     }, [selectedId, hoverLinkId]);
