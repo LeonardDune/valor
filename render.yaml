@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: valor-backend
+    env: docker
+    region: frankfurt # Low latency for NL
+    plan: free # Start with free plan, upgrade as needed
+    branch: main
+    rootDir: backend
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: NEO4J_URI
+        sync: false # User must provide this in dashboard
+      - key: NEO4J_USERNAME
+        sync: false
+      - key: NEO4J_PASSWORD
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
