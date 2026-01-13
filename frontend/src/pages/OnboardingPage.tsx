@@ -9,6 +9,8 @@ const OnboardingPage: React.FC = () => {
     const [step, setStep] = useState(1);
     const [isLoading, setIsLoading] = useState(false);
 
+    console.log("Onboarding Page Rendered. Step:", step);
+
     // Profile State
     const [firstName, setFirstName] = useState('');
     const [lastName, setLastName] = useState('');
