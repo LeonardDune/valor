@@ -36,9 +36,11 @@ We gebruiken **Vercel** voor de frontend (React/Vite).
     *   **Output Directory:** `dist`
 
 ### Environment Variables
-Voeg de volgende variabele toe in het Vercel scherm voordat je op Deploy klikt:
+Voeg de volgende variabelen toe in het Vercel scherm voordat je op Deploy klikt:
 
 *   `VITE_API_URL`: De URL van je Render backend (bijv. `https://valor-backend.onrender.com`)
+*   `VITE_SUPABASE_URL`: Je Supabase project URL (via Dashboard -> Settings -> API)
+*   `VITE_SUPABASE_ANON_KEY`: Je Supabase Anon/Public key (via Dashboard -> Settings -> API)
 
 ### Deploy
 Klik op **Deploy**.
