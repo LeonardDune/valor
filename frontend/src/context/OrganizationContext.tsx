@@ -19,10 +19,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode }> = ({ childr
     const fetchOrganizations = async () => {
         setIsLoading(true);
         try {
-            console.log("Fetching organizations...");
             const orgs = await api.getOrganizations();
-            console.log("Organizations received raw:", orgs);
-            console.log("Type of orgs:", typeof orgs, Array.isArray(orgs));
             setOrganizations(orgs);
 
             // Set active org logic (first available if none selected)
