@@ -260,7 +260,8 @@ async def get_organizations():
 async def get_user_organizations(user_email: str):
     driver = get_driver()
     query = """
-    MATCH (u:User {email: $email})-[:MEMBER_OF]->(o:Organization)
+    MATCH (u:User)-[:MEMBER_OF]->(o:Organization)
+    WHERE toLower(u.email) = toLower($email)
     RETURN o.id as id, o.name as name, o.description as description, o.created_at as created_at
     ORDER BY o.created_at DESC
     """
@@ -276,7 +277,7 @@ async def create_user(email: str, name: Optional[str] = None) -> str:
     driver = get_driver()
     uid = str(uuid.uuid4())
     query = """
-    MERGE (u:User {email: $email})
+    MERGE (u:User {email: toLower($email)})
     ON CREATE SET u.id = $uid, 
                   u.name = $name,
                   u.created_at = datetime()
@@ -297,7 +298,7 @@ async def update_user_profile(email: str, first_name: Optional[str] = None, last
     # This logic assumes 'name' is display name.
     
     query = """
-    MERGE (u:User {email: $email})
+    MERGE (u:User {email: toLower($email)})
     SET u.first_name = coalesce($fname, u.first_name),
         u.last_name = coalesce($lname, u.last_name),
         u.username = coalesce($uname, u.username),
@@ -326,7 +327,7 @@ async def add_user_to_organization(user_id_or_email: str, org_id_or_name: str, r
         await create_user(user_id_or_email, user_id_or_email.split("@")[0])
         
     query = """
-    MATCH (u:User) WHERE u.id = $uid OR u.email = $uid
+    MATCH (u:User) WHERE u.id = $uid OR toLower(u.email) = toLower($uid)
     MATCH (o:Organization {id: $oid})
     MERGE (u)-[r:MEMBER_OF]->(o)
     SET r.role = $role, r.joined_at = datetime()
