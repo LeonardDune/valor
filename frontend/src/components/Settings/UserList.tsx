@@ -15,6 +15,7 @@ export const UserList: React.FC<UserListProps> = ({ organizationId }) => {
     const [editRole, setEditRole] = useState('member');
     const [activeTab, setActiveTab] = useState<'users' | 'details'>('users');
     const [orgName, setOrgName] = useState('');
+    const [orgDesc, setOrgDesc] = useState('');
 
     useEffect(() => {
         fetchUsers();
@@ -26,7 +27,10 @@ export const UserList: React.FC<UserListProps> = ({ organizationId }) => {
             // Since we don't have getOrganization(id), we list all and find (not efficient but checking API limits)
             const orgs = await api.getOrganizations();
             const current = orgs.find(o => o.id === organizationId);
-            if (current) setOrgName(current.name);
+            if (current) {
+                setOrgName(current.name);
+                setOrgDesc(current.description || '');
+            }
         } catch (error) {
             console.error('Failed to fetch org details', error);
         }
@@ -128,10 +132,12 @@ export const UserList: React.FC<UserListProps> = ({ organizationId }) => {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Organisatie ID</label>
-                            <div className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-500 font-mono text-sm">
-                                {organizationId}
-                            </div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">Beschrijving</label>
+                            <textarea
+                                value={orgDesc}
+                                onChange={(e) => setOrgDesc(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none h-24 resize-none"
+                            />
                         </div>
                         <div className="pt-4">
                             <button className="bg-slate-900 text-white px-4 py-2 rounded-lg font-medium hover:bg-slate-800 transition-colors">
