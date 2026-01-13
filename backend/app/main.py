@@ -185,11 +185,12 @@ async def add_org_member(org_id: str, member: AddMemberRequest, user: dict = Dep
 
 class UpdateMemberRequest(BaseModel):
     role: str
+    name: Optional[str] = None
 
 @app.put("/organizations/{org_id}/users/{user_id}")
 async def update_member(org_id: str, user_id: str, data: UpdateMemberRequest, user: dict = Depends(get_current_user)):
-    await update_org_member_role(org_id, user_id, data.role)
-    return {"status": "updated", "user_id": user_id, "role": data.role}
+    await update_org_member_role(org_id, user_id, data.role, data.name)
+    return {"status": "updated", "user_id": user_id, "role": data.role, "name": data.name}
 
 @app.delete("/organizations/{org_id}/users/{user_id}")
 async def remove_member(org_id: str, user_id: str, user: dict = Depends(get_current_user)):

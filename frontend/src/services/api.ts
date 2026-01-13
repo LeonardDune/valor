@@ -111,8 +111,8 @@ export const api = {
         return response.data;
     },
 
-    updateOrgMember: async (orgId: string, userId: string, role: string) => {
-        const response = await apiClient.put(`/organizations/${orgId}/users/${userId}`, { role });
+    updateOrgMember: async (orgId: string, userId: string, role: string, name?: string) => {
+        const response = await apiClient.put(`/organizations/${orgId}/users/${userId}`, { role, name });
         return response.data;
     },
 

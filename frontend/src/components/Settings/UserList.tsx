@@ -14,6 +14,7 @@ export const UserList: React.FC<UserListProps> = ({ organizationId }) => {
     const [inviteRole, setInviteRole] = useState('member');
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
     const [editRole, setEditRole] = useState('member');
+    const [editName, setEditName] = useState('');
     const [activeTab, setActiveTab] = useState<'users' | 'details'>('users');
     const [orgName, setOrgName] = useState('');
     const [orgDesc, setOrgDesc] = useState('');
@@ -83,11 +84,12 @@ export const UserList: React.FC<UserListProps> = ({ organizationId }) => {
     const startEditing = (user: User) => {
         setEditingUserId(user.id);
         setEditRole(user.role || 'member');
+        setEditName(user.name || '');
     };
 
     const saveEdit = async (userId: string) => {
         try {
-            await api.updateOrgMember(organizationId, userId, editRole);
+            await api.updateOrgMember(organizationId, userId, editRole, editName);
             setEditingUserId(null);
             fetchUsers();
         } catch (error) {
