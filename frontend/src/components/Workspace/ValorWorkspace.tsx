@@ -156,14 +156,14 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                         <p className="text-sm">We werken hard aan de volgende stap in de analyse.</p>
                     </div>
                 )}
-            </main>
+            </main >
 
             <FactorModal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 onSave={handleSaveFactor}
             />
-        </div>
+        </div >
     );
 };
 

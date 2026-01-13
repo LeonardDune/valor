@@ -444,11 +444,19 @@ const CausalGraph: React.FC<CausalGraphProps> = ({ claims = [], factors = [], on
         }
     }, [graphData, layoutMode, systemLayoutData]);
 
+    // 4b. Resize Observer (Fixes Gray Plane Issue)
     useEffect(() => {
-        const up = () => { if (containerRef.current) setContainerDimensions({ width: containerRef.current.clientWidth, height: containerRef.current.clientHeight }); };
-        window.addEventListener('resize', up);
-        up();
-        return () => window.removeEventListener('resize', up);
+        if (!containerRef.current) return;
+
+        const ro = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                const { width, height } = entry.contentRect;
+                setContainerDimensions({ width, height });
+            }
+        });
+
+        ro.observe(containerRef.current);
+        return () => ro.disconnect();
     }, []);
 
     // 5. Visual Rendering
