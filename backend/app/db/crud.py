@@ -348,7 +348,22 @@ async def get_organization_users(organization_id: str):
     try:
         with driver.session() as session:
             result = session.run(query, {"oid": organization_id})
-            return [dict(record) for record in result]
+            results = []
+            for record in result:
+                d = dict(record)
+                # Serialize Date
+                if d.get('joined_at'):
+                    d['joined_at'] = d['joined_at'].isoformat()
+                
+                # Fallback Name
+                if not d.get('name'):
+                    # Use part of email if name is empty
+                    if d.get('email'):
+                        d['name'] = d.get('email').split('@')[0]
+                
+                results.append(d)
+                
+            return results
     except Exception as e:
         logger.error(f"Failed to get org users: {e}")
         return []
