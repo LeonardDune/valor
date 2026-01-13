@@ -17,7 +17,5 @@ services:
         sync: false
       - key: SUPABASE_URL
         sync: false
-      - key: SUPABASE_KEY
-        sync: false
-      - key: JWT_SECRET
+      - key: OPENAI_API_KEY
         sync: false
