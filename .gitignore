@@ -1,8 +1,10 @@
 _bmad
 .agent/
+!.agent/workflows/
 .claude/
 .clinerules/
 .github/
+!.github/ISSUE_TEMPLATE/
 .vscode/
 .env
 .env.local
