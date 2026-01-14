@@ -1,11 +1,5 @@
 import React, { useState, useEffect } from 'react';
-
-interface Theme {
-    id: string;
-    name: string;
-    description: string;
-    project_id: string;
-}
+import { api, type Theme } from '../../services/api';
 
 interface ThemeListProps {
     projectId: string;
@@ -27,8 +21,7 @@ export const ThemeList: React.FC<ThemeListProps> = ({ projectId, projectName, on
 
     const fetchThemes = async () => {
         try {
-            const res = await fetch(`http://localhost:8000/projects/${projectId}/themes`);
-            const data = await res.json();
+            const data = await api.getProjectThemes(projectId);
             setThemes(data);
         } catch (error) {
             console.error('Failed to fetch themes', error);
@@ -42,17 +35,11 @@ export const ThemeList: React.FC<ThemeListProps> = ({ projectId, projectName, on
         if (!newThemeName) return;
 
         try {
-            const res = await fetch(`http://localhost:8000/projects/${projectId}/themes`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ project_id: projectId, name: newThemeName, description: newThemeDesc }),
-            });
-            if (res.ok) {
-                setNewThemeName('');
-                setNewThemeDesc('');
-                setIsCreating(false);
-                fetchThemes();
-            }
+            await api.createTheme(projectId, newThemeName, newThemeDesc);
+            setNewThemeName('');
+            setNewThemeDesc('');
+            setIsCreating(false);
+            fetchThemes();
         } catch (error) {
             console.error('Failed to create theme', error);
         }

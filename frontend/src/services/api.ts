@@ -64,6 +64,13 @@ export interface User {
     joined_at?: string;
 }
 
+export interface Theme {
+    id: string;
+    name: string;
+    description: string;
+    project_id: string;
+}
+
 export const api = {
     healthCheck: async () => {
         const response = await apiClient.get('/health');
@@ -129,6 +136,16 @@ export const api = {
 
     createProject: async (name: string, organizationId: string, description?: string) => {
         const response = await apiClient.post('/projects', { name, organization_id: organizationId, description });
+        return response.data;
+    },
+
+    getProjectThemes: async (projectId: string) => {
+        const response = await apiClient.get<Theme[]>(`/projects/${projectId}/themes`);
+        return response.data;
+    },
+
+    createTheme: async (projectId: string, name: string, description?: string) => {
+        const response = await apiClient.post(`/projects/${projectId}/themes`, { project_id: projectId, name, description });
         return response.data;
     },
 
