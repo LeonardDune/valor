@@ -45,6 +45,13 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
 
     const [isSaving, setIsSaving] = useState(false);
 
+    // Helpers for New Connection Logic
+    const [newTargetId, setNewTargetId] = useState('');
+    const [newStatement, setNewStatement] = useState('');
+    const [newPolarity, setNewPolarity] = useState('+');
+    const [newConfidence, setNewConfidence] = useState(0.5);
+    const [isCreatingLink, setIsCreatingLink] = useState(false);
+
     // Sync state when selection changes
     useEffect(() => {
         if (!selection || !open) return;
@@ -120,10 +127,33 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
         }
     };
 
+    const handleCreateLink = async () => {
+        if (!selection || !newTargetId) return;
+        setIsCreatingLink(true);
+        try {
+            const sourceId = selection.data.id;
+            await api.createClaim({
+                theme_id: themeId,
+                statement: newStatement || 'Nieuwe verbinding',
+                source_id: sourceId,
+                target_id: newTargetId,
+                polarity: newPolarity,
+                confidence: newConfidence
+            });
+            setNewStatement('');
+            onRefresh(); // Refresh to show new link
+            alert("Verbinding aangemaakt!");
+        } catch (e) {
+            console.error('Failed to create claim', e);
+        } finally {
+            setIsCreatingLink(false);
+        }
+    };
+
     if (!selection) return null;
 
     const isNode = selection.type === 'node';
-    // const sortedFactors = [...factors].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    const sortedFactors = [..._factors].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
     return (
         <Dialog.Root open={open} onOpenChange={onOpenChange}>
@@ -186,12 +216,78 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
                                     />
                                 </div>
 
-                                {/* Mini-form for new connections? Or keep that separate? 
-                                    InspectorSidebar had it. Let's include a collapsed 'Add Connection' section or button?
-                                    For now, let's stick to core editing. The 'Add Connection' is better handled via Drag-drop (US-CAUSA-10).
-                                    I will omit the 'Add Connection from here' feature to encourage Drag-drop usage later, 
-                                    unless user strictly requested it here. The prompt said "Bewerken van de details".
-                                */}
+                                {/* NEW CONNECTION SECTION */}
+                                {(_factors.length > 1 && selection.data) && ( // Ensure selection.data exists before accessing it
+                                    <div className="pt-4 mt-4 border-t border-slate-100">
+                                        <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100 space-y-4">
+                                            <label className="text-[10px] font-bold text-blue-400 uppercase tracking-widest block flex items-center gap-2">
+                                                <LinkIcon size={12} />
+                                                Nieuwe Verbinding Leggen
+                                            </label>
+
+                                            <div className="space-y-2">
+                                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">1. Doel factor</p>
+                                                <select
+                                                    value={newTargetId}
+                                                    onChange={e => setNewTargetId(e.target.value)}
+                                                    className="w-full px-2 py-1.5 bg-white border border-blue-100 rounded-lg text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
+                                                >
+                                                    {sortedFactors
+                                                        .filter(f => (f.dbId || f.id) !== (selection.data.dbId || selection.data.id))
+                                                        .map(f => (
+                                                            <option key={f.id} value={f.id}>{f.name}</option>
+                                                        ))
+                                                    }
+                                                </select>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">2. Argumentatie</p>
+                                                <textarea
+                                                    value={newStatement}
+                                                    onChange={e => setNewStatement(e.target.value)}
+                                                    rows={2}
+                                                    placeholder="Waarom is er een relatie?"
+                                                    className="w-full px-2 py-1.5 bg-white border border-blue-100 rounded-lg text-xs outline-none focus:ring-2 focus:ring-blue-500/20 resize-none"
+                                                />
+                                            </div>
+
+                                            <div className="flex gap-3">
+                                                <div className="flex-1 space-y-2">
+                                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">3. Polarity</p>
+                                                    <select
+                                                        value={newPolarity}
+                                                        onChange={e => setNewPolarity(e.target.value)}
+                                                        className="w-full px-2 py-1.5 bg-white border border-blue-100 rounded-lg text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
+                                                    >
+                                                        <option value="+">+</option>
+                                                        <option value="-">-</option>
+                                                        <option value="?">?</option>
+                                                    </select>
+                                                </div>
+                                                <div className="flex-1 space-y-2">
+                                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tighter">4. Zekerheid</p>
+                                                    <input
+                                                        type="number"
+                                                        min="0" max="1" step="0.1"
+                                                        value={newConfidence}
+                                                        onChange={e => setNewConfidence(parseFloat(e.target.value))}
+                                                        className="w-full px-2 py-1.5 bg-white border border-blue-100 rounded-lg text-xs outline-none focus:ring-2 focus:ring-blue-500/20"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <button
+                                                onClick={handleCreateLink}
+                                                disabled={isCreatingLink || !newTargetId}
+                                                className="w-full py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all shadow-md flex items-center justify-center gap-2 group mt-2 disabled:opacity-50"
+                                            >
+                                                <LinkIcon size={14} className="group-hover:rotate-12 transition-transform" />
+                                                Verbinding Toevoegen
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </>
                         ) : (
                             <>
