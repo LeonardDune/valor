@@ -9,6 +9,7 @@ export const mapFactorToNode = (factor: Factor): CausalNode => {
         id: factor.id,
         label: factor.name,
         type: factor.type === 'systeemelement' ? 'system' : 'factor',
+        role: factor.type,
         description: factor.description
     };
 };
