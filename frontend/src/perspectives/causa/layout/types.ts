@@ -25,6 +25,10 @@ export interface LayoutLink {
     // Layout properties
     strength?: number;
     distance?: number;
+
+    // Visualization properties (from US-CAUSA-05)
+    status?: 'proposed' | 'validated' | 'rejected';
+    certainty?: number; // 0.0 - 1.0 (Opacity)
 }
 
 export interface LayoutConfig {
