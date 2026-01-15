@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ChatInterface from '../Chat/ChatInterface';
-import CausalGraph from '../Graph/CausalGraph';
+// import CausalGraph from '../Graph/CausalGraph';
+import { ReactFlowCanvas } from '../Graph/ReactFlowCanvas';
 import { InspectorSidebar } from '../Graph/InspectorSidebar';
 import { api, type Claim } from '../../services/api';
 import { FactorModal } from '../Graph/FactorModal';
@@ -128,11 +129,19 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                                     + Nieuwe Factor
                                 </button>
                             </div>
-                            <CausalGraph
+                            {/* <CausalGraph
                                 claims={claims}
                                 factors={factors}
                                 onSelect={setSelection}
                                 selectedId={selection?.data?.id}
+                            /> */}
+                            <ReactFlowCanvas
+                                factors={factors}
+                                claims={claims}
+                                selection={selection}
+                                onSelect={setSelection}
+                                themeId={themeId}
+                                onRefresh={refreshData}
                             />
                         </div>
 
