@@ -42,7 +42,11 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({ session, runner }) =>
         source: typeof l.source === 'object' ? (l.source as any).id : l.source,
         target: typeof l.target === 'object' ? (l.target as any).id : l.target,
         type: 'cldEdge',
-        data: { polarity: '+' } // Todo: Real polarity from link data
+        data: {
+            polarity: '+', // Todo: Real polarity from link data
+            status: Math.random() > 0.5 ? 'validated' : 'proposed',
+            certainty: Math.random()
+        }
     }));
 
     const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);

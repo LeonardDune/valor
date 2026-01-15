@@ -22,10 +22,24 @@ const CLDEdge: FunctionComponent<EdgeProps> = ({
     });
 
     const polarity = data?.polarity; // '+' or '-'
+    const status = data?.status || 'validated';
+    const certainty = data?.certainty ?? 1.0;
+
+    // Visual Mapping
+    const isProposed = status === 'proposed';
+    const opacity = 0.3 + (certainty * 0.7); // Min 0.3 opacity
 
     return (
         <>
-            <BaseEdge path={edgePath} markerEnd={markerEnd} style={style} />
+            <BaseEdge
+                path={edgePath}
+                markerEnd={markerEnd}
+                style={{
+                    ...style,
+                    opacity,
+                    strokeDasharray: isProposed ? '5,5' : undefined,
+                }}
+            />
             {polarity && (
                 <EdgeLabelRenderer>
                     <div
