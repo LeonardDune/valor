@@ -1,32 +1,31 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { CLDView } from './views/CLDView';
 import { useCausaData } from './hooks/useCausaData';
 import { LayoutSession } from './layout/session';
 import { BasicRunner } from './layout/runners/basic';
+import { FactorModal } from '../../components/Graph/FactorModal';
+import { EditFactorDetailModal } from './views/modals/EditFactorDetailModal';
+import { api } from '../../services/api';
 
-// Note: We might need to receive props or context here in the future.
-// For now, we assume the parent renders this with a 'themeId' prop 
-// OR we default to a test ID if not provided (though that's dangerous).
-// Actually, Perspective definition says Shell: () => ReactNode.
-// So we need a way to get the Theme ID.
-// Ideally, the Workspace renders <Shell themeId={...} /> if we change the type,
-// or we use a React Context.
-// Since I cannot change Workspace right now easily, I'll export CausaShell
-// and assume we will update the Perspective Type / Workspace later or use a Context hack.
-
-// For Verification: I will allow this component to take props.
 export interface CausaShellProps {
     themeId: string;
+    // We keep onSelect prop for backward compatibility but Shell handles the interaction
     onSelect?: (selection: { type: 'node' | 'link'; data: any } | null) => void;
     selection?: { type: 'node' | 'link'; data: any } | null;
 }
 
-export const CausaShell = ({ themeId, onSelect, selection }: CausaShellProps) => {
-    // 1. Fetch Data (Mapped to Causal Types)
-    const { nodes, links, loading } = useCausaData(themeId);
+export const CausaShell = ({ themeId, onSelect: _onSelect }: CausaShellProps) => {
+    // A. Local UI State
+    const [localSelection, setLocalSelection] = useState<{ type: 'node' | 'link'; data: any } | null>(null);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-    // 2. Initialize Session (Single Instance)
+    // B. Fetch Data
+    const { nodes, links, factors, refresh, loading } = useCausaData(themeId);
+
+    // C. Initialize Session
     const session = useMemo(() => {
+        // Initialize with default 'System' friendly size, though layout strategy sets this later
         return new LayoutSession([], [], {
             width: 1000,
             height: 800,
@@ -35,25 +34,73 @@ export const CausaShell = ({ themeId, onSelect, selection }: CausaShellProps) =>
         });
     }, []);
 
-    // 3. Sync Data to Session (Hydration)
+    // D. Sync Data
     useEffect(() => {
         if (!loading) {
-            console.log("Hydrating Session:", nodes.length, "nodes");
             session.syncGraph(nodes, links);
         }
     }, [session, nodes, links, loading]);
 
-    // 4. Initialize Runner
     const runner = useMemo(() => new BasicRunner(session), [session]);
+
+    // E. Interactions
+    const handleSelect = (sel: { type: 'node' | 'link'; data: any } | null) => {
+        setLocalSelection(sel);
+        if (sel) {
+            setIsEditModalOpen(true);
+        }
+        // We do NOT propagate to parent Workspace to avoid opening the old InspectorSidebar
+        // if (onSelect) onSelect(sel);
+    };
+
+    const handleCreateFactor = async (name: string, type: any, description: string) => {
+        try {
+            await api.createFactor(themeId, name, description, type);
+            refresh();
+        } catch (error) {
+            console.error('Failed to create factor', error);
+        }
+    };
 
     if (!themeId) return <div className="p-10 text-slate-400">No Theme Context</div>;
 
     return (
         <div className="w-full h-full bg-slate-50 relative">
-            <div className="absolute top-4 right-4 z-10 text-xs text-slate-400 bg-white/50 px-2 rounded">
-                CAUSA Strict Renderer
+            {/* Header / Toolbar Overlay */}
+            <div className="absolute top-4 right-4 z-10 flex gap-2">
+                <button
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all"
+                >
+                    + Nieuw
+                </button>
             </div>
-            <CLDView nodes={nodes} links={links} session={session} runner={runner} onSelect={onSelect} selection={selection} />
+
+            {/* View */}
+            <CLDView
+                nodes={nodes}
+                links={links}
+                session={session}
+                runner={runner}
+                onSelect={handleSelect}
+                selection={localSelection}
+            />
+
+            {/* Modals */}
+            <FactorModal
+                isOpen={isCreateModalOpen}
+                onClose={() => setIsCreateModalOpen(false)}
+                onSave={handleCreateFactor}
+            />
+
+            <EditFactorDetailModal
+                open={isEditModalOpen}
+                onOpenChange={setIsEditModalOpen}
+                selection={localSelection}
+                themeId={themeId}
+                factors={factors}
+                onRefresh={refresh}
+            />
         </div>
     );
 };

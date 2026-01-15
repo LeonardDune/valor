@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-select": "^2.2.6",
+    "@radix-ui/react-slot": "^1.2.4",
     "@supabase/supabase-js": "^2.90.1",
     "@types/d3": "^7.4.3",
     "@types/d3-force": "^3.0.10",

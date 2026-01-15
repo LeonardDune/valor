@@ -7,6 +7,7 @@ export interface CausalNode {
     id: string;
     label: string;
     type: 'factor' | 'system';
+    role?: string; // e.g. 'middel', 'extern', 'criterium'
     description?: string;
     // Future: status, confidence, evidence
 }

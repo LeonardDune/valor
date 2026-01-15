@@ -1,11 +1,13 @@
 import { useState, useCallback, useEffect } from 'react';
-import { api } from '../../../services/api';
+import { api, type Factor, type Claim } from '../../../services/api';
 import { mapFactors, mapClaims } from '../layout/mappers';
 import type { CausalNode, CausalLink } from '../types';
 
 interface CausaData {
     nodes: CausalNode[];
     links: CausalLink[];
+    factors: Factor[]; // Raw data for Modals
+    claims: Claim[];   // Raw data for Modals
     loading: boolean;
     error: Error | null;
     refresh: () => Promise<void>;
@@ -14,6 +16,8 @@ interface CausaData {
 export const useCausaData = (themeId: string): CausaData => {
     const [nodes, setNodes] = useState<CausalNode[]>([]);
     const [links, setLinks] = useState<CausalLink[]>([]);
+    const [factors, setFactors] = useState<Factor[]>([]);
+    const [claims, setClaims] = useState<Claim[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
 
@@ -25,6 +29,8 @@ export const useCausaData = (themeId: string): CausaData => {
                 api.getThemeFactors(themeId)
             ]);
 
+            setFactors(factorsData);
+            setClaims(claimsData);
             setNodes(mapFactors(factorsData));
             setLinks(mapClaims(claimsData));
             setError(null);
@@ -43,5 +49,5 @@ export const useCausaData = (themeId: string): CausaData => {
         }
     }, [themeId, refresh]);
 
-    return { nodes, links, loading, error, refresh };
+    return { nodes, links, factors, claims, loading, error, refresh };
 };

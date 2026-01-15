@@ -67,7 +67,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                     id: cn.id,
                     type: 'cldNode',
                     position,
-                    data: { label: cn.label, type: cn.type, description: cn.description } // Pass down type for styling
+                    data: { label: cn.label, type: cn.type, role: cn.role, description: cn.description } // Pass down type/role/desc for styling
                 };
             });
         });
