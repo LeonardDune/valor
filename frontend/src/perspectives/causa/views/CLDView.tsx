@@ -139,6 +139,18 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                 onPaneClick={() => {
                     if (onSelect) onSelect(null);
                 }}
+                onNodeDrag={(_, node) => {
+                    // Sync drag position back to LayoutSession
+                    // This is critical effectively to "commit" the drag to the physics/layout state
+                    const layoutNodes = session.getNodes();
+                    const layoutNode = layoutNodes.find(n => n.id === node.id);
+                    if (layoutNode) {
+                        layoutNode.x = node.position.x;
+                        layoutNode.y = node.position.y;
+                        // If using D3, we might want to set fx/fy here or wake simulation
+                        // For basic stability, just updating x/y is enough for BasicRunner
+                    }
+                }}
                 fitView
             >
                 <Background />
