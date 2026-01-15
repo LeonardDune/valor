@@ -25,7 +25,7 @@ class Factor(FactorBase):
 
 class ClaimBase(BaseModel):
     statement: str
-    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    confidence: float = Field(default=0.0, ge=0.0, le=100.0)
     source_node: str # Name of the cause factor
     source_id: Optional[str] = None # UUID of the cause factor
     source_type: Optional[FactorType] = None
