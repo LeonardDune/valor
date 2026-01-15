@@ -1,11 +1,9 @@
 import { type FunctionComponent, useEffect } from 'react';
 import ReactFlow, {
-    type Node,
-    type Edge,
     useNodesState,
     useEdgesState,
     Background,
-    Controls
+    Controls,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -15,9 +13,16 @@ import type { LayoutNode } from '../layout/types';
 import CLDNode from './nodes/CLDNode';
 import CLDEdge from './edges/CLDEdge';
 
+// Correct path if types are in parent/parent
+import type { CausalNode, CausalLink } from '../types';
+
 interface CLDViewProps {
+    nodes: CausalNode[];
+    links: CausalLink[];
     session: LayoutSession;
     runner: LayoutRunner;
+    onSelect?: (selection: { type: 'node' | 'link'; data: any } | null) => void;
+    selection?: { type: 'node' | 'link'; data: any } | null;
 }
 
 const nodeTypes = {
@@ -28,31 +33,63 @@ const edgeTypes = {
     cldEdge: CLDEdge
 };
 
-export const CLDView: FunctionComponent<CLDViewProps> = ({ session, runner }) => {
-    // Initial State from Session
-    const initialNodes: Node[] = session.getNodes().map(n => ({
-        id: n.id,
-        position: { x: n.x, y: n.y },
-        data: { label: n.id }, // Todo: Use label from internal map if available
-        type: 'cldNode'
-    }));
+export const CLDView: FunctionComponent<CLDViewProps> = ({
+    nodes: causalNodes,
+    links: causalLinks,
+    session,
+    runner,
+    onSelect
+}) => {
+    // React Flow State
+    const [nodes, setNodes, onNodesChange] = useNodesState([]);
+    const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-    const initialEdges: Edge[] = session.getLinks().map(l => ({
-        id: l.id,
-        source: typeof l.source === 'object' ? (l.source as any).id : l.source,
-        target: typeof l.target === 'object' ? (l.target as any).id : l.target,
-        type: 'cldEdge',
-        data: {
-            polarity: '+', // Todo: Real polarity from link data
-            status: Math.random() > 0.5 ? 'validated' : 'proposed',
-            certainty: Math.random()
-        }
-    }));
+    // 1. Topology Sync (Handle Adds/Removes/Updates from Domain)
+    useEffect(() => {
+        const layoutNodes = session.getNodes();
+        const layoutNodeMap = new Map(layoutNodes.map(n => [n.id, n]));
 
-    const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-    const [edges, , onEdgesChange] = useEdgesState(initialEdges);
+        setNodes(currentNodes => {
+            // Merge Logic:
+            // 1. Keep strings that overlap (updates?)
+            // 2. Add new
+            // 3. Remove old
 
-    // Sync Loop
+            // Simplified: Map all causalNodes to RF Nodes
+            return causalNodes.map(cn => {
+                const existing = currentNodes.find(n => n.id === cn.id);
+                const layout = layoutNodeMap.get(cn.id);
+
+                // Use existing position if available, else layout, else 0
+                const position = existing ? existing.position : (layout ? { x: layout.x, y: layout.y } : { x: 0, y: 0 });
+
+                return {
+                    id: cn.id,
+                    type: 'cldNode',
+                    position,
+                    data: { label: cn.label, type: cn.type, description: cn.description } // Pass down type for styling
+                };
+            });
+        });
+
+        setEdges(() => {
+            return causalLinks.map(cl => ({
+                id: cl.id,
+                source: cl.source,
+                target: cl.target,
+                type: 'cldEdge',
+                data: {
+                    polarity: cl.polarity,
+                    status: cl.status || 'validated',
+                    certainty: cl.certainty
+                }
+            }));
+        });
+
+    }, [causalNodes, causalLinks, session, setNodes, setEdges]); // Dep on causal data
+
+
+    // 2. Physics Sync (Handle Position Updates from Runner)
     useEffect(() => {
         const handleTick = (updatedLayoutNodes: LayoutNode[]) => {
             setNodes(currentNodes =>
@@ -60,8 +97,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({ session, runner }) =>
                     const layoutNode = updatedLayoutNodes.find(n => n.id === node.id);
                     if (!layoutNode) return node;
 
-                    // Optimization: Only update if changed significantly? 
-                    // For now, raw sync.
+                    // Only update position
                     return {
                         ...node,
                         position: { x: layoutNode.x, y: layoutNode.y }
@@ -87,6 +123,22 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({ session, runner }) =>
                 onEdgesChange={onEdgesChange}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
+                onNodeClick={(_, node) => {
+                    if (onSelect) {
+                        // Reconstruct a data object that mimics what Inspector expects.
+                        // Ideally we pass the full Factor object.
+                        // For now: passing id and data.
+                        onSelect({ type: 'node', data: { id: node.id, ...node.data } });
+                    }
+                }}
+                onEdgeClick={(_, edge) => {
+                    if (onSelect) {
+                        onSelect({ type: 'link', data: { id: edge.id, ...edge.data } });
+                    }
+                }}
+                onPaneClick={() => {
+                    if (onSelect) onSelect(null);
+                }}
                 fitView
             >
                 <Background />

@@ -58,4 +58,52 @@ export class LayoutSession {
         // as long as the Session itself is an isolated instance.
         this.nodes = updatedNodes;
     }
+
+    /**
+     * Synchronizes the internal graph state with new domain data (Hydration).
+     * Critical: Preserves positions of existing nodes to prevent 'jumping'.
+     */
+    public syncGraph(newNodes: CausalNode[], newLinks: CausalLink[]): void {
+        const existingNodeMap = new Map(this.nodes.map(n => [n.id, n]));
+
+        // 1. Merge Nodes (Preserve Physics State)
+        this.nodes = newNodes.map(n => {
+            const existing = existingNodeMap.get(n.id);
+            if (existing) {
+                // Keep existing position/velocity
+                return {
+                    ...existing,
+                    radius: n.type === 'system' ? 40 : 20, // Update structural props if changed
+                    isSystem: n.type === 'system'
+                };
+            }
+            // New Node: Random Position
+            return {
+                id: n.id,
+                x: Math.random() * this.config.width,
+                y: Math.random() * this.config.height,
+                vx: 0,
+                vy: 0,
+                radius: n.type === 'system' ? 40 : 20,
+                isSystem: n.type === 'system'
+            };
+        });
+
+        // 2. Refresh Links (Full Replace is usually fine for links, D3 re-binds them)
+        // But we need to ensure Source/Target match the NEW node objects (or IDs if D3 handles it).
+        // Since our Interface defines source/target as string | LayoutNode, 
+        // we reset them to strings so D3 can re-resolve them in the next tick?
+        // OR we map them to the new node objects immediately if we have them.
+
+        // Strategy: Reset to IDs. The Runner/Simulation will need to re-initialize links.
+        // NOTE: This implies the Runner needs to be notified of topology changes.
+        this.links = newLinks.map(l => ({
+            id: l.id,
+            source: l.source,
+            target: l.target,
+            // Defaults from US-CAUSA-05
+            status: 'validated',
+            certainty: 1.0
+        }));
+    }
 }

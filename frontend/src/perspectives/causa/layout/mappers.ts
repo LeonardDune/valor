@@ -1,0 +1,37 @@
+import type { Factor, Claim } from '../../../services/api';
+import type { CausalNode, CausalLink } from '../types';
+
+/**
+ * Maps API Factor to Internal CausalNode
+ */
+export const mapFactorToNode = (factor: Factor): CausalNode => {
+    return {
+        id: factor.id,
+        label: factor.name,
+        type: factor.type === 'systeemelement' ? 'system' : 'factor',
+        description: factor.description
+    };
+};
+
+/**
+ * Maps API Claim to Internal CausalLink
+ */
+export const mapClaimToLink = (claim: Claim): CausalLink => {
+    // Map polarity string to strict type
+    let polarity: 'positive' | 'negative' | 'ambiguous' = 'positive';
+    if (claim.polarity === '-') polarity = 'negative';
+    if (claim.polarity === '?') polarity = 'ambiguous';
+
+    return {
+        id: claim.id,
+        source: claim.source_id || '',
+        target: claim.target_id || '',
+        polarity: polarity,
+        // Using US-CAUSA-05 default logic for now until backend supports it
+        status: 'validated',
+        certainty: claim.confidence || 1.0
+    };
+};
+
+export const mapFactors = (factors: Factor[]) => factors.map(mapFactorToNode);
+export const mapClaims = (claims: Claim[]) => claims.filter(c => c.source_id && c.target_id).map(mapClaimToLink);

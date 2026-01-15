@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 /**
  * A Perspective provides a specific way to interact with the underlying Graph.

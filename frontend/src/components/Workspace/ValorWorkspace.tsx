@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ChatInterface from '../Chat/ChatInterface';
 // import CausalGraph from '../Graph/CausalGraph';
-import { ReactFlowCanvas } from '../Graph/ReactFlowCanvas';
+// import { ReactFlowCanvas } from '../Graph/ReactFlowCanvas';
 import { InspectorSidebar } from '../Graph/InspectorSidebar';
+import { CausaShell } from '../../perspectives/causa';
 import { api, type Claim } from '../../services/api';
 import { FactorModal } from '../Graph/FactorModal';
 import { Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
@@ -19,7 +20,7 @@ type AgentType = 'CAUSA' | 'AXIA' | 'ACTOR' | 'PRAXIS';
 
 export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, projectName, themeName, onBack }) => {
     const [activeAgent, setActiveAgent] = useState<AgentType>('CAUSA');
-    const [claims, setClaims] = useState<Claim[]>([]);
+    // const [claims, setClaims] = useState<Claim[]>([]);
     const [factors, setFactors] = useState<any[]>([]);
     const [selection, setSelection] = useState<{ type: 'node' | 'link'; data: any } | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -33,7 +34,7 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                 api.getThemeFactors(themeId)
             ]);
             console.log('WS: Refreshed Data', { claims: existingClaims.length, factors: themeFactors.length, themeFactors });
-            setClaims(existingClaims);
+            // setClaims(existingClaims);
             setFactors(themeFactors);
         } catch (error) {
             console.error('Failed to fetch theme data:', error);
@@ -45,12 +46,14 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
         refreshData();
     }, [refreshData]);
 
-    const handleClaimsUpdate = async (newClaims: Claim[]) => {
+    const handleClaimsUpdate = async (_newClaims: Claim[]) => {
+        /*
         setClaims(prev => {
             const existingIds = new Set(prev.map(c => c.id));
             const filteredNew = newClaims.filter(c => !existingIds.has(c.id));
             return [...prev, ...filteredNew];
         });
+        */
         // Important: Refresh factors too as chat agent might have created new ones
         await refreshData();
     };
@@ -129,12 +132,10 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                                     + Nieuwe Factor
                                 </button>
                             </div>
-                            {/* <CausalGraph
-                                claims={claims}
-                                factors={factors}
-                                onSelect={setSelection}
-                                selectedId={selection?.data?.id}
-                            /> */}
+                            {/* <CausalGraph ... /> */}
+                            {/* <ReactFlowCanvas ... /> replaced by Causa Shell */}
+                            <CausaShell themeId={themeId} />
+                            {/* 
                             <ReactFlowCanvas
                                 factors={factors}
                                 claims={claims}
@@ -143,6 +144,7 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                                 themeId={themeId}
                                 onRefresh={refreshData}
                             />
+                            */}
                         </div>
 
                         {/* Right: Sidebar */}

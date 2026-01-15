@@ -7,6 +7,7 @@ export interface CausalNode {
     id: string;
     label: string;
     type: 'factor' | 'system';
+    description?: string;
     // Future: status, confidence, evidence
 }
 
@@ -15,5 +16,7 @@ export interface CausalLink {
     source: string;
     target: string;
     polarity: 'positive' | 'negative' | 'ambiguous';
-    // Future: weight, status
+    // Visualization properties (US-CAUSA-05/06)
+    status?: 'proposed' | 'validated' | 'rejected';
+    certainty?: number; // 0.0 - 1.0
 }
