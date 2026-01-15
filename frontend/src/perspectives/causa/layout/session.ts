@@ -13,21 +13,25 @@ export class LayoutSession {
     constructor(
         inputNodes: CausalNode[],
         inputLinks: CausalLink[],
-        config: LayoutConfig
+        config: LayoutConfig,
+        initialPositions?: Map<string, { x: number, y: number }>
     ) {
         this.config = config;
 
         // Deep copy and transform to Layout types
-        // Initialize positions randomly or strictly if provided (future)
-        this.nodes = inputNodes.map(n => ({
-            id: n.id,
-            x: Math.random() * config.width,
-            y: Math.random() * config.height,
-            vx: 0,
-            vy: 0,
-            radius: n.type === 'system' ? 40 : 20, // Example sizing logic
-            isSystem: n.type === 'system'
-        }));
+        // Initialize positions randomly OR from provided seed
+        this.nodes = inputNodes.map(n => {
+            const seed = initialPositions?.get(n.id);
+            return {
+                id: n.id,
+                x: seed ? seed.x : Math.random() * config.width,
+                y: seed ? seed.y : Math.random() * config.height,
+                vx: 0,
+                vy: 0,
+                radius: n.type === 'system' ? 40 : 20,
+                isSystem: n.type === 'system'
+            };
+        });
 
         this.links = inputLinks.map(l => ({
             id: l.id,

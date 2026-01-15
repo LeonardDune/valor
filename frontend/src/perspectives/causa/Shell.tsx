@@ -3,6 +3,7 @@ import { CLDView } from './views/CLDView';
 import { useCausaData } from './hooks/useCausaData';
 import { LayoutSession } from './layout/session';
 import { BasicRunner } from './layout/runners/basic';
+import { SystemRunner } from './layout/runners/system';
 import { FactorModal } from '../../components/Graph/FactorModal';
 import { EditFactorDetailModal } from './views/modals/EditFactorDetailModal';
 import { api } from '../../services/api';
@@ -19,6 +20,7 @@ export const CausaShell = ({ themeId, onSelect: _onSelect }: CausaShellProps) =>
     const [localSelection, setLocalSelection] = useState<{ type: 'node' | 'link'; data: any } | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [layoutMode, setLayoutMode] = useState<'free' | 'system'>('free');
 
     // B. Fetch Data
     const { nodes, links, factors, refresh, loading } = useCausaData(themeId);
@@ -41,7 +43,15 @@ export const CausaShell = ({ themeId, onSelect: _onSelect }: CausaShellProps) =>
         }
     }, [session, nodes, links, loading]);
 
-    const runner = useMemo(() => new BasicRunner(session), [session]);
+    // Switch Runner based on Mode
+    const runner = useMemo(() => {
+        if (layoutMode === 'system') {
+            return new SystemRunner(session);
+        }
+        return new BasicRunner(session);
+    }, [session, layoutMode]);
+
+    // ...
 
     // E. Interactions
     const handleSelect = (sel: { type: 'node' | 'link'; data: any } | null) => {
@@ -68,6 +78,22 @@ export const CausaShell = ({ themeId, onSelect: _onSelect }: CausaShellProps) =>
         <div className="w-full h-full bg-slate-50 relative">
             {/* Header / Toolbar Overlay */}
             <div className="absolute top-4 right-4 z-10 flex gap-2">
+                {/* Layout Toggle */}
+                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-1 flex mr-4">
+                    <button
+                        onClick={() => setLayoutMode('free')}
+                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${layoutMode === 'free' ? 'bg-slate-100 text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                        Vrij
+                    </button>
+                    <button
+                        onClick={() => setLayoutMode('system')}
+                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${layoutMode === 'system' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                        Systeem
+                    </button>
+                </div>
+
                 <button
                     onClick={() => setIsCreateModalOpen(true)}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all"
