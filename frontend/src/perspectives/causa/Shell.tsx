@@ -14,7 +14,7 @@ export interface CausaShellProps {
     selection?: { type: 'node' | 'link'; data: any } | null;
 }
 
-export const CausaShell = ({ themeId, onSelect }: CausaShellProps) => {
+export const CausaShell = ({ themeId, onSelect: _onSelect }: CausaShellProps) => {
     // A. Local UI State
     const [localSelection, setLocalSelection] = useState<{ type: 'node' | 'link'; data: any } | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);

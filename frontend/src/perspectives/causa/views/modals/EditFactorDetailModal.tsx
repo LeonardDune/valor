@@ -1,13 +1,12 @@
-```
 import React, { useState, useEffect } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 // import * as Select from '@radix-ui/react-select'; // Unused, using native select for MVP complexity
-import { 
-    X, 
-    Trash2, 
-    Type, 
-    Link as LinkIcon, 
-    ChevronDown, 
+import {
+    X,
+    Trash2,
+    Type,
+    Link as LinkIcon,
+    ChevronDown,
     Save
 } from 'lucide-react';
 import { api, type FactorType } from '../../../../services/api';
@@ -30,7 +29,7 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
     open,
     onOpenChange,
     onRefresh,
-    factors,
+    factors: _factors,
     themeId
 }) => {
     const [name, setName] = useState('');
