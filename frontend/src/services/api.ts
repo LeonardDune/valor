@@ -34,10 +34,18 @@ export interface Claim {
     created_at?: string;
 }
 
+export interface AgentResponse {
+    agent_name: string;
+    perspective: string;
+    reply: string;
+    extracted_claims: Claim[];
+}
+
 export interface ConversationResponse {
     conversation_id: string;
     reply: string;
     extracted_claims: Claim[];
+    agent_responses: AgentResponse[];
 }
 
 export interface Factor {
