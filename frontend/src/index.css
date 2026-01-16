@@ -1,7 +1,76 @@
 @import "tailwindcss";
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  /* -------------------------------------------------------------------------- */
+  /* VALOR Design System - Global Tokens                                        */
+  /* -------------------------------------------------------------------------- */
+
+  /* PRIMITIVE COLORS (Core Palette) */
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+
+  --color-blue-600: #2563eb;
+  --color-red-600: #dc2626;
+  --color-green-600: #16a34a;
+  --color-amber-500: #f59e0b;
+  --color-neutral-400: #a3a3a3;
+
+  /* SEMANTIC COLORS */
+
+  /* Canvas & Backgrounds */
+  --color-canvas-default: var(--color-slate-50);
+  --color-panel-default: #ffffff;
+  --color-panel-translucent: rgba(255, 255, 255, 0.8);
+
+  /* Text */
+  --color-text-primary: var(--color-slate-900);
+  --color-text-secondary: var(--color-slate-600);
+  --color-text-muted: var(--color-neutral-400);
+
+  /* Causal Semantics (Global) */
+  --color-causal-positive: var(--color-blue-600);
+  --color-causal-negative: var(--color-red-600);
+  --color-causal-neutral: var(--color-neutral-400);
+
+  /* Status Semantics */
+  --color-status-valid: var(--color-green-600);
+  --color-status-warning: var(--color-amber-500);
+  --color-status-error: var(--color-red-600);
+
+  /* BORDERS */
+  --color-border-standard: var(--color-slate-200);
+
+  /* LAYOUT TOKENS */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-panel: 8px;
+  --radius-overlay: 12px;
+  --radius-full: 9999px;
+
+  /* Z-INDEX LAYERS */
+  --z-canvas: 0;
+  --z-panel: 10;
+  /* Panels, Sidebars */
+  --z-overlay: 100;
+  /* Dropdowns, Context Menus */
+  --z-modal: 200;
+  /* Dialogs */
+  --z-cursor: 300;
+  /* Dragging cursors, tooltips */
+  --z-system: 9999;
+  /* Critical system overlays */
+
+  /* TYPOGRAPHY */
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 @keyframes slide-in-right {
