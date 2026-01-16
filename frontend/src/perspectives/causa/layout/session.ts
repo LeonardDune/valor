@@ -13,21 +13,30 @@ export class LayoutSession {
     constructor(
         inputNodes: CausalNode[],
         inputLinks: CausalLink[],
-        config: LayoutConfig
+        config: LayoutConfig,
+        initialPositions?: Map<string, { x: number, y: number }>
     ) {
         this.config = config;
 
         // Deep copy and transform to Layout types
-        // Initialize positions randomly or strictly if provided (future)
-        this.nodes = inputNodes.map(n => ({
-            id: n.id,
-            x: Math.random() * config.width,
-            y: Math.random() * config.height,
-            vx: 0,
-            vy: 0,
-            radius: n.type === 'system' ? 40 : 20, // Example sizing logic
-            isSystem: n.type === 'system'
-        }));
+        // Initialize positions randomly OR from provided seed
+        this.nodes = inputNodes.map(n => {
+            const seed = initialPositions?.get(n.id);
+            // Center Jitter Initialization
+            // Instead of full random (0-1000), start near center to mimic "Explosion" effect
+            const cx = config.width / 2;
+            const cy = config.height / 2;
+            return {
+                id: n.id,
+                x: seed ? seed.x : cx + (Math.random() - 0.5) * 50,
+                y: seed ? seed.y : cy + (Math.random() - 0.5) * 50,
+                vx: 0,
+                vy: 0,
+                radius: n.type === 'system' ? 40 : 20,
+                isSystem: n.type === 'system',
+                rawType: n.role || n.type
+            };
+        });
 
         this.links = inputLinks.map(l => ({
             id: l.id,
@@ -74,18 +83,23 @@ export class LayoutSession {
                 return {
                     ...existing,
                     radius: n.type === 'system' ? 40 : 20, // Update structural props if changed
-                    isSystem: n.type === 'system'
+                    isSystem: n.type === 'system',
+                    rawType: n.role || n.type
                 };
             }
             // New Node: Random Position
+            // New Node: Center Jitter
+            const cx = this.config.width / 2;
+            const cy = this.config.height / 2;
             return {
                 id: n.id,
-                x: Math.random() * this.config.width,
-                y: Math.random() * this.config.height,
+                x: cx + (Math.random() - 0.5) * 50,
+                y: cy + (Math.random() - 0.5) * 50,
                 vx: 0,
                 vy: 0,
                 radius: n.type === 'system' ? 40 : 20,
-                isSystem: n.type === 'system'
+                isSystem: n.type === 'system',
+                rawType: n.role || n.type
             };
         });
 

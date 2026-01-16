@@ -125,12 +125,7 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                                 <div className="bg-white/90 backdrop-blur-md border border-slate-200 px-3 py-1.5 rounded-full text-[10px] font-bold text-slate-500 shadow-sm uppercase tracking-wider">
                                     Causaal Model
                                 </div>
-                                <button
-                                    onClick={() => setIsModalOpen(true)}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-full text-[10px] font-bold shadow-md shadow-blue-200 transition-all hover:scale-105 active:scale-95 uppercase tracking-wider"
-                                >
-                                    + Nieuwe Factor
-                                </button>
+                                {/* Removed duplicate + Nieuwe Factor button */}
                             </div>
                             {/* <CausalGraph ... /> */}
                             {/* <ReactFlowCanvas ... /> replaced by Causa Shell */}

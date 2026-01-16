@@ -1,6 +1,5 @@
 _bmad
-.agent/
-!.agent/workflows/
+.agent/workflows/bmad
 .claude/
 .clinerules/
 .github/
