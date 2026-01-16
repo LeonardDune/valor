@@ -56,7 +56,7 @@ function App() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+    <div className="flex h-screen bg-canvas font-sans text-text-primary overflow-hidden">
 
       {/* Sidebar Navigation */}
       <Sidebar

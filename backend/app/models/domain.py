@@ -84,10 +84,18 @@ class AgentOutput(BaseModel):
     kind: Literal["suggestion", "question", "conflict", "annotation"]
     data: Union[Suggestion, Question, ConflictSignal, Annotation]
 
+class AgentResponse(BaseModel):
+    agent_name: str
+    perspective: str
+    reply: str
+    extracted_claims: List[Claim] = []
+    agent_outputs: List[AgentOutput] = []
+
 class ConversationResponse(BaseModel):
     conversation_id: str
-    reply: str # Keeping for backward compatibility or simple text
-    extracted_claims: List[Claim] = [] # Keeping for backward compatibility
+    reply: str
+    extracted_claims: List[Claim] = []
+    agent_responses: List[AgentResponse] = []
     agent_outputs: List[AgentOutput] = []
 
 class Organization(BaseModel):

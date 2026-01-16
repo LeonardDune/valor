@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Button } from "@/components/ui/button";
+import { LayoutGrid, Network, Plus } from "lucide-react";
 import { CLDView } from './views/CLDView';
 import { useCausaData } from './hooks/useCausaData';
 import { LayoutSession } from './layout/session';
@@ -110,31 +113,35 @@ export const CausaShell = ({ themeId, onSelect: _onSelect }: CausaShellProps) =>
     if (!themeId) return <div className="p-10 text-slate-400">No Theme Context</div>;
 
     return (
-        <div className="w-full h-full bg-slate-50 relative">
+        <div className="w-full h-full bg-background relative">
             {/* Header / Toolbar Overlay */}
-            <div className="absolute top-4 right-4 z-10 flex gap-2">
+            <div className="absolute top-4 right-4 z-10 flex gap-2 items-center">
                 {/* Layout Toggle */}
-                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-1 flex mr-4">
-                    <button
-                        onClick={() => switchMode('free')}
-                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${layoutMode === 'free' ? 'bg-slate-100 text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}
+                <div className="bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 rounded-md shadow-sm border p-0.5">
+                    <ToggleGroup
+                        type="single"
+                        value={layoutMode}
+                        onValueChange={(value) => value && switchMode(value as 'free' | 'system')}
                     >
-                        Vrij
-                    </button>
-                    <button
-                        onClick={() => switchMode('system')}
-                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${layoutMode === 'system' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                        Systeem
-                    </button>
+                        <ToggleGroupItem value="free" size="sm" aria-label="Free Layout">
+                            <Network className="h-4 w-4 mr-2" />
+                            Vrij
+                        </ToggleGroupItem>
+                        <ToggleGroupItem value="system" size="sm" aria-label="System Layout">
+                            <LayoutGrid className="h-4 w-4 mr-2" />
+                            Systeem
+                        </ToggleGroupItem>
+                    </ToggleGroup>
                 </div>
 
-                <button
+                <Button
+                    size="sm"
                     onClick={() => setIsCreateModalOpen(true)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm transition-all"
+                    className="shadow-sm gap-1"
                 >
-                    + Nieuw
-                </button>
+                    <Plus className="h-4 w-4" />
+                    Nieuw
+                </Button>
             </div>
 
             {/* View */}

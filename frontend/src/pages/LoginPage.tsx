@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 export const LoginPage: React.FC = () => {
     const [email, setEmail] = useState('');
@@ -45,61 +49,64 @@ export const LoginPage: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-            <div className="bg-white p-8 rounded-xl shadow-md max-w-md w-full border border-slate-200">
-                <h1 className="text-2xl font-bold text-center text-blue-600 mb-6">VALOR Inloggen</h1>
+        <div className="min-h-screen bg-canvas flex items-center justify-center p-4">
+            <Card className="w-full max-w-md">
+                <CardHeader className="space-y-1">
+                    <CardTitle className="text-2xl font-bold text-center text-primary">VALOR</CardTitle>
+                    <CardDescription className="text-center">
+                        {isSignUp ? 'Maak een account aan' : 'Log in op je account'}
+                    </CardDescription>
+                </CardHeader>
+                <CardContent>
+                    {error && (
+                        <div className="bg-destructive/15 text-destructive p-3 rounded-md mb-4 text-sm font-medium">
+                            {error}
+                        </div>
+                    )}
+                    {message && (
+                        <div className="bg-green-500/15 text-green-600 p-3 rounded-md mb-4 text-sm font-medium">
+                            {message}
+                        </div>
+                    )}
 
-                {error && (
-                    <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm">
-                        {error}
-                    </div>
-                )}
-                {message && (
-                    <div className="bg-green-50 text-green-600 p-3 rounded-lg mb-4 text-sm">
-                        {message}
-                    </div>
-                )}
+                    <form onSubmit={isSignUp ? handleSignUp : handleLogin} className="space-y-4">
+                        <div className="space-y-2">
+                            <Label htmlFor="email">E-mailadres</Label>
+                            <Input
+                                id="email"
+                                type="email"
+                                placeholder="naam@bedrijf.nl"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                required
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="password">Wachtwoord</Label>
+                            <Input
+                                id="password"
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                required
+                            />
+                        </div>
+                        <Button type="submit" className="w-full" disabled={loading}>
+                            {loading ? 'Laden...' : (isSignUp ? 'Registreren' : 'Inloggen')}
+                        </Button>
+                    </form>
 
-                <form onSubmit={isSignUp ? handleSignUp : handleLogin} className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">E-mailadres</label>
-                        <input
-                            type="email"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                            required
-                        />
+                    <div className="mt-4 text-center text-sm text-muted-foreground">
+                        {isSignUp ? 'Heb je al een account?' : 'Nog geen account?'}
+                        <button
+                            onClick={() => { setIsSignUp(!isSignUp); setError(null); setMessage(null); }}
+                            className="ml-1 text-primary hover:underline font-medium"
+                        >
+                            {isSignUp ? 'Login hier' : 'Maak account aan'}
+                        </button>
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Wachtwoord</label>
-                        <input
-                            type="password"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                            required
-                        />
-                    </div>
-                    <button
-                        type="submit"
-                        disabled={loading}
-                        className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
-                    >
-                        {loading ? 'Laden...' : (isSignUp ? 'Registreren' : 'Inloggen')}
-                    </button>
-                </form>
-
-                <div className="mt-4 text-center text-sm text-slate-600">
-                    {isSignUp ? 'Heb je al een account?' : 'Nog geen account?'}
-                    <button
-                        onClick={() => { setIsSignUp(!isSignUp); setError(null); setMessage(null); }}
-                        className="ml-1 text-blue-600 hover:underline font-medium"
-                    >
-                        {isSignUp ? 'Login hier' : 'Maak account aan'}
-                    </button>
-                </div>
-            </div>
+                </CardContent>
+            </Card>
         </div>
     );
 };

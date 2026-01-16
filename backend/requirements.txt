@@ -8,3 +8,5 @@ openai
 langchain-openai
 pyjwt
 cryptography
+crewai
+langchain-community

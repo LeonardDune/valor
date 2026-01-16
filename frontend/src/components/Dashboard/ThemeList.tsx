@@ -1,5 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { api, type Theme } from '../../services/api';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/components/ui/dialog";
+import { Plus, ArrowLeft } from "lucide-react";
 
 interface ThemeListProps {
     projectId: string;
@@ -11,7 +26,7 @@ interface ThemeListProps {
 export const ThemeList: React.FC<ThemeListProps> = ({ projectId, projectName, onSelectTheme, onBack }) => {
     const [themes, setThemes] = useState<Theme[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [isCreating, setIsCreating] = useState(false);
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [newThemeName, setNewThemeName] = useState('');
     const [newThemeDesc, setNewThemeDesc] = useState('');
 
@@ -38,107 +53,110 @@ export const ThemeList: React.FC<ThemeListProps> = ({ projectId, projectName, on
             await api.createTheme(projectId, newThemeName, newThemeDesc);
             setNewThemeName('');
             setNewThemeDesc('');
-            setIsCreating(false);
+            setIsDialogOpen(false);
             fetchThemes();
         } catch (error) {
             console.error('Failed to create theme', error);
         }
     };
 
-    if (isLoading) return <div className="p-8 text-slate-500">Thema's laden...</div>;
+    if (isLoading) return <div className="p-8 text-muted-foreground">Thema's laden...</div>;
 
     return (
-        <div className="max-w-4xl mx-auto p-8">
-            <button
+        <div className="max-w-5xl mx-auto p-8 space-y-8">
+            <Button
+                variant="ghost"
                 onClick={onBack}
-                className="text-slate-500 hover:text-slate-800 mb-6 flex items-center gap-2 text-sm font-medium"
+                className="text-muted-foreground hover:text-foreground pl-0 gap-2"
             >
-                ← Terug naar Projecten
-            </button>
+                <ArrowLeft className="h-4 w-4" />
+                Terug naar Projecten
+            </Button>
 
-            <div className="flex justify-between items-center mb-8">
-                <div>
-                    <h2 className="text-xl text-slate-500">Project</h2>
-                    <h1 className="text-3xl font-bold text-slate-900">{projectName}</h1>
-                    <p className="text-slate-500 mt-2">Selecteer een thema om te verkennen.</p>
+            <div className="flex justify-between items-end">
+                <div className="space-y-1">
+                    <h2 className="text-lg font-medium text-muted-foreground">Project</h2>
+                    <h1 className="text-3xl font-bold tracking-tight">{projectName}</h1>
+                    <p className="text-muted-foreground">Selecteer een thema om te verkennen.</p>
                 </div>
-                <button
-                    onClick={() => setIsCreating(true)}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-                >
-                    + Nieuw Thema
-                </button>
+
+                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                    <DialogTrigger asChild>
+                        <Button className="gap-2">
+                            <Plus className="h-4 w-4" />
+                            Nieuw Thema
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Nieuw Thema Toevoegen</DialogTitle>
+                            <DialogDescription>
+                                Voeg een specifiek thema of probleem toe aan dit project.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <form onSubmit={handleCreate} className="space-y-4 py-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="name">Naam</Label>
+                                <Input
+                                    id="name"
+                                    value={newThemeName}
+                                    onChange={e => setNewThemeName(e.target.value)}
+                                    placeholder="Bijv. Sneeuwoverlast"
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="desc">Omschrijving</Label>
+                                <Textarea
+                                    id="desc"
+                                    value={newThemeDesc}
+                                    onChange={e => setNewThemeDesc(e.target.value)}
+                                    placeholder="Wat gaan we onderzoeken?"
+                                    rows={3}
+                                />
+                            </div>
+                            <DialogFooter>
+                                <Button type="submit" disabled={!newThemeName}>
+                                    Aanmaken
+                                </Button>
+                            </DialogFooter>
+                        </form>
+                    </DialogContent>
+                </Dialog>
             </div>
 
-            {isCreating && (
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8 animate-fade-in">
-                    <h3 className="text-lg font-semibold mb-4">Nieuw Thema Toevoegen</h3>
-                    <form onSubmit={handleCreate} className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Naam</label>
-                            <input
-                                type="text"
-                                value={newThemeName}
-                                onChange={e => setNewThemeName(e.target.value)}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                                placeholder="Bijv. Sneeuwoverlast"
-                                autoFocus
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Omschrijving</label>
-                            <textarea
-                                value={newThemeDesc}
-                                onChange={e => setNewThemeDesc(e.target.value)}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
-                                placeholder="Wat gaan we onderzoeken?"
-                                rows={3}
-                            />
-                        </div>
-                        <div className="flex justify-end gap-3">
-                            <button
-                                type="button"
-                                onClick={() => setIsCreating(false)}
-                                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
-                            >
-                                Annuleren
-                            </button>
-                            <button
-                                type="submit"
-                                disabled={!newThemeName}
-                                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
-                            >
-                                Aanmaken
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            )}
-
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {themes.map(theme => (
-                    <div
+                    <Card
                         key={theme.id}
+                        className="hover:border-primary/50 transition-colors cursor-pointer group relative overflow-hidden"
                         onClick={() => onSelectTheme(theme.id, theme.name)}
-                        className="bg-white p-6 rounded-xl border border-slate-200 hover:border-indigo-400 hover:shadow-md cursor-pointer transition-all group"
                     >
-                        <div className="flex items-start justify-between">
-                            <h3 className="text-lg font-semibold text-slate-800 group-hover:text-indigo-600 mb-2">{theme.name}</h3>
-                            <span className="bg-indigo-50 text-indigo-700 text-xs px-2 py-1 rounded-full border border-indigo-100">
-                                Thema
-                            </span>
-                        </div>
-                        <p className="text-slate-500 text-sm line-clamp-3">
-                            {theme.description || "Geen omschrijving."}
-                        </p>
-                    </div>
+                        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <CardHeader>
+                            <div className="flex items-start justify-between">
+                                <CardTitle className="group-hover:text-primary transition-colors">{theme.name}</CardTitle>
+                            </div>
+                        </CardHeader>
+                        <CardContent>
+                            <CardDescription className="line-clamp-3">
+                                {theme.description || "Geen omschrijving."}
+                            </CardDescription>
+                        </CardContent>
+                    </Card>
                 ))}
-                {themes.length === 0 && !isCreating && (
-                    <div className="col-span-full text-center py-12 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">
-                        Nog geen thema's in dit project.
-                    </div>
-                )}
             </div>
+
+            {themes.length === 0 && (
+                <Card className="border-dashed">
+                    <CardContent className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                        <p>Nog geen thema's in dit project.</p>
+                        <Button variant="link" onClick={() => setIsDialogOpen(true)}>
+                            Maak je eerste thema aan
+                        </Button>
+                    </CardContent>
+                </Card>
+            )}
         </div>
     );
 };
