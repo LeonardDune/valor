@@ -27,7 +27,8 @@ const CLDEdge = ({
     const polarity = data?.polarity || '+';
     const isPositive = polarity === '+' || polarity === 'positive';
     const Icon = isPositive ? PlusCircle : MinusCircle;
-    const color = isPositive ? '#10b981' : '#ef4444';
+    // Use global CSS variable for causal colors
+    const color = isPositive ? 'var(--color-causal-positive)' : 'var(--color-causal-negative)';
 
     return (
         <>

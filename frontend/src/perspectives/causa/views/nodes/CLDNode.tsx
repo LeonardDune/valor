@@ -49,15 +49,14 @@ const CLDNode: FunctionComponent<NodeProps> = ({ data, selected }) => {
     return (
         <div
             className={`
-                group bg-white rounded-xl relative hover:shadow-lg transition-all
-                flex flex-col
+                group bg-panel rounded-panel relative hover:shadow-lg transition-all
+                flex flex-col border border-border-standard
+                ${selected ? 'ring-2 ring-blue-500 border-transparent' : ''}
             `}
             style={{
                 width: CARD_WIDTH,
                 height: CARD_HEIGHT,
-                boxShadow: selected ? `0 4px 20px -5px ${color}40` : '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                border: `2px solid ${selected ? '#2563eb' : 'transparent'}`,
-                outline: selected ? 'none' : '1px solid #e2e8f0',
+                boxShadow: selected ? `0 4px 20px -5px ${color}40` : undefined,
             }}
         >
             {/* Connection Handles - 8 handles for bidirectional connections on all sides */}

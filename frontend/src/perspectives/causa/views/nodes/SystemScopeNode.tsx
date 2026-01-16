@@ -13,13 +13,14 @@ export const SystemScopeNode = memo(({ style }: { style?: React.CSSProperties, d
 
     return (
         <div
-            className="w-full h-full border-2 border-dashed border-slate-300 rounded-lg relative pointer-events-none"
+            className="w-full h-full border-2 border-dashed border-border-standard rounded-overlay relative pointer-events-none"
             style={{
                 ...style, // Merge ReactFlow dimensions
-                backgroundColor: 'rgba(241, 245, 249, 0.3)' // Subtle fill
+                backgroundColor: 'var(--color-slate-100)', // Subtle fill for scope
+                opacity: 0.5
             }}
         >
-            <div className="absolute -top-3 left-4 bg-slate-50 px-2 text-[10px] font-bold text-slate-400 tracking-wider">
+            <div className="absolute -top-3 left-4 bg-canvas px-2 text-[10px] font-bold text-text-muted tracking-wider">
                 SCOPE / SYSTEEMGRENS
             </div>
         </div>
