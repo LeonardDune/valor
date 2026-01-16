@@ -1,5 +1,5 @@
-from crewai import Task
-from crewai import Agent
+from crewai import Task, Agent
+from app.agent.schemas import PerspectiveExtraction
 
 def create_analysis_task(agent: Agent, input_text: str, context: str) -> Task:
     """
@@ -16,10 +16,14 @@ def create_analysis_task(agent: Agent, input_text: str, context: str) -> Task:
         2. Variable types (Means, External, Element, Criteria).
         3. Polarity (+/-).
         
-        Format your response as a clear list of claims and a brief explanation.
+        CRITICAL: 
+        - You must output ONLY the structured JSON object matching the Schema.
+        - Do not output Markdown formatting, code blocks, or conversational text.
+        - Map your findings to 'Suggestion' (CREATE) items.
         """,
-        expected_output="A structured list of identified causal claims and a summary of the reasoning.",
-        agent=agent
+        expected_output="A structured set of causal claims.",
+        agent=agent,
+        output_pydantic=PerspectiveExtraction
     )
 
 def create_critique_task(agent: Agent, input_text: str, context: str) -> Task:
@@ -37,8 +41,13 @@ def create_critique_task(agent: Agent, input_text: str, context: str) -> Task:
         2. Overlooked external factors.
         3. Potential negative side effects.
         
-        Provide 2-3 sharp, constructive questions or counter-points.
+        CRITICAL:
+        - Output ONLY the structured JSON object.
+        - Use 'Question' items for clarifying questions.
+        - Use 'ConflictSignal' items for contradictions.
+        - Use 'Suggestion' (DELETE/UPDATE) if you dispute a specific claim.
         """,
-        expected_output="A set of critical questions or counter-considerations.",
-        agent=agent
+        expected_output="A structured set of critical questions or conflicts.",
+        agent=agent,
+        output_pydantic=PerspectiveExtraction
     )

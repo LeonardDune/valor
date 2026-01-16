@@ -49,40 +49,7 @@ class ConversationRequest(BaseModel):
     conversation_id: Optional[str] = None
     topic: Optional[str] = None
 
-class Revocation(BaseModel):
-    source: str = Field(description="The exact name of the source factor")
-    target: str = Field(description="The exact name of the target factor")
-
-class SuggestionType(str, Enum):
-    CREATE = "create"
-    UPDATE = "update"
-    DELETE = "delete"
-
-class Suggestion(BaseModel):
-    type: SuggestionType
-    claim: Optional[Claim] = None
-    revocation: Optional[Revocation] = None
-    reasoning: Optional[str] = None
-
-class Question(BaseModel):
-    text: str
-    options: List[str] = []
-
-class ConflictSignal(BaseModel):
-    source_claim: Claim
-    conflicting_claim: Claim
-    reasoning: str
-
-class Annotation(BaseModel):
-    node_id: str
-    text: str
-
-# Union of all output types
-# Must use standard typing.Union or specialized Pydantic handling if needed for polymorphism
-from typing import Union, Literal
-class AgentOutput(BaseModel):
-    kind: Literal["suggestion", "question", "conflict", "annotation"]
-    data: Union[Suggestion, Question, ConflictSignal, Annotation]
+from app.agent.schemas import AgentOutput
 
 class AgentResponse(BaseModel):
     agent_name: str

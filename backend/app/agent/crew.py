@@ -1,16 +1,19 @@
 from typing import List, Dict, Any, Union
 from crewai import Crew, Process
-
 from app.agent.registry import AgentRegistry
 from app.agent.tasks import create_analysis_task, create_critique_task
-from app.models.domain import Claim, AgentResponse 
+from app.models.domain import Claim, AgentResponse
+from app.agent.schemas import PerspectiveExtraction, AgentOutput, SuggestionType, ClaimPayload
 import json
 import asyncio
+import uuid
+from datetime import datetime
 
 class CrewOrchestrator:
     """
     Orchestrates the dynamic assembly and execution of CrewAI crews 
     based on the requested perspective.
+    Acts as the strict Gatekeeper for Agent Contracts.
     """
 
     @classmethod
@@ -28,10 +31,7 @@ class CrewOrchestrator:
         crew_agents = [a.create_crewai_agent() for a in agents]
         
         # 3. Create Tasks
-        # We need to map which task factory to use for which agent.
-        # For this pilot, we can do a simple name-based mapping or expand the ValorAgent protocol
         tasks = []
-        agent_role_map = {} 
         
         # Helper to execute a single agent's crew
         async def run_single_agent_crew(valor_agent, crew_agent, task):
@@ -42,14 +42,13 @@ class CrewOrchestrator:
                 process=Process.sequential,
                 verbose=True
             )
+            # crew.kickoff() returns CrewOutput (which contains pydantic field)
             output = await asyncio.to_thread(crew.kickoff)
-            return (valor_agent, str(output))
+            return (valor_agent, output)
 
         # Build tasks and prepare coroutines
         coroutines = []
         for valor_agent, crew_agent in zip(agents, crew_agents):
-            agent_role_map[crew_agent.role] = valor_agent
-            
             if "Causal" in valor_agent.name:
                 task = create_analysis_task(crew_agent, input_text, context)
             elif "Advocate" in valor_agent.name:
@@ -63,15 +62,49 @@ class CrewOrchestrator:
         # Execute all crews in parallel
         results = await asyncio.gather(*coroutines)
         
-        # Format Response
+        # 4. Process and Validate Outputs
         responses = []
-        for valor_agent, output_content in results:
+        for valor_agent, outputobj in results:
             extracted_claims = []
+            agent_outputs = []
+            reply_text = str(outputobj.raw)
+
+            # A. Check for Strict Contract Compliance
+            if outputobj.pydantic and isinstance(outputobj.pydantic, PerspectiveExtraction):
+                structured_data: PerspectiveExtraction = outputobj.pydantic
+                reply_text = structured_data.thought_process
+                
+                for item in structured_data.agent_outputs:
+                    # B. Gatekeeper Logic: Metadata Injection & Validation
+                    # Ensure perspective matches the requested one (or agent's own)
+                    item.perspective = perspective 
+                    
+                    # Add to strictly typed output list
+                    agent_outputs.append(item)
+                    
+                    # C. Backward Compatibility: Map Suggestions to extracted_claims
+                    if item.kind == "suggestion" and item.data.type == SuggestionType.CREATE:
+                        cp: ClaimPayload = item.data.claim
+                        if cp:
+                            new_claim = Claim(
+                                id=str(uuid.uuid4()),
+                                created_at=datetime.now(),
+                                statement=cp.statement,
+                                source_node=cp.source_node,
+                                target_node=cp.target_node,
+                                relationship_type=cp.relationship_type,
+                                polarity=cp.polarity,
+                                confidence=cp.confidence * 100 # payload is 0-1, domain is 0-100 (legacy quirk)
+                            )
+                            extracted_claims.append(new_claim)
+
+            # D. Construct Response
             responses.append(AgentResponse(
                 agent_name=valor_agent.name,
                 perspective=valor_agent.perspective,
-                reply=output_content,
-                extracted_claims=extracted_claims
+                reply=reply_text,
+                extracted_claims=extracted_claims,
+                agent_outputs=agent_outputs
             ))
             
         return responses
