@@ -1,27 +1,6 @@
-import React, { useRef, useEffect } from 'react';
-import { api, type Claim, type AgentResponse } from '../../services/api';
-import {
-    ThreadPrimitive,
-    ComposerPrimitive,
-    MessagePrimitive,
-    AssistantRuntimeProvider,
-    useLocalRuntime,
-    useThreadRuntime,
-    useMessage,
-    type ChatModelAdapter,
-    type ThreadMessage
-} from "@assistant-ui/react";
-import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import { Send, Shield, AlertTriangle } from 'lucide-react';
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import ReactMarkdown from 'react-markdown';
 
-interface ChatInterfaceProps {
-    topic: string;
-    onClaimsUpdate: (claims: Claim[]) => void;
-}
-
-const MarkdownTextAdapter = (props: any) => <MarkdownTextPrimitive {...props} />;
+// ...
 
 const AgentBlock: React.FC<{ agent: AgentResponse }> = ({ agent }) => {
     const isNormative = agent.role_type === 'NORMATIVE';
@@ -40,8 +19,7 @@ const AgentBlock: React.FC<{ agent: AgentResponse }> = ({ agent }) => {
                 </span>
             </div>
             <div className="prose prose-sm max-w-none text-muted-foreground">
-                {/* Using MarkdownTextAdapter as it correctly passes props internally */}
-                <MarkdownTextAdapter children={agent.reply} />
+                <ReactMarkdown>{agent.reply}</ReactMarkdown>
             </div>
         </div>
     );
