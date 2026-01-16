@@ -1,5 +1,5 @@
 import React, { useRef, useEffect } from 'react';
-import { api, type Claim } from '../../services/api';
+import { api, type Claim, type AgentResponse } from '../../services/api';
 import {
     ThreadPrimitive,
     ComposerPrimitive,
@@ -7,11 +7,12 @@ import {
     AssistantRuntimeProvider,
     useLocalRuntime,
     useThreadRuntime,
+    useMessage,
     type ChatModelAdapter,
     type ThreadMessage
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import { Send } from 'lucide-react';
+import { Send, Shield, AlertTriangle } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -22,12 +23,58 @@ interface ChatInterfaceProps {
 
 const MarkdownTextAdapter = (props: any) => <MarkdownTextPrimitive {...props} />;
 
+const AgentBlock: React.FC<{ agent: AgentResponse }> = ({ agent }) => {
+    const isNormative = agent.role_type === 'NORMATIVE';
+    const bgColor = isNormative ? 'bg-purple-50/50' : 'bg-blue-50/50';
+    const borderColor = isNormative ? 'border-purple-200' : 'border-blue-200';
+    const textColor = isNormative ? 'text-purple-900' : 'text-blue-900';
+    const Icon = isNormative ? AlertTriangle : Shield;
+
+    return (
+        <div className={`mb-4 rounded-lg border ${bgColor} ${borderColor} p-4 text-sm`}>
+            <div className={`flex items-center gap-2 font-semibold mb-2 ${textColor}`}>
+                <Icon className="w-4 h-4" />
+                <span>{agent.agent_name}</span>
+                <span className="text-xs opacity-70 px-2 py-0.5 rounded-full border border-current">
+                    {agent.role_type || 'DESCRIPTIVE'}
+                </span>
+            </div>
+            <div className="prose prose-sm max-w-none text-muted-foreground">
+                {/* Using MarkdownTextAdapter as it correctly passes props internally */}
+                <MarkdownTextAdapter children={agent.reply} />
+            </div>
+        </div>
+    );
+};
+
 const MyMessage: React.FC = () => {
+    const messageState = useMessage();
+    // Access metadata from the message state. The type might need casting or custom access.
+    // In assistant-ui 0.5+, useMessage returns the message object (or similar).
+    // The lint error said "Property 'message' does not exist on MessageState".
+    // So messageState IS the object we should look at?
+    // Let's try matching the ThreadMessage type.
+    const metadata = (messageState as any).metadata?.custom;
+    const agentResponses = metadata?.agent_responses as AgentResponse[] | undefined;
+
     return (
         <MessagePrimitive.Root className="flex mb-4 w-full">
             <div className="flex w-full data-[role=user]:justify-end data-[role=assistant]:justify-start">
-                <div className="max-w-[85%] rounded-2xl p-4 shadow-sm text-sm leading-relaxed overflow-hidden data-[role=user]:bg-primary data-[role=user]:text-primary-foreground data-[role=user]:rounded-br-none data-[role=assistant]:bg-muted data-[role=assistant]:text-muted-foreground data-[role=assistant]:rounded-bl-none">
-                    <MessagePrimitive.Content components={{ Text: MarkdownTextAdapter }} />
+                <div className={`max-w-[85%] rounded-2xl shadow-sm text-sm leading-relaxed overflow-hidden 
+                    data-[role=user]:bg-primary data-[role=user]:text-primary-foreground data-[role=user]:rounded-br-none data-[role=user]:p-4
+                    data-[role=assistant]:bg-transparent data-[role=assistant]:text-foreground data-[role=assistant]:rounded-bl-none data-[role=assistant]:w-full`}
+                >
+                    {agentResponses ? (
+                        <div className="flex flex-col gap-2 w-full">
+                            {agentResponses.map((agent, step) => (
+                                <AgentBlock key={step} agent={agent} />
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="bg-muted p-4 rounded-2xl rounded-bl-none text-muted-foreground">
+                            <MessagePrimitive.Content components={{ Text: MarkdownTextAdapter }} />
+                        </div>
+                    )}
                 </div>
             </div>
         </MessagePrimitive.Root>
@@ -56,17 +103,15 @@ const ChatInitializer: React.FC<{ topic: string, onClaimsUpdate: (claims: Claim[
                     onClaimsUpdate(response.extracted_claims);
                 }
 
-                let replyText = response.reply;
-                if (response.agent_responses && response.agent_responses.length > 0) {
-                    replyText = response.agent_responses.map(agent => (
-                        `### ${agent.agent_name}\n${agent.reply}`
-                    )).join("\n\n---\n\n");
-                }
-
                 // Append the initial greeting to the runtime
                 thread.append({
                     role: "assistant",
-                    content: [{ type: "text", text: replyText }]
+                    content: [{ type: "text", text: response.reply }],
+                    metadata: {
+                        custom: {
+                            agent_responses: response.agent_responses
+                        }
+                    }
                 });
             } catch (error) {
                 console.error("Initial chat error:", error);
@@ -104,15 +149,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ topic, onClaimsUpdate }) 
                     onClaimsUpdate(response.extracted_claims);
                 }
 
-                let replyText = response.reply;
-                if (response.agent_responses && response.agent_responses.length > 0) {
-                    replyText = response.agent_responses.map(agent => (
-                        `### ${agent.agent_name}\n${agent.reply}`
-                    )).join("\n\n---\n\n");
-                }
-
                 return {
-                    content: [{ type: "text", text: replyText }],
+                    content: [{ type: "text", text: response.reply }],
+                    metadata: {
+                        custom: {
+                            agent_responses: response.agent_responses
+                        }
+                    }
                 };
             } catch (error) {
                 console.error("Chat error:", error);

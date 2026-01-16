@@ -37,6 +37,7 @@ export interface Claim {
 export interface AgentResponse {
     agent_name: string;
     perspective: string;
+    role_type?: 'DESCRIPTIVE' | 'NORMATIVE';
     reply: string;
     extracted_claims: Claim[];
 }

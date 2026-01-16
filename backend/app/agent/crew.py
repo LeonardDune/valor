@@ -102,6 +102,7 @@ class CrewOrchestrator:
             responses.append(AgentResponse(
                 agent_name=valor_agent.name,
                 perspective=valor_agent.perspective,
+                role_type=valor_agent.role_type, # Propagate RoleType
                 reply=reply_text,
                 extracted_claims=extracted_claims,
                 agent_outputs=agent_outputs

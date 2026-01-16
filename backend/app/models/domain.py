@@ -54,6 +54,7 @@ from app.agent.schemas import AgentOutput
 class AgentResponse(BaseModel):
     agent_name: str
     perspective: str
+    role_type: str = "DESCRIPTIVE"
     reply: str
     extracted_claims: List[Claim] = []
     agent_outputs: List[AgentOutput] = []

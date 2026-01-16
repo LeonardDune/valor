@@ -1,6 +1,6 @@
 from typing import Any
 from crewai import Agent, LLM
-from app.agent.types import ValorAgent
+from app.agent.types import ValorAgent, RoleType
 import os
 
 class CausalAnalystAgent(ValorAgent):
@@ -8,6 +8,7 @@ class CausalAnalystAgent(ValorAgent):
     role: str = "Causal System Analyst"
     goal: str = "Identify and structure causal relationships in public policy discussions."
     perspective: str = "CAUSA"
+    role_type: RoleType = RoleType.DESCRIPTIVE
 
     def create_crewai_agent(self) -> Agent:
         return Agent(
@@ -29,6 +30,7 @@ class DevilsAdvocateAgent(ValorAgent):
     role: str = "Critical Reviewer"
     goal: str = "Challenge assumptions and highlight potential negative side-effects or overlooked factors."
     perspective: str = "CAUSA" # Co-located with CAUSA for this pilot to provide immediate feedback
+    role_type: RoleType = RoleType.NORMATIVE
 
     def create_crewai_agent(self) -> Agent:
         return Agent(
