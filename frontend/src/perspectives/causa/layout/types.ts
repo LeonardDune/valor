@@ -15,6 +15,7 @@ export interface LayoutNode {
     // Domain data attached for weight/sizing calculations
     radius: number;
     isSystem: boolean;
+    rawType?: string; // e.g. 'middel', 'criterium', 'extern'
 }
 
 export interface LayoutLink {

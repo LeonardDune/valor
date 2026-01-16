@@ -22,14 +22,19 @@ export class LayoutSession {
         // Initialize positions randomly OR from provided seed
         this.nodes = inputNodes.map(n => {
             const seed = initialPositions?.get(n.id);
+            // Center Jitter Initialization
+            // Instead of full random (0-1000), start near center to mimic "Explosion" effect
+            const cx = config.width / 2;
+            const cy = config.height / 2;
             return {
                 id: n.id,
-                x: seed ? seed.x : Math.random() * config.width,
-                y: seed ? seed.y : Math.random() * config.height,
+                x: seed ? seed.x : cx + (Math.random() - 0.5) * 50,
+                y: seed ? seed.y : cy + (Math.random() - 0.5) * 50,
                 vx: 0,
                 vy: 0,
                 radius: n.type === 'system' ? 40 : 20,
-                isSystem: n.type === 'system'
+                isSystem: n.type === 'system',
+                rawType: n.role || n.type
             };
         });
 
@@ -78,18 +83,23 @@ export class LayoutSession {
                 return {
                     ...existing,
                     radius: n.type === 'system' ? 40 : 20, // Update structural props if changed
-                    isSystem: n.type === 'system'
+                    isSystem: n.type === 'system',
+                    rawType: n.role || n.type
                 };
             }
             // New Node: Random Position
+            // New Node: Center Jitter
+            const cx = this.config.width / 2;
+            const cy = this.config.height / 2;
             return {
                 id: n.id,
-                x: Math.random() * this.config.width,
-                y: Math.random() * this.config.height,
+                x: cx + (Math.random() - 0.5) * 50,
+                y: cy + (Math.random() - 0.5) * 50,
                 vx: 0,
                 vy: 0,
                 radius: n.type === 'system' ? 40 : 20,
-                isSystem: n.type === 'system'
+                isSystem: n.type === 'system',
+                rawType: n.role || n.type
             };
         });
 

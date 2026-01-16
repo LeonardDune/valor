@@ -4,14 +4,14 @@ import type { LayoutSession } from '../session';
 import type { LayoutNode, LayoutLink } from '../types';
 
 /**
- * SystemRunner: Uses d3-force to layout nodes based on causal connections.
+ * ForceRunner: Uses d3-force to layout nodes based on causal connections.
  * 
  * Goals:
  * 1. Pull related nodes together (Links).
  * 2. Push all nodes apart to prevent overlap (Collision/Charge).
  * 3. Center the graph.
  */
-export class SystemRunner implements LayoutRunner {
+export class ForceRunner implements LayoutRunner {
     private session: LayoutSession;
     private simulation: d3.Simulation<LayoutNode, LayoutLink>;
     private isRunning: boolean = false;
@@ -30,25 +30,26 @@ export class SystemRunner implements LayoutRunner {
         this.simulation.force('center', d3.forceCenter(config.width / 2, config.height / 2).strength(0.05));
 
         // Charge (Many-Body): Nodes repel each other
-        // System nodes (purple) might repel more?
+        // Increased strength again to separate clusters (User feedback: they were too close)
         this.simulation.force('charge', d3.forceManyBody<LayoutNode>()
-            .strength(d => d.isSystem ? -500 : -200)
-            .distanceMax(500)
+            .strength(d => d.isSystem ? -400 : -200)
+            .distanceMax(800) // Increased interaction distance
         );
 
-        // Collision: Prevent overlap. Radius matches visual size approx.
-        // Node is ~100px wide? Radius ~50-60 is safe.
+        // Collision: Prevent overlap.
+        // Increased radius to ~85 (Node width ~140, height ~100) + margin
+        // Increased strength to 1.0 (Hard collision)
         this.simulation.force('collide', d3.forceCollide<LayoutNode>()
-            .radius(d => d.isSystem ? 70 : 60)
-            .strength(0.7)
-            .iterations(1)
+            .radius(d => d.isSystem ? 100 : 85)
+            .strength(1.0)
+            .iterations(2)
         );
 
         // Links: Pull connected nodes together
         this.simulation.force('link', d3.forceLink<LayoutNode, LayoutLink>(session.getLinks())
             .id(d => d.id)
-            .distance(150) // Ideal edge length
-            .strength(0.2) // Not too rigid
+            .distance(180) // Increased distance to give breathing room inside clusters
+            .strength(0.2)
         );
 
         // Custom Forces? (e.g. keeping 'Extern' on the left?)
@@ -60,13 +61,9 @@ export class SystemRunner implements LayoutRunner {
         if (this.isRunning) return;
         this.isRunning = true;
 
-        // Alpha determines the "energy" of the simulation.
-        // If restarting, we might want to reheat it if it cooled down.
-        if (this.simulation.alpha() < 0.1) {
-            this.simulation.alpha(1).restart();
-        } else {
-            this.simulation.restart();
-        }
+        // 1. Refresh Data from Session & Reheat
+        // We reuse the update logic to ensure consistency
+        this.updateData(this.session.getNodes(), this.session.getLinks());
 
         // Use the simulation's internal timer for efficient updates
         this.simulation.on('tick', () => {
@@ -87,5 +84,36 @@ export class SystemRunner implements LayoutRunner {
 
     public onTick(callback: (nodes: LayoutNode[]) => void): void {
         this.tickCallback = callback;
+    }
+
+    public updateData(nodes: LayoutNode[], links: LayoutLink[]): void {
+        this.simulation.nodes(nodes);
+        const linkForce = this.simulation.force('link') as d3.ForceLink<LayoutNode, LayoutLink>;
+        if (linkForce) {
+            linkForce.links(links);
+        }
+
+        // Reheat if running
+        if (this.isRunning) {
+            this.simulation.alpha(1).restart();
+        }
+    }
+
+    public onDrag(nodeId: string, x: number, y: number, isDragging: boolean): void {
+        const node = this.session.getNodes().find(n => n.id === nodeId);
+        if (!node) return;
+
+        if (isDragging) {
+            // Pin the node and wake up simulation
+            node.fx = x;
+            node.fy = y;
+            // Reheat significantly to make it feel reactive
+            this.simulation.alphaTarget(0.3).restart();
+        } else {
+            // Release the node
+            node.fx = null;
+            node.fy = null;
+            this.simulation.alphaTarget(0);
+        }
     }
 }

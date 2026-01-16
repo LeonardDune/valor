@@ -1,7 +1,10 @@
-import type { FunctionComponent } from 'react';
-import { BaseEdge, EdgeLabelRenderer, type EdgeProps, getBezierPath } from 'reactflow';
 
-const CLDEdge: FunctionComponent<EdgeProps> = ({
+import React from 'react';
+import { type EdgeProps, getBezierPath, EdgeLabelRenderer, BaseEdge } from 'reactflow';
+import { PlusCircle, MinusCircle } from 'lucide-react';
+
+const CLDEdge = ({
+    id,
     sourceX,
     sourceY,
     targetX,
@@ -10,8 +13,8 @@ const CLDEdge: FunctionComponent<EdgeProps> = ({
     targetPosition,
     style = {},
     markerEnd,
-    data
-}) => {
+    data,
+}: EdgeProps) => {
     const [edgePath, labelX, labelY] = getBezierPath({
         sourceX,
         sourceY,
@@ -21,47 +24,37 @@ const CLDEdge: FunctionComponent<EdgeProps> = ({
         targetPosition,
     });
 
-    const polarity = data?.polarity; // '+' or '-'
-    const status = data?.status || 'validated';
-    const certainty = data?.certainty ?? 1.0;
-
-    // Visual Mapping
-    const isProposed = status === 'proposed';
-    const opacity = 0.3 + (certainty * 0.7); // Min 0.3 opacity
+    const polarity = data?.polarity || '+';
+    const isPositive = polarity === '+' || polarity === 'positive';
+    const Icon = isPositive ? PlusCircle : MinusCircle;
+    const color = isPositive ? '#10b981' : '#ef4444';
 
     return (
         <>
-            <BaseEdge
-                path={edgePath}
-                markerEnd={markerEnd}
-                style={{
-                    ...style,
-                    opacity,
-                    strokeDasharray: isProposed ? '5,5' : undefined,
-                }}
-            />
-            {polarity && (
-                <EdgeLabelRenderer>
-                    <div
-                        style={{
-                            position: 'absolute',
-                            transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
-                            background: '#fff',
-                            padding: '2px 4px',
-                            borderRadius: '4px',
-                            fontSize: '12px',
-                            fontWeight: 'bold',
-                            border: '1px solid #ccc',
-                            pointerEvents: 'all',
-                        }}
-                        className="nodrag nopan"
-                    >
-                        {polarity}
+            <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} />
+            <EdgeLabelRenderer>
+                <div
+                    style={{
+                        position: 'absolute',
+                        transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+                        fontSize: 12,
+                        pointerEvents: 'all',
+                        zIndex: 10,
+                    }}
+                    className="nodrag nopan"
+                >
+                    <div className="bg-white rounded-full p-[2px] shadow-sm ring-1 ring-slate-200">
+                        <Icon
+                            size={16}
+                            color={color}
+                            fill="white"
+                            strokeWidth={2}
+                        />
                     </div>
-                </EdgeLabelRenderer>
-            )}
+                </div>
+            </EdgeLabelRenderer>
         </>
     );
 };
 
-export default CLDEdge;
+export default React.memo(CLDEdge);
