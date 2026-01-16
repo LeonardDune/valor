@@ -1,294 +1,496 @@
-Ik geef je:
+Gezien jouw uitgebreide concept voor [VALOR](docs/VALOR-concept.md) en het [CAUSA-perspectief](docs/causa_concept.md), kan ik de architectuur en het implementatieplan expliciet afstemmen op CAUSA als perspectief binnen VALOR, inclusief de visie op uitbreidbaarheid naar andere perspectieven en layouts. Ik vat dit in een ontwikkelaarsvriendelijke structuur samen.
 
-Een beknopte maar dragende architectuurbeschrijving van het geheel
+1. Bredere architectuur – VALOR ecosysteem
+1.1 Overkoepelend systeem
 
-Eén Epic: “CAUSAL perspectief uitbreidbaar maken”
+VALOR is een platform dat:
 
-Concreet geformuleerde User Stories, technisch genoeg om direct te implementeren
+Domeinoverstijgend werkt
 
-Duidelijke niet-doelen, zodat dit geen refactor-moeras wordt
+Waardegedreven en expliciet normatief is
 
-Alles expliciet gericht op: nu één perspectief goed doen, later kunnen uitbreiden.
+Menselijke samenwerking ondersteunt
 
-1. Bredere architectuur – op hoofdlijnen, functioneel
-1.1 Architectuurprincipe (leidend)
+Agents gebruikt als rolgebonden specialisten, geen hiërarchie, geen autonome beslissers
 
-Single Source of Truth
+Principe:
+Elke agent/perspectief werkt op een gedeelde graph (Neo4j), maar houdt zijn eigen subset en regels.
 
-Neo4j bevat het canonieke graph-model
+1.2 Perspectieven en agents
 
-Frontend maakt projecties, geen kopieën van waarheid
+Een perspectief is een module waarin een groep mensen samenwerkt met een crew van AI agents.
 
-Perspectief = projectie + interactieregels
+Het perspectief:
 
-Een perspectief:
+selecteert een subset van de canonieke graph
 
-selecteert een subset van de graph
+bepaalt interactieregels voor de gebruikers
 
-hanteert eigen bewerkingen
+registreert beschikbare views (visualisaties)
 
-toont eigen views
+bevat geen layout- of domeinlogica van andere perspectieven
 
-Views zijn vervangbaar
+CAUSA is een perspectief, andere perspectieven (AXIA, ACTOR, THEMIS, POLIS, PRAXIS, VALENS) volgen hetzelfde patroon.
 
-Een view (bijv. CLD-canvas) is:
+1.3 Views
 
-geen eigenaar van data
+Views zijn puur visuele representaties van een perspectief-subset.
 
-geen eigenaar van layout
+Ze hebben geen kennis van Neo4j of van andere perspectieven.
 
-alleen een visualisatie-instrument
+Ze ontvangen nodes + edges met posities van layouts.
 
-Layouts zijn puur technisch
+Ze renderen, sturen interacties terug, maar voeren geen layout-berekeningen uit.
 
-Layouts:
+1.4 Layouts
 
-kennen geen domein
+Layouts zijn volledig geïsoleerde modules:
 
-kennen geen perspectief
+nemen een LayoutSession als input
 
-werken op tijdelijke sessies
+manipuleren alleen tijdelijke node-posities
 
-Dit is de minimale set principes die je uitbreidbaarheid borgt.
+committen output naar de view
 
-1.2 Frontend-architectuur (concreet, niet theoretisch)
+kennen geen perspectieven, geen andere layouts, geen Neo4j
+
+Een perspectief kan oneindig veel layouts hebben, elk volledig onafhankelijk van andere layouts in hetzelfde perspectief of in andere perspectieven.
+
+1.5 LayoutSession
+
+Per run van een layout wordt een LayoutSession gecreëerd.
+
+Bevat:
+
+lokale nodes en edges (kopie van de geselecteerde subset)
+
+startposities
+
+layout-specifieke parameters
+
+Is stateless, deterministisch en niet gedeeld.
+
+Switch tussen layouts = nieuwe session, oude layouts blijven onaangetast.
+
+1.6 Relaties tussen componenten
+VALOR
+ ├─ Perspectieven (CAUSA, AXIA, etc.)
+ │    ├─ GraphProjection (subset van Neo4j)
+ │    ├─ Views (CLDView, Lijst, Tabel)
+ │    └─ LayoutController (LayoutSession -> LayoutRunner)
+ │         └─ Layouts (Force, System, FeedbackLoop, ...)
+ └─ Neo4j (single source of truth)
+
+
+Perspectieven: organisatorisch en functioneel gescheiden
+
+Views: visualisatie en interactie
+
+Layouts: ordening en posities
+
+Neo4j: alle data, hypothesen, claims, tegenstrijdigheden
+
+1.7 Key design rules
+
+Single source of truth: Neo4j bevat alle data. Perspectieven lezen en schrijven expliciet.
+
+Layouts zijn plug-ins: volledig los van perspectieven en views.
+
+Deterministisch: elke layout-run is volledig reproduceerbaar.
+
+Extensible: nieuwe perspectieven of layouts worden toegevoegd zonder refactor van bestaande perspectieven of layouts.
+
+Mens-in-de-loop: AI agents ondersteunen, dicteren niet.
+
+2. Epic: “CAUSA-perspectief uitbreidbaar en robuust implementeren”
+
+Doel:
+Het CAUSA-perspectief zo inrichten dat het:
+
+volledig zelfvoorzienend is
+
+meerdere layouts kan hebben zonder elkaar te beïnvloeden
+
+makkelijk uitbreidbaar is naar andere perspectieven en andere causal-analyse tools
+
+2.1 User Stories
+US-CAUSA-01 – Perspectiefmodulair
+
+Als ontwikkelaar
+Wil ik CAUSA implementeren als afzonderlijke module met eigen GraphProjection en Views
+Zodat andere perspectieven later hetzelfde patroon kunnen volgen zonder refactor.
+
+Acceptatiecriteria:
+
+CausalPerspective module bevat GraphProjection, ViewRegistry, InteractionRules
+
+Geen dependency op andere perspectieven
+
+US-CAUSA-02 – LayoutSession per run
+
+Als gebruiker of ontwikkelaar
+Wil ik dat elke layout-run op een eigen LayoutSession draait
+Zodat layouts onafhankelijk blijven en switchen layouts niet elkaar beïnvloedt.
+
+Acceptatiecriteria:
+
+LayoutSession bevat lokale kopieën van nodes en edges
+
+Startposities worden bij elke layout-run opnieuw bepaald
+
+Layouts committen alleen posities aan de view
+
+US-CAUSA-03 – LayoutRunner interface
+
+Als ontwikkelaar
+Wil ik een gestandaardiseerde interface voor layouts
+Zodat nieuwe layouts eenvoudig toegevoegd kunnen worden.
+
+Acceptatiecriteria:
+
+interface LayoutRunner {
+  run(session: LayoutSession): LayoutResult;
+}
+
+
+Layouts zijn stateless en deterministisch
+
+Layouts kennen geen perspectieven of andere layouts
+
+US-CAUSA-04 – CLDView strikt renderer
+
+Als ontwikkelaar
+Wil ik dat CLDView alleen nodes en edges renderen
+Zodat layout-logica volledig gescheiden blijft van visualisatie.
+
+Acceptatiecriteria:
+
+CLDView ontvangt nodes met posities
+
+CLDView stuurt interacties terug
+
+Geen D3-force code in de view
+
+US-CAUSA-05 – Samenwerking en onzekerheid
+
+Als gebruiker
+Wil ik dat meerdere causal claims naast elkaar bestaan met status en zekerheid
+Zodat menselijke deelnemers en AI agent samen exploreren.
+
+Acceptatiecriteria:
+
+Neo4j graph bevat CAUSAL_CLAIM met status, polariteit en zekerheid
+
+UI toont visueel verschil tussen voorstellen, geaccepteerd en betwist
+
+2.2 Niet-doelen pilot
+
+Geen automatisering van causal discovery
+
+Geen autonome AI-modellering
+
+Geen beheer van meerdere perspectieven tegelijk (pilot beperkt tot CAUSA)
+
+Geen complexe workflowregie of inter-perspectief integratie
+
+3. Concreet implementatieplan (stapsgewijs)
+
+Module-structuur opzetten
+
+CausalPerspective module
+
+GraphProjection, Views, LayoutController
+
+Contract interface voor layouts
+
+GraphProjection
+
+subset van Neo4j voor causal claims
+
+mapping naar interne node/edge-structuur
+
+filter voor onzekerheid en status
+
+Layout-infrastructuur
+
+LayoutSession per run
+
+LayoutRunner interface
+
+ForceLayout en SystemLayout implementatie
+
+CLDView
+
+puur rendering
+
+ontvangt node-posities
+
+stuurt interacties terug
+
+CAUSA-agent
+
+stateless
+
+input: graph subset + user event
+
+output: suggesties, vragen, waarschuwingen
+
+geen mutaties in Neo4j
+
+Samenwerkingsscenario pilot
+
+minimaal 2 gebruikers
+
+causal loop met 3–5 factoren
+
+agent detecteert loops en stelt vragen
+
+Evaluatie en voorbereiding extensie
+
+test: extra layout toevoegen
+
+test: nieuwe causal claim types toevoegen
+
+documenteer contracten voor toekomstige perspectieven
+
+
+##Frontend architectuur voor AI Agents binnen VALOR ecosysteem
+
+Goede en noodzakelijke vraag. Dit raakt precies het punt waar veel “AI-enabled” tools architectonisch ontsporen: agents die stilzwijgend overal tussendoor praten. Hier een nuchtere, uitbreidbare frontend-architectuur waarin AI Agents eerste-klas burgers zijn, zonder dat CAUSA of latere perspectieven vervuilen of refactors afdwingen.
+
+Ik beschrijf eerst het conceptuele model, daarna de frontend-architectuur, en sluit af met concrete implicaties voor CAUSA nu.
+
+1. Conceptueel model: wat is een AI Agent in VALOR?
+
+Binnen VALOR is een AI Agent frontend-technisch géén:
+
+chatbot in de marge
+
+globale assistent
+
+magische “achtergrondintelligentie”
+
+Maar wél:
+
+Een rolgebonden, perspectief-specifieke actor met expliciete interactiepunten en eigen UI-contracten.
+
+Essentiële eigenschappen
+
+Een AI Agent:
+
+Is gebonden aan één perspectief
+
+Heeft een afgebakende taak of rol
+
+Interacteert via expliciete UI-kanalen
+
+Produceert voorstellen, analyses of spanningen, geen mutaties
+
+Is verwisselbaar en meervoudig
+
+Dat laatste is cruciaal: meerdere agents tegelijk, zelfs met tegengestelde interpretaties.
+
+2. Gevolg voor frontend-architectuur
+Kernprincipe
+
+Agents zijn geen features, maar participants.
+
+Dat betekent: ze krijgen een structurele plek in de frontend-architectuur, vergelijkbaar met views en layouts.
+
+3. Frontend-architectuur met Agents
+3.1 Overzicht
 Frontend
-│
-├─ App Shell
-│   └─ Routing + globale context
-│
-├─ Perspective Layer
-│   └─ CausalPerspective
-│       ├─ GraphProjection
-│       ├─ View Registry
-│       └─ Interaction Rules
-│
-├─ View Layer
-│   └─ CLDView
-│       ├─ Canvas (React Flow)
-│       └─ LayoutController
-│
-├─ Layout Layer
-│   ├─ LayoutSession
-│   ├─ ForceLayoutRunner
-│   └─ SystemLayoutRunner
-│
-└─ Domain Contracts
-    ├─ GraphNode
-    ├─ GraphEdge
-    └─ Ontology Types (UFO-aligned)
+ ├─ PerspectiveShell (CAUSA)
+ │    ├─ ViewArea
+ │    │    └─ CLDView
+ │    ├─ LayoutController
+ │    ├─ AgentPanelRegion
+ │    │    ├─ AgentUI (CausalAnalyst)
+ │    │    ├─ AgentUI (LoopDetector)
+ │    │    └─ AgentUI (DevilsAdvocate)
+ │    └─ SharedEventBus
 
 
 Belangrijk:
 
-CAUSAL perspectief is één map
+AgentUI is een first-class UI component
 
-Andere perspectieven worden later kopieën van deze structuur
+Meerdere AgentUI’s kunnen tegelijk actief zijn
 
-Geen gedeelde layout-logica tussen perspectieven
+AgentUI’s kennen geen layouts en geen views
 
-2. Wat betekent “CAUSAL perspectief” hier concreet
+3.2 AgentUI ≠ Chat
 
-Het CAUSAL perspectief is:
+Een AgentUI is niet per definitie een chatinterface.
 
-gericht op oorzaak-gevolgrelaties
+Mogelijke AgentUI-vormen:
 
-werkt met een CLD-view
+Suggestiepanelen
 
-gebruikt meerdere layouts om inzicht te geven
+Hypothese-lijsten
 
-leest en schrijft causale claims in de graph
+Spanningsmeldingen
 
-Niet meer, niet minder.
+Vragen aan gebruikers
 
-3. Epic: “CAUSAL perspectief uitbreidbaar inrichten”
-Epic-doel
+Vergelijkingen tussen claims
 
-Als ontwikkelaar wil ik het CAUSAL perspectief zodanig structureren dat:
+Annotaties bij graph-elementen
 
-layouts volledig geïsoleerd zijn
+Chat is slechts één mogelijke interactievorm.
 
-views geen kennis hebben van andere perspectieven
+4. Architectonisch patroon: Agent as View-Adjacent Component
+4.1 Interfacecontract
+interface PerspectiveAgent {
+  id: AgentId;
+  role: AgentRole;
+  observe(events: PerspectiveEvent[]): AgentInput;
+  produce(input: AgentInput): AgentOutput[];
+}
 
-een nieuw perspectief later kan worden toegevoegd zonder refactor van CAUSAL
 
-4. User Stories (gegroepeerd, uitvoerbaar)
-Epic CAUSAL-01 — Perspectiefstructuur expliciet maken
-US-01.1 — CausalPerspective als expliciete module
+Frontend vertaalt:
 
-Als ontwikkelaar
-Wil ik dat het CAUSAL perspectief één duidelijk afgebakende module is
-Zodat andere perspectieven later dezelfde structuur kunnen volgen
+gebruikersacties
 
-Acceptatiecriteria
+graph-events
 
-CausalPerspective heeft:
+layout-switches
 
-eigen graph-projection
+naar PerspectiveEvents.
 
-eigen view registry
+Agent produceert AgentOutputs, geen directe UI-mutaties.
 
-Geen imports vanuit andere perspectieven
+4.2 AgentOutput types
+type AgentOutput =
+  | Suggestion
+  | Question
+  | ConflictSignal
+  | PatternDetected
+  | AnnotationProposal;
 
-Geen layout-logica in deze laag
 
-US-01.2 — GraphProjection voor CAUSAL
+Frontend beslist:
 
-Als CAUSAL perspectief
-Wil ik een expliciete projectie van nodes en edges
-Zodat alleen causale elementen zichtbaar en bewerkbaar zijn
+waar dit zichtbaar wordt
 
-Acceptatiecriteria
+hoe het wordt geprioriteerd
 
-Eén functie die:
+of het persistent wordt
 
-Neo4j-resultaat → CausalGraph
+Dit voorkomt agent-gedreven UI-chaos.
 
-Geen React Flow types in deze laag
+5. AgentPanelRegion: waarom een aparte regio?
+Reden 1: uitbreidbaarheid
 
-Ontologie-types expliciet gebruikt
+Nieuwe agent toevoegen = nieuwe panel
 
-Epic CAUSAL-02 — Layouts isoleren via LayoutSession
-US-02.1 — Introduceren van LayoutSession
+Geen impact op CLDView
 
-Als layout-engine
-Wil ik werken op een eigen LayoutSession
-Zodat layouts elkaar niet beïnvloeden
+Geen impact op Layouts
 
-Acceptatiecriteria
+Geen impact op andere agents
 
-LayoutSession bevat:
+Reden 2: normativiteit expliciet
 
-lokale nodes
+Normatieve agents (bijv. “waardenwaakhond”) krijgen hun eigen zichtbare ruimte.
 
-lokale edges
+Geen vermenging van descriptief en normatief zonder expliciete confrontatie.
 
-startposities
+Reden 3: conflict is zichtbaar
 
-Elke layout-switch creëert een nieuwe session
+Twee agents mogen elkaar tegenspreken.
+Frontend faciliteert dat, maskeert het niet.
 
-Geen hergebruik van layout-state
+6. Events als bindmiddel
+SharedEventBus (per perspectief)
 
-US-02.2 — Force layout als onafhankelijke runner
+Alle onderdelen publiceren en abonneren:
+
+Views
+
+LayoutController
+
+AgentUIs
+
+User interactions
+
+type PerspectiveEvent =
+  | NodeSelected
+  | ClaimAdded
+  | ClaimRejected
+  | LayoutChanged
+  | PerspectiveInitialized;
+
+
+Agents luisteren mee, maar zijn passief totdat geactiveerd.
+
+7. Wat verandert dit voor CAUSA nu?
+7.1 Wat je NU moet doen
+
+Zonder overengineering:
+
+Reserveer structureel ruimte voor agents
+
+AgentPanelRegion in CAUSA shell
+
+Introduceer AgentUI als concept
+
+ook al start je met één agent
+
+Werk met PerspectiveEvents
+
+ook al zijn het er eerst maar vijf
+
+Laat agents alleen voorstellen doen
+
+nooit direct muteren
+
+7.2 Wat je NU expliciet niet doet
+
+Geen globale chat
+
+Geen agent die layout of graph direct wijzigt
+
+Geen agent-logica in CLDView
+
+Geen agent-specifieke code in layouts
+
+8. User Stories – CAUSA Agents (toevoeging aan Epic)
+US-CAUSA-AG-01 – AgentPanelRegion
 
 Als gebruiker
-Wil ik een force-based layout zien
-Zodat clusters van causale verbanden zichtbaar worden
+Wil ik één of meerdere agentpanelen naast mijn CLD zien
+Zodat analyses expliciet en vergelijkbaar blijven.
 
-Acceptatiecriteria
-
-ForceLayoutRunner:
-
-kent geen React Flow
-
-kent geen perspectief
-
-Startposities worden bij session-creatie bepaald
-
-Runner commit alleen position
-
-US-02.3 — System layout als onafhankelijke runner
+US-CAUSA-AG-02 – Meerdere agents tegelijk
 
 Als gebruiker
-Wil ik een system layout zien
-Zodat causale elementen logisch gepositioneerd zijn
+Wil ik meerdere agents parallel kunnen activeren
+Zodat verschillende interpretaties zichtbaar blijven.
 
-Acceptatiecriteria
-
-SystemLayoutRunner:
-
-gebruikt dezelfde LayoutSession
-
-geen D3-force verplicht
-
-Wisselen van layout reset posities
-
-Epic CAUSAL-03 — CLD View zuiver houden
-US-03.1 — CLDView als renderer, niet als controller
+US-CAUSA-AG-03 – AgentOutputs expliciet
 
 Als ontwikkelaar
-Wil ik dat CLDView alleen rendert
-Zodat layout- en perspectieflogica elders blijft
+Wil ik dat agents alleen gestructureerde outputs leveren
+Zodat UI-consistentie behouden blijft.
 
-Acceptatiecriteria
+US-CAUSA-AG-04 – Normatief versus descriptief zichtbaar
 
-CLDView:
+Als gebruiker
+Wil ik kunnen zien of een agent descriptief of normatief opereert
+Zodat interpretaties niet onzichtbaar vermengd worden.
 
-ontvangt nodes met posities
+9. Waarom dit refactor-veilig is
 
-stuurt geen layout-events
+CAUSA blijft leidend
 
-Geen D3-code in CLDView
+Agents zijn plug-ins
 
-US-03.2 — LayoutController per view
+Views blijven dumb
 
-Als CLDView
-Wil ik één LayoutController
-Zodat layouts verwisselbaar zijn
+Layouts blijven stateless
 
-Acceptatiecriteria
+Nieuwe perspectieven hergebruiken exact dit patroon
 
-LayoutController:
-
-kiest runner op basis van layoutType
-
-beheert session lifecycle
-
-Geen kennis van Neo4j
-
-Epic CAUSAL-04 — Voorbereiding op andere perspectieven (zonder ze te bouwen)
-US-04.1 — Perspective contract vastleggen
-
-Als ontwikkelaar
-Wil ik een lichtgewicht contract voor perspectieven
-Zodat een volgend perspectief hetzelfde patroon kan volgen
-
-Acceptatiecriteria
-
-Interface of type:
-
-getProjection()
-
-getViews()
-
-CAUSAL implementeert dit contract
-
-Geen generieke “PerspectiveEngine”
-
-5. Niet-doelen (expliciet)
-
-Om scope creep te voorkomen:
-
-Geen variant-management
-
-Geen conflictmodellering
-
-Geen AI Agent integratie
-
-Geen generieke “ecosysteem-engine”
-
-Geen herontwerp van Neo4j-schema
-
-Dit plan maakt ze mogelijk, maar implementeert ze niet.
-
-6. Waarom dit werkt (en je tempo bewaart)
-
-Je refactort structuur, niet gedrag
-
-Je huidige CLD-functionaliteit blijft leidend
-
-Je lost het layout-probleem fundamenteel op
-
-Je creëert een herhaalbaar patroon voor:
-
-waardenperspectief
-
-stakeholderperspectief
-
-oplossingsontwerp
-
-Dit is exact de balans tussen:
-
-architectuur als ruggengraat
-en
-code als voortgang
+Je bouwt dus niet “AI erin”, maar AI ernaast, als mede-participant.

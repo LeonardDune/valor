@@ -26,7 +26,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return (
         <div
             className={`
-        h-screen bg-slate-900 text-slate-300 flex flex-col transition-all duration-300
+        h-screen bg-slate-900 text-slate-300 flex flex-col transition-all duration-300 z-panel relative
         ${isCollapsed ? 'w-16' : 'w-64'}
       `}
         >
