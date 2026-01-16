@@ -5,19 +5,17 @@ from typing import List, Optional
 import os
 import uuid
 from datetime import datetime
-from app.models.domain import Claim, ConversationResponse
+from app.models.domain import (
+    Claim, ConversationResponse, AgentOutput, Suggestion, SuggestionType, 
+    Question, ConflictSignal, Annotation, Revocation
+)
 from app.db.crud import fetch_existing_factors, get_conversation_topic, save_claims, revoke_claims
-
-class Revocation(BaseModel):
-    source: str = Field(description="The exact name of the source factor")
-    target: str = Field(description="The exact name of the target factor")
 
 # Simplified output model for the LLM ensuring strict schema adherence
 class CausalExtraction(BaseModel):
     thought_process: str = Field(description="Analyseer stap-voor-stap: Welke concepten zie ik? Welk TU Delft type (middel, extern, systeemelement, criterium) hebben ze?")
     reply: str = Field(description="Een behulpzaam antwoord in het Nederlands, eindigend met een onderzoeksvraag.")
-    claims: List[Claim] = Field(description="Lijst van nieuwe causale verbanden.", default=[])
-    revocations: List[Revocation] = Field(description="Lijst van te verwijderen verbanden.", default=[])
+    agent_outputs: List[AgentOutput] = Field(description="Lijst van gestructureerde acties (Suggesties, Vragen, Conflicten, Annotaties).", default=[])
 
 def get_agent_chain():
     api_key = os.getenv("OPENAI_API_KEY")
@@ -39,12 +37,17 @@ Elke factor MOET worden ingedeeld in een van deze 4 types:
 - 'systeemelement' (Element): Interne variabelen van het proces.
 - 'criterium' (Criteria): De gewenste uitkomsten of succesindicatoren.
 
-2. CAUSALE EXTRACTIE:
-Luister naar uitspraken als "X verhoogt Y" of "A leidt tot B".
-- Bron-node: De naam van de oorzaak.
-- Doel-node: De naam van het gevolg.
-- Polariteit: "+" voor positieve correlatie, "-" voor negatieve.
-- Voor elke node, bepaal het type (middel, extern, systeemelement, criterium).
+2. ACTIES & OUTPUTS:
+In plaats van alleen tekst, communiceer je via gestructureerde acties:
+
+- **Suggestion (CREATE)**: Als de gebruiker een nieuwe relatie noemt ("X leidt tot Y").
+  - Vul `claim` in met bron/doel/polariteit.
+- **Suggestion (DELETE)**: Als de gebruiker een relatie intrekt ("X heeft toch geen invloed op Y").
+  - Vul `revocation` in.
+- **Question**: Als je iets moet vragen aan de gebruiker.
+  - Vul `text` in en optionele `options` als het een meerkeuzevraag is.
+- **ConflictSignal**: Als de gebruiker iets zegt wat bestaande kennis tegenspreekt.
+- **Annotation**: Als je een specifieke opmerking hebt bij een node.
 
 3. BEGRIPSBEWAKING:
 Houd de lijst met bestaande factoren in de gaten: {existing_factors}.
@@ -52,26 +55,18 @@ Houd de lijst met bestaande factoren in de gaten: {existing_factors}.
 - Voeg synoniemen agressief samen.
 
 4. FEEDBACK & PERSONA:
-Je bent een kritische denkpartner. Als een verband onlogisch lijkt, stel dan een scherpe verhelderende vraag.
-Eindig elk antwoord met precies één concrete onderzoeksvraag in het **vet**.
+Je bent een kritische denkpartner. Als een verband onlogisch lijkt, stel dan een scherpe verhelderende vraag via een `Question` output of in de `reply`.
+Eindig je `reply` met een samenvatting of de volgende stap.
 
 5. TAAL:
 Alles (antwoord, factornamen, thought process) MOET in het NEDERLANDS.
 
 Het thema van deze sessie is: "{topic}". Gebruik dit thema NIET als naam voor een node.
 
-Analyseer stap-voor-stap:
+Analyseer stap-voor-stap in `thought_process`:
 1. Identificeer concepten en categoriseer ze.
-2. Controleer op correcties door de gebruiker.
-3. Genereer suggesties als dit het begin van de sessie is.
-
-JSON Formaat:
-{{
-  "thought_process": "...",
-  "reply": "...",
-  "claims": [{{ "source_node": "...", "source_type": "...", "target_node": "...", "target_type": "...", "polarity": "+", "statement": "..." }}],
-  "revocations": [{{ "source": "...", "target": "..." }}]
-}}
+2. Bepaal welke acties (Suggesties, Vragen) nodig zijn.
+3. Formuleer een antwoord.
 """
 
     prompt = ChatPromptTemplate.from_messages([
@@ -97,18 +92,31 @@ async def process_user_message(message: str, conversation_id: str) -> Conversati
         "topic": topic_str
     })
     
-    # Post-process claims to ensure unique IDs
-    for claim in result.claims:
-        claim.id = str(uuid.uuid4())
-        claim.created_at = datetime.now()
+    # Process outputs
+    extracted_claims = []
+    revocations_to_process = []
     
+    # We maintain backward compatibility by populating extracted_claims
+    for output in result.agent_outputs:
+        if output.kind == "suggestion":
+            suggestion = output.data
+            if suggestion.type == SuggestionType.CREATE and suggestion.claim:
+                claim = suggestion.claim
+                claim.id = str(uuid.uuid4())
+                claim.created_at = datetime.now()
+                extracted_claims.append(claim)
+                # Ensure the original suggestion output has the ID too if we wanted to pass it back
+                # But suggestion.claim is a reference, so it should be updated
+            elif suggestion.type == SuggestionType.DELETE and suggestion.revocation:
+                revocations_to_process.append(suggestion.revocation.model_dump())
+
     # Handle revocations if any
-    if result.revocations:
-        rev_data = [r.model_dump() for r in result.revocations]
-        await revoke_claims(conversation_id, rev_data)
+    if revocations_to_process:
+        await revoke_claims(conversation_id, revocations_to_process)
 
     return ConversationResponse(
         conversation_id=conversation_id,
         reply=result.reply,
-        extracted_claims=result.claims
+        extracted_claims=extracted_claims,
+        agent_outputs=result.agent_outputs
     )
