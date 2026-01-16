@@ -56,10 +56,17 @@ const ChatInitializer: React.FC<{ topic: string, onClaimsUpdate: (claims: Claim[
                     onClaimsUpdate(response.extracted_claims);
                 }
 
+                let replyText = response.reply;
+                if (response.agent_responses && response.agent_responses.length > 0) {
+                    replyText = response.agent_responses.map(agent => (
+                        `### ${agent.agent_name}\n${agent.reply}`
+                    )).join("\n\n---\n\n");
+                }
+
                 // Append the initial greeting to the runtime
                 thread.append({
                     role: "assistant",
-                    content: [{ type: "text", text: response.reply }]
+                    content: [{ type: "text", text: replyText }]
                 });
             } catch (error) {
                 console.error("Initial chat error:", error);
@@ -97,8 +104,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ topic, onClaimsUpdate }) 
                     onClaimsUpdate(response.extracted_claims);
                 }
 
+                let replyText = response.reply;
+                if (response.agent_responses && response.agent_responses.length > 0) {
+                    replyText = response.agent_responses.map(agent => (
+                        `### ${agent.agent_name}\n${agent.reply}`
+                    )).join("\n\n---\n\n");
+                }
+
                 return {
-                    content: [{ type: "text", text: response.reply }],
+                    content: [{ type: "text", text: replyText }],
                 };
             } catch (error) {
                 console.error("Chat error:", error);

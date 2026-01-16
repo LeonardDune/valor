@@ -49,10 +49,17 @@ class ConversationRequest(BaseModel):
     conversation_id: Optional[str] = None
     topic: Optional[str] = None
 
+class AgentResponse(BaseModel):
+    agent_name: str
+    perspective: str
+    reply: str
+    extracted_claims: List[Claim] = []
+
 class ConversationResponse(BaseModel):
     conversation_id: str
     reply: str
     extracted_claims: List[Claim] = []
+    agent_responses: List[AgentResponse] = []
 
 class Organization(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
