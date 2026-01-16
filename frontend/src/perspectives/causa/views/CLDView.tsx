@@ -149,6 +149,9 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                         }
                     }
                 }
+                const isPositive = cl.polarity === 'positive';
+                const edgeStrokeColor = isPositive ? 'var(--color-causal-positive-line)' : 'var(--color-causal-negative-line)';
+                const edgeMarkerColor = isPositive ? 'var(--color-causal-positive-marker)' : 'var(--color-causal-negative-marker)';
 
                 return {
                     id: cl.id,
@@ -157,10 +160,15 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                     sourceHandle,
                     targetHandle,
                     type: 'cldEdge',
+                    style: {
+                        strokeWidth: 2,
+                        stroke: edgeStrokeColor,
+                    },
                     markerEnd: {
                         type: MarkerType.ArrowClosed,
                         width: 20,
-                        height: 20
+                        height: 20,
+                        color: edgeMarkerColor,
                     },
                     data: {
                         polarity: cl.polarity,

@@ -3,6 +3,8 @@ import { memo } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
 import { Wrench, Cloud, Cpu, Target, HelpCircle, type LucideProps } from 'lucide-react';
 
+import { Badge } from "@/components/ui/badge";
+
 // Use strict Lucide types
 const iconMap: Record<string, FunctionComponent<LucideProps>> = {
     middel: Wrench,
@@ -12,12 +14,33 @@ const iconMap: Record<string, FunctionComponent<LucideProps>> = {
     unknown: HelpCircle
 };
 
-const iconColors: Record<string, string> = {
-    middel: '#3b82f6',
-    extern: '#64748b',
-    systeemelement: '#8b5cf6',
-    criterium: '#f59e0b',
-    unknown: '#94a3b8'
+// Map roles to Tailwind classes
+const roleStyles: Record<string, { color: string, badge: string, icon: string }> = {
+    middel: {
+        color: 'text-blue-600',
+        badge: 'bg-blue-50 text-blue-700 hover:bg-blue-50 border-blue-200',
+        icon: 'text-blue-600'
+    },
+    extern: {
+        color: 'text-slate-500',
+        badge: 'bg-slate-50 text-slate-600 hover:bg-slate-50 border-slate-200',
+        icon: 'text-slate-500'
+    },
+    systeemelement: {
+        color: 'text-violet-600',
+        badge: 'bg-violet-50 text-violet-700 hover:bg-violet-50 border-violet-200',
+        icon: 'text-violet-600'
+    },
+    criterium: {
+        color: 'text-amber-600',
+        badge: 'bg-amber-50 text-amber-700 hover:bg-amber-50 border-amber-200',
+        icon: 'text-amber-600'
+    },
+    unknown: {
+        color: 'text-slate-400',
+        badge: 'bg-slate-50 text-slate-500 hover:bg-slate-50 border-slate-200',
+        icon: 'text-slate-400'
+    }
 };
 
 const CARD_WIDTH = '140px';
@@ -44,20 +67,19 @@ const CLDNode: FunctionComponent<NodeProps> = ({ data, selected }) => {
     // Note: I will update mapper to pass `role`. 
 
     const Icon = iconMap[role] || iconMap.unknown;
-    const color = iconColors[role] || iconColors.unknown;
+    const styles = roleStyles[role] || roleStyles.unknown;
 
     return (
         <div
             className={`
-                group bg-white rounded-xl relative hover:shadow-lg transition-all
-                flex flex-col
+                group bg-white rounded-panel relative hover:shadow-lg transition-all
+                flex flex-col border border-border-standard
+                ${selected ? 'ring-2 ring-blue-500 border-transparent' : ''}
             `}
             style={{
                 width: CARD_WIDTH,
                 height: CARD_HEIGHT,
-                boxShadow: selected ? `0 4px 20px -5px ${color}40` : '0 4px 6px -1px rgb(0 0 0 / 0.1)',
-                border: `2px solid ${selected ? '#2563eb' : 'transparent'}`,
-                outline: selected ? 'none' : '1px solid #e2e8f0',
+                // boxShadow: selected ? `0 4px 20px -5px ${color}40` : undefined, // Removed custom shadow for standard ring
             }}
         >
             {/* Connection Handles - 8 handles for bidirectional connections on all sides */}
@@ -78,13 +100,10 @@ const CLDNode: FunctionComponent<NodeProps> = ({ data, selected }) => {
             <Handle id="source-bottom" type="source" position={Position.Bottom} className="w-2 h-2 !bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
 
             {/* Header / Tag */}
-            <div className="pt-2 px-2">
-                <div
-                    className="text-[10px] font-semibold px-2 py-0.5 rounded-md w-fit mx-auto"
-                    style={{ backgroundColor: `${color}15`, color: color }}
-                >
+            <div className="pt-2 px-2 flex justify-center">
+                <Badge variant="outline" className={`text-[10px] px-2 py-0 h-5 border shadow-none ${styles.badge}`}>
                     {role.charAt(0).toUpperCase() + role.slice(1)}
-                </div>
+                </Badge>
             </div>
 
             {/* Body / Title */}
@@ -95,8 +114,8 @@ const CLDNode: FunctionComponent<NodeProps> = ({ data, selected }) => {
             </div>
 
             {/* Footer Icon */}
-            <div className="absolute bottom-2 right-2 opacity-50">
-                <Icon size={16} color={color} />
+            <div className={`absolute bottom-2 right-2 opacity-50 ${styles.icon}`}>
+                <Icon size={16} />
             </div>
         </div>
     );

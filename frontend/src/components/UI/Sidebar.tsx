@@ -26,32 +26,32 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return (
         <div
             className={`
-        h-screen bg-slate-900 text-slate-300 flex flex-col transition-all duration-300 z-panel relative
+        h-screen bg-sidebar text-sidebar-foreground border-r border-sidebar-border flex flex-col transition-all duration-300 z-panel relative
         ${isCollapsed ? 'w-16' : 'w-64'}
       `}
         >
             {/* Header / Org Switcher */}
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+            <div className="p-4 border-b border-sidebar-border flex items-center justify-between">
                 {!isCollapsed && (
-                    <div className="font-bold text-white text-xl tracking-tight">VALOR</div>
+                    <div className="font-bold text-sidebar-foreground text-xl tracking-tight">VALOR</div>
                 )}
                 <button
                     onClick={() => setIsCollapsed(!isCollapsed)}
-                    className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+                    className="p-1.5 hover:bg-sidebar-accent rounded-lg text-sidebar-foreground/70 hover:text-sidebar-accent-foreground transition-colors"
                 >
                     {isCollapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
                 </button>
             </div>
 
             {/* Org Selector (Collapsed = Icon, Expanded = Dropdown) */}
-            <div className="p-4 border-b border-slate-800">
+            <div className="p-4 border-b border-sidebar-border">
                 {!isCollapsed ? (
                     <div className="space-y-1">
-                        <label className="text-xs font-semibold text-slate-500 uppercase">Organisatie</label>
+                        <label className="text-xs font-semibold text-sidebar-foreground/60 uppercase">Organisatie</label>
                         <select
                             value={activeOrganization?.id || ''}
                             onChange={(e) => switchOrganization(e.target.value)}
-                            className="w-full bg-slate-800 border-none rounded-md px-3 py-2 text-sm text-white focus:ring-1 focus:ring-indigo-500 outline-none cursor-pointer hover:bg-slate-700 transition"
+                            className="w-full bg-sidebar-accent border-none rounded-md px-3 py-2 text-sm text-sidebar-foreground focus:ring-1 focus:ring-sidebar-ring outline-none cursor-pointer hover:bg-sidebar-accent/80 transition"
                         >
                             {organizations.map(org => (
                                 <option key={org.id} value={org.id}>{org.name}</option>
@@ -60,7 +60,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                 ) : (
                     <div className="flex justify-center" title={activeOrganization?.name}>
-                        <div className="w-8 h-8 rounded bg-indigo-600 flex items-center justify-center text-white font-bold text-xs">
+                        <div className="w-8 h-8 rounded bg-primary flex items-center justify-center text-primary-foreground font-bold text-xs">
                             {activeOrganization?.name.substring(0, 2).toUpperCase()}
                         </div>
                     </div>
@@ -79,8 +79,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 />
 
                 {selectedProjectName && (
-                    <div className="my-2 border-l border-slate-700 ml-4 pl-3 space-y-1">
-                        {!isCollapsed && <div className="text-xs text-slate-500 mb-1">Actief Project</div>}
+                    <div className="my-2 border-l border-sidebar-border ml-4 pl-3 space-y-1">
+                        {!isCollapsed && <div className="text-xs text-sidebar-foreground/60 mb-1">Actief Project</div>}
                         <NavItem
                             icon={<Folder size={18} />}
                             label={selectedProjectName}
@@ -93,8 +93,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
 
                 {selectedThemeName && view === 'WORKSPACE' && (
-                    <div className="my-2 border-l-2 border-indigo-500 ml-4 pl-3 space-y-1">
-                        {!isCollapsed && <div className="text-xs text-indigo-400 mb-1">Actief Thema</div>}
+                    <div className="my-2 border-l-2 border-primary ml-4 pl-3 space-y-1">
+                        {!isCollapsed && <div className="text-xs text-primary mb-1">Actief Thema</div>}
                         <NavItem
                             icon={<Layout size={18} />}
                             label={selectedThemeName}
@@ -109,7 +109,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {/* Footer / User */}
-            <div className="p-4 border-t border-slate-800 space-y-2">
+            <div className="p-4 border-t border-sidebar-border space-y-2">
                 <NavItem
                     icon={<Settings size={20} />}
                     label="Instellingen"
@@ -121,7 +121,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     onClick={() => signOut()}
                     className={`
                 w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors
-                text-red-400 hover:bg-slate-800 hover:text-red-300
+                text-destructive hover:bg-destructive/10 hover:text-destructive
                 ${isCollapsed ? 'justify-center' : ''}
             `}
                     title="Uitloggen"
@@ -132,8 +132,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {!isCollapsed && user && (
-                <div className="px-6 pb-4 text-xs text-slate-600 text-center">
-                    Ingelogd als <br /> <span className="text-slate-500">{user.email}</span>
+                <div className="px-6 pb-4 text-xs text-sidebar-foreground/70 text-center">
+                    Ingelogd als <br /> <span className="text-sidebar-foreground/50">{user.email}</span>
                 </div>
             )}
         </div>
@@ -146,8 +146,8 @@ const NavItem = ({ icon, label, isActive, onClick, isCollapsed, subItem }: any) 
         className={`
             w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all
             ${isActive
-                ? 'bg-indigo-600/10 text-indigo-400'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'}
+                ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
+                : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}
             ${isCollapsed ? 'justify-center' : ''}
             ${subItem ? 'text-sm' : ''}
         `}
