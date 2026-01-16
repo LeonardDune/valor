@@ -1,6 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../../services/api';
 import { useOrganization } from '../../context/OrganizationContext';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/components/ui/dialog";
+import { Plus } from "lucide-react";
 
 interface Project {
     id: string;
@@ -17,7 +32,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onSelectProject }) => 
     const { activeOrganization } = useOrganization();
     const [projects, setProjects] = useState<Project[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [isCreating, setIsCreating] = useState(false);
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectDesc, setNewProjectDesc] = useState('');
 
@@ -48,99 +63,105 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onSelectProject }) => 
             await api.createProject(newProjectName, activeOrganization.id, newProjectDesc);
             setNewProjectName('');
             setNewProjectDesc('');
-            setIsCreating(false);
+            setIsDialogOpen(false);
             fetchProjects();
         } catch (error) {
             console.error('Failed to create project', error);
         }
     };
 
-    if (isLoading) return <div className="p-8 text-slate-500">Projecten laden...</div>;
+    if (isLoading) return <div className="p-8 text-muted-foreground">Projecten laden...</div>;
 
     return (
-        <div className="max-w-4xl mx-auto p-8">
-            <div className="flex justify-between items-center mb-8">
-                <div>
-                    <h1 className="text-3xl font-bold text-slate-900">Mijn Projecten</h1>
-                    <p className="text-slate-500 mt-2">
-                        Beheer projecten voor <span className="font-semibold text-blue-600">{activeOrganization?.name}</span>.
+        <div className="max-w-5xl mx-auto p-8 space-y-8">
+            <div className="flex justify-between items-end">
+                <div className="space-y-1">
+                    <h1 className="text-3xl font-bold tracking-tight">Mijn Projecten</h1>
+                    <p className="text-muted-foreground">
+                        Beheer projecten voor <span className="font-semibold text-primary">{activeOrganization?.name}</span>.
                     </p>
                 </div>
-                <button
-                    onClick={() => setIsCreating(true)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-                >
-                    + Nieuw Project
-                </button>
+
+                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                    <DialogTrigger asChild>
+                        <Button className="gap-2">
+                            <Plus className="h-4 w-4" />
+                            Nieuw Project
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Nieuw Project Starten</DialogTitle>
+                            <DialogDescription>
+                                Maak een nieuw project aan om analyses in te organiseren.
+                            </DialogDescription>
+                        </DialogHeader>
+                        <form onSubmit={handleCreate} className="space-y-4 py-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="name">Naam</Label>
+                                <Input
+                                    id="name"
+                                    value={newProjectName}
+                                    onChange={e => setNewProjectName(e.target.value)}
+                                    placeholder="Bijv. Bereikbaarheid Randstad"
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label htmlFor="desc">Omschrijving</Label>
+                                <Textarea
+                                    id="desc"
+                                    value={newProjectDesc}
+                                    onChange={e => setNewProjectDesc(e.target.value)}
+                                    placeholder="Korte toelichting op het project..."
+                                    rows={3}
+                                />
+                            </div>
+                            <DialogFooter>
+                                <Button type="submit" disabled={!newProjectName}>
+                                    Aanmaken
+                                </Button>
+                            </DialogFooter>
+                        </form>
+                    </DialogContent>
+                </Dialog>
             </div>
 
-            {isCreating && (
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8 animate-fade-in">
-                    <h3 className="text-lg font-semibold mb-4">Nieuw Project Starten</h3>
-                    <form onSubmit={handleCreate} className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Naam</label>
-                            <input
-                                type="text"
-                                value={newProjectName}
-                                onChange={e => setNewProjectName(e.target.value)}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="Bijv. Bereikbaarheid Randstad"
-                                autoFocus
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">Omschrijving</label>
-                            <textarea
-                                value={newProjectDesc}
-                                onChange={e => setNewProjectDesc(e.target.value)}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="Korte toelichting op het project..."
-                                rows={3}
-                            />
-                        </div>
-                        <div className="flex justify-end gap-3">
-                            <button
-                                type="button"
-                                onClick={() => setIsCreating(false)}
-                                className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg"
-                            >
-                                Annuleren
-                            </button>
-                            <button
-                                type="submit"
-                                disabled={!newProjectName}
-                                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                            >
-                                Aanmaken
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            )}
-
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {projects.map(project => (
-                    <div
+                    <Card
                         key={project.id}
+                        className="hover:border-primary/50 transition-colors cursor-pointer group relative overflow-hidden"
                         onClick={() => onSelectProject(project.id, project.name)}
-                        className="bg-white p-6 rounded-xl border border-slate-200 hover:border-blue-400 hover:shadow-md cursor-pointer transition-all group"
                     >
-                        <h3 className="text-lg font-semibold text-slate-800 group-hover:text-blue-600 mb-2">{project.name}</h3>
-                        <p className="text-slate-500 text-sm line-clamp-3">
-                            {project.description || "Geen omschrijving."}
-                        </p>
-                        <div className="mt-4 flex items-center text-xs text-slate-400">
-                            <span className="w-2 h-2 rounded-full bg-green-500 mr-2"></span>
-                            Actief
-                        </div>
-                    </div>
+                        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <CardHeader>
+                            <CardTitle className="group-hover:text-primary transition-colors">{project.name}</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <CardDescription className="line-clamp-3">
+                                {project.description || "Geen omschrijving."}
+                            </CardDescription>
+                        </CardContent>
+                        <CardFooter>
+                            <div className="flex items-center text-xs text-muted-foreground">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 mr-2"></span>
+                                Actief
+                            </div>
+                        </CardFooter>
+                    </Card>
                 ))}
             </div>
-            {projects.length === 0 && !isCreating && (
-                <div className="mt-8 text-center py-12 text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-300">
-                    Nog geen projecten in <span className="font-semibold">{activeOrganization?.name}</span>.
-                </div>
+
+            {projects.length === 0 && (
+                <Card className="border-dashed">
+                    <CardContent className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
+                        <p>Nog geen projecten in <span className="font-semibold">{activeOrganization?.name}</span>.</p>
+                        <Button variant="link" onClick={() => setIsDialogOpen(true)}>
+                            Maak je eerste project aan
+                        </Button>
+                    </CardContent>
+                </Card>
             )}
         </div>
     );

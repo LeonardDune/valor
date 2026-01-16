@@ -6,7 +6,10 @@ import { InspectorSidebar } from '../Graph/InspectorSidebar';
 import { CausaShell } from '../../perspectives/causa';
 import { api, type Claim } from '../../services/api';
 import { FactorModal } from '../Graph/FactorModal';
-import { Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, ArrowLeft } from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 interface ValorWorkspaceProps {
     projectId: string;
@@ -47,13 +50,6 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
     }, [refreshData]);
 
     const handleClaimsUpdate = async (_newClaims: Claim[]) => {
-        /*
-        setClaims(prev => {
-            const existingIds = new Set(prev.map(c => c.id));
-            const filteredNew = newClaims.filter(c => !existingIds.has(c.id));
-            return [...prev, ...filteredNew];
-        });
-        */
         // Important: Refresh factors too as chat agent might have created new ones
         await refreshData();
     };
@@ -68,33 +64,47 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
     };
 
     return (
-        <div className="flex flex-col h-screen bg-white overflow-hidden">
-            <header className="h-14 border-b border-slate-200 flex items-center justify-between px-4 bg-white shrink-0 z-30">
+        <div className="flex flex-col h-screen bg-background overflow-hidden">
+            <header className="h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 flex items-center justify-between px-4 shrink-0 z-30">
                 <div className="flex items-center gap-4">
-                    <button onClick={onBack} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors">
-                        ←
-                    </button>
+                    <Button variant="ghost" size="icon" onClick={onBack} title="Terug">
+                        <ArrowLeft className="h-4 w-4" />
+                    </Button>
                     <div className="flex flex-col">
-                        <span className="text-[10px] text-slate-400 uppercase tracking-widest font-bold leading-none mb-1">{projectName}</span>
-                        <span className="text-sm font-bold text-slate-900 leading-none">{themeName}</span>
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold leading-none mb-1">{projectName}</span>
+                        <span className="text-sm font-bold leading-none">{themeName}</span>
                     </div>
                 </div>
 
-                <div className="flex bg-slate-100 p-1 rounded-xl">
-                    <AgentButton label="CAUSA" isActive={activeAgent === 'CAUSA'} onClick={() => setActiveAgent('CAUSA')} />
-                    <AgentButton label="AXIA" isActive={activeAgent === 'AXIA'} onClick={() => setActiveAgent('AXIA')} isDisabled={true} />
-                    <AgentButton label="ACTOR" isActive={activeAgent === 'ACTOR'} onClick={() => setActiveAgent('ACTOR')} isDisabled={true} />
-                    <AgentButton label="PRAXIS" isActive={activeAgent === 'PRAXIS'} onClick={() => setActiveAgent('PRAXIS')} isDisabled={true} />
+                <div className="flex items-center gap-4">
+                    <ToggleGroup
+                        type="single"
+                        value={activeAgent}
+                        onValueChange={(val) => val && setActiveAgent(val as AgentType)}
+                    >
+                        <ToggleGroupItem value="CAUSA" aria-label="Toggle CAUSA">CAUSA</ToggleGroupItem>
+                        <ToggleGroupItem value="AXIA" disabled aria-label="Toggle AXIA">
+                            AXIA <span className="ml-1.5 text-[9px] opacity-70">SOON</span>
+                        </ToggleGroupItem>
+                        <ToggleGroupItem value="ACTOR" disabled aria-label="Toggle ACTOR">
+                            ACTOR <span className="ml-1.5 text-[9px] opacity-70">SOON</span>
+                        </ToggleGroupItem>
+                        <ToggleGroupItem value="PRAXIS" disabled aria-label="Toggle PRAXIS">
+                            PRAXIS <span className="ml-1.5 text-[9px] opacity-70">SOON</span>
+                        </ToggleGroupItem>
+                    </ToggleGroup>
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <button
+                    <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => setFocusMode(!focusMode)}
-                        className={`p-2 rounded-lg transition-all ${focusMode ? 'bg-blue-50 text-blue-600' : 'text-slate-400 hover:bg-slate-100'}`}
                         title={focusMode ? "Exit Focus Mode" : "Enter Focus Mode"}
+                        className={focusMode ? 'text-primary bg-primary/10' : ''}
                     >
-                        {focusMode ? <Minimize2 size={20} /> : <Maximize2 size={20} />}
-                    </button>
+                        {focusMode ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+                    </Button>
                 </div>
             </header>
 
@@ -102,9 +112,8 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                 {activeAgent === 'CAUSA' ? (
                     <div className="flex-1 flex overflow-hidden">
                         {/* Left: Chat */}
-                        {/* Left: Chat - Always rendered but hidden via CSS width to persist state */}
                         <div
-                            className={`border-r border-slate-200 bg-white flex flex-col h-full shrink-0 z-10 transition-all duration-300 ease-in-out overflow-hidden ${!focusMode && isChatOpen ? 'w-[400px] opacity-100' : 'w-0 opacity-0 border-none'
+                            className={`border-r border-border bg-background flex flex-col h-full shrink-0 z-10 transition-all duration-300 ease-in-out overflow-hidden ${!focusMode && isChatOpen ? 'w-[400px] opacity-100' : 'w-0 opacity-0 border-none'
                                 }`}
                         >
                             <div className="w-[400px] h-full">
@@ -113,33 +122,23 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                         </div>
 
                         {/* Middle: Graph */}
-                        <div className="flex-1 bg-slate-50 h-full relative overflow-hidden transition-all duration-300">
+                        <div className="flex-1 bg-muted/30 h-full relative overflow-hidden transition-all duration-300">
                             <div className="absolute top-4 left-4 z-20 flex gap-2 items-center">
-                                <button
+                                <Button
+                                    variant="outline"
+                                    size="icon"
                                     onClick={() => setIsChatOpen(!isChatOpen)}
-                                    className="bg-white/90 backdrop-blur-md border border-slate-200 p-1.5 rounded-lg text-slate-500 shadow-sm hover:bg-slate-50 hover:text-blue-600 transition-colors"
+                                    className="h-8 w-8 bg-background/90 backdrop-blur"
                                     title={isChatOpen ? "Verberg Agent" : "Toon Agent"}
                                 >
                                     {isChatOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
-                                </button>
-                                <div className="bg-white/90 backdrop-blur-md border border-slate-200 px-3 py-1.5 rounded-full text-[10px] font-bold text-slate-500 shadow-sm uppercase tracking-wider">
+                                </Button>
+                                <Badge variant="outline" className="bg-background/90 backdrop-blur font-bold uppercase tracking-wider text-[10px]">
                                     Causaal Model
-                                </div>
-                                {/* Removed duplicate + Nieuwe Factor button */}
+                                </Badge>
                             </div>
-                            {/* <CausalGraph ... /> */}
-                            {/* <ReactFlowCanvas ... /> replaced by Causa Shell */}
+
                             <CausaShell themeId={themeId} />
-                            {/* 
-                            <ReactFlowCanvas
-                                factors={factors}
-                                claims={claims}
-                                selection={selection}
-                                onSelect={setSelection}
-                                themeId={themeId}
-                                onRefresh={refreshData}
-                            />
-                            */}
                         </div>
 
                         {/* Right: Sidebar */}
@@ -154,38 +153,21 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                         )}
                     </div>
                 ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center bg-slate-50 text-slate-400">
-                        <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4 text-slate-300">
+                    <div className="flex-1 flex flex-col items-center justify-center bg-muted/10 text-muted-foreground">
+                        <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-4 text-muted-foreground/50">
                             ?
                         </div>
                         <p className="font-medium">Module {activeAgent} is nog in ontwikkeling.</p>
                         <p className="text-sm">We werken hard aan de volgende stap in de analyse.</p>
                     </div>
                 )}
-            </main >
+            </main>
 
             <FactorModal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 onSave={handleSaveFactor}
             />
-        </div >
+        </div>
     );
 };
-
-const AgentButton = ({ label, isActive, onClick, isDisabled = false }: any) => (
-    <button
-        onClick={onClick}
-        disabled={isDisabled}
-        className={`
-            px-3 py-1.5 text-xs font-bold rounded-md transition-all flex items-center
-            ${isActive
-                ? 'bg-white text-blue-600 shadow-sm border border-slate-200'
-                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200'}
-            ${isDisabled ? 'opacity-60 cursor-not-allowed' : ''}
-        `}
-    >
-        {label}
-        {isDisabled && <span className="ml-1.5 text-[9px] uppercase tracking-wide opacity-70 bg-slate-100 px-1 rounded border border-slate-200">Soon</span>}
-    </button>
-);

@@ -20,7 +20,7 @@ export const SystemScopeNode = memo(({ style }: { style?: React.CSSProperties, d
                 opacity: 0.5
             }}
         >
-            <div className="absolute -top-3 left-4 bg-canvas px-2 text-[10px] font-bold text-text-muted tracking-wider">
+            <div className="absolute -top-3 left-4 bg-white px-2 text-[10px] font-bold text-text-muted tracking-wider">
                 SCOPE / SYSTEEMGRENS
             </div>
         </div>
