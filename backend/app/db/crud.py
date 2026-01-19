@@ -2,7 +2,7 @@ import logging
 import uuid
 from typing import List, Optional
 from app.db.utils import get_driver
-from app.models.domain import Claim, ChatMessage
+from app.models.domain import Claim, ChatMessage, WorkspaceStatus
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +218,8 @@ async def create_organization(name: str, description: Optional[str] = None, owne
     MERGE (o:Organization {name: $name})
     ON CREATE SET o.id = $oid, 
                   o.description = $desc,
-                  o.created_at = datetime()
+                  o.created_at = datetime(),
+                  o.status = 'active'
     ON MATCH SET o.id = coalesce(o.id, $oid, randomUUID())
     
     WITH o
@@ -242,13 +243,21 @@ async def create_organization(name: str, description: Optional[str] = None, owne
         logger.error(f"Failed to create organization: {e}")
         raise e
 
-async def get_organizations():
+async def get_organizations(include_archived: bool = False):
     driver = get_driver()
-    query = """
-    MATCH (o:Organization)
-    RETURN o.id as id, o.name as name, o.description as description, o.created_at as created_at
-    ORDER BY o.created_at DESC
-    """
+    if include_archived:
+        query = """
+        MATCH (o:Organization)
+        RETURN o.id as id, o.name as name, o.description as description, o.status as status, o.created_at as created_at
+        ORDER BY o.created_at DESC
+        """
+    else:
+        query = """
+        MATCH (o:Organization)
+        WHERE o.status = 'active' OR o.status IS NULL
+        RETURN o.id as id, o.name as name, o.description as description, o.status as status, o.created_at as created_at
+        ORDER BY o.created_at DESC
+        """
     try:
         with driver.session() as session:
             result = session.run(query)
@@ -257,14 +266,22 @@ async def get_organizations():
         logger.error(f"Failed to get organizations: {e}")
         return []
 
-async def get_user_organizations(user_email: str):
+async def get_user_organizations(user_email: str, include_archived: bool = False):
     driver = get_driver()
-    query = """
-    MATCH (u:User)-[:MEMBER_OF]->(o:Organization)
-    WHERE toLower(u.email) = toLower($email)
-    RETURN o.id as id, o.name as name, o.description as description, o.created_at as created_at
-    ORDER BY o.created_at DESC
-    """
+    if include_archived:
+        query = """
+        MATCH (u:User)-[:MEMBER_OF]->(o:Organization)
+        WHERE toLower(u.email) = toLower($email)
+        RETURN o.id as id, o.name as name, o.description as description, o.status as status, o.created_at as created_at
+        ORDER BY o.created_at DESC
+        """
+    else:
+        query = """
+        MATCH (u:User)-[:MEMBER_OF]->(o:Organization)
+        WHERE toLower(u.email) = toLower($email) AND (o.status = 'active' OR o.status IS NULL)
+        RETURN o.id as id, o.name as name, o.description as description, o.status as status, o.created_at as created_at
+        ORDER BY o.created_at DESC
+        """
     try:
         with driver.session() as session:
             result = session.run(query, {"email": user_email})
@@ -404,19 +421,38 @@ async def remove_user_from_organization(organization_id: str, user_id: str):
 
 async def create_project(name: str, organization_id: str, description: Optional[str] = None) -> str:
     driver = get_driver()
+    
+    # Guard: Check Organization Status
+    check_query = "MATCH (o:Organization {id: $oid}) RETURN o.status as status"
+    try:
+        with driver.session() as session:
+            result = session.run(check_query, {"oid": organization_id})
+            record = result.single()
+            if not record:
+                 raise Exception(f"Organization not found with id {organization_id}")
+            if record["status"] == WorkspaceStatus.ARCHIVED.value:
+                raise Exception(f"Cannot create project in archived organization {organization_id}")
+    except Exception as e:
+        logger.error(f"Failed to check organization status: {e}")
+        raise e
+
     pid = str(uuid.uuid4())
     query = """
     MATCH (o:Organization {id: $oid})
     MERGE (p:Project {id: $pid})
     ON CREATE SET p.name = $name, 
                   p.description = $desc,
-                  p.created_at = datetime()
+                  p.created_at = datetime(),
+                  p.status = $status
     MERGE (o)-[:OWNS]->(p)
     RETURN p.id as id
     """
     try:
         with driver.session() as session:
-            result = session.run(query, {"pid": pid, "name": name, "desc": description, "oid": organization_id})
+            result = session.run(query, {
+                "pid": pid, "name": name, "desc": description, "oid": organization_id,
+                "status": WorkspaceStatus.ACTIVE.value
+            })
             record = result.single()
             if not record:
                 raise Exception(f"Organization not found with id {organization_id}")
@@ -425,13 +461,21 @@ async def create_project(name: str, organization_id: str, description: Optional[
         logger.error(f"Failed to create project: {e}")
         raise e
 
-async def get_projects(organization_id: str):
+async def get_projects(organization_id: str, include_archived: bool = False):
     driver = get_driver()
-    query = """
-    MATCH (o:Organization {id: $oid})-[:OWNS]->(p:Project)
-    RETURN p.id as id, p.name as name, p.description as description, p.created_at as created_at
-    ORDER BY p.created_at DESC
-    """
+    if include_archived:
+        query = """
+        MATCH (o:Organization {id: $oid})-[:OWNS]->(p:Project)
+        RETURN p.id as id, p.name as name, p.description as description, p.status as status, p.created_at as created_at
+        ORDER BY p.created_at DESC
+        """
+    else:
+        query = """
+        MATCH (o:Organization {id: $oid})-[:OWNS]->(p:Project)
+        WHERE p.status = 'active' OR p.status IS NULL
+        RETURN p.id as id, p.name as name, p.description as description, p.status as status, p.created_at as created_at
+        ORDER BY p.created_at DESC
+        """
     try:
         with driver.session() as session:
             result = session.run(query, {"oid": organization_id})
@@ -442,13 +486,29 @@ async def get_projects(organization_id: str):
 
 async def create_theme(project_id: str, name: str, description: Optional[str] = None) -> str:
     driver = get_driver()
+    
+    # Guard: Check Project Status
+    check_query = "MATCH (p:Project {id: $pid}) RETURN p.status as status"
+    try:
+        with driver.session() as session:
+            result = session.run(check_query, {"pid": project_id})
+            record = result.single()
+            if not record:
+                 raise Exception(f"Project not found with id {project_id}")
+            if record["status"] == WorkspaceStatus.ARCHIVED.value:
+                raise Exception(f"Cannot create theme in archived project {project_id}")
+    except Exception as e:
+        logger.error(f"Failed to check project status: {e}")
+        raise e
+
     tid = str(uuid.uuid4())
     query = """
     MATCH (p:Project {id: $pid})
     MERGE (t:Theme {name: $name})
     ON CREATE SET t.id = $tid, 
                   t.description = $desc,
-                  t.created_at = datetime()
+                  t.created_at = datetime(),
+                  t.status = $status
     ON MATCH SET t.id = coalesce(t.id, $tid, randomUUID()),
                  t.description = coalesce($desc, t.description)
     MERGE (p)-[:HAS_THEME]->(t)
@@ -456,20 +516,31 @@ async def create_theme(project_id: str, name: str, description: Optional[str] = 
     """
     try:
         with driver.session() as session:
-            result = session.run(query, {"pid": project_id, "name": name, "desc": description, "tid": tid})
+            result = session.run(query, {
+                "pid": project_id, "name": name, "desc": description, "tid": tid,
+                "status": WorkspaceStatus.ACTIVE.value
+            })
             record = result.single()
             return record["id"] if record else None
     except Exception as e:
         logger.error(f"Failed to create theme: {e}")
         raise e
 
-async def get_project_themes(project_id: str):
+async def get_project_themes(project_id: str, include_archived: bool = False):
     driver = get_driver()
-    query = """
-    MATCH (p:Project {id: $pid})-[:HAS_THEME]->(t:Theme)
-    RETURN t.id as id, t.name as name, t.description as description
-    ORDER BY t.created_at DESC
-    """
+    if include_archived:
+        query = """
+        MATCH (p:Project {id: $pid})-[:HAS_THEME]->(t:Theme)
+        RETURN t.id as id, t.name as name, t.description as description, t.status as status
+        ORDER BY t.created_at DESC
+        """
+    else:
+        query = """
+        MATCH (p:Project {id: $pid})-[:HAS_THEME]->(t:Theme)
+        WHERE t.status = 'active' OR t.status IS NULL
+        RETURN t.id as id, t.name as name, t.description as description, t.status as status
+        ORDER BY t.created_at DESC
+        """
     try:
         with driver.session() as session:
             result = session.run(query, {"pid": project_id})
@@ -478,10 +549,121 @@ async def get_project_themes(project_id: str):
         logger.error(f"Failed to get themes: {e}")
         return []
 
+# Archive / Reactivate Logic
+
+async def archive_organization(organization_id: str):
+    driver = get_driver()
+    query = """
+    MATCH (o:Organization {id: $oid})
+    SET o.status = $status
+    WITH o
+    OPTIONAL MATCH (o)-[:OWNS]->(p:Project)
+    SET p.status = $status
+    WITH p
+    OPTIONAL MATCH (p)-[:HAS_THEME]->(t:Theme)
+    SET t.status = $status
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {"oid": organization_id, "status": WorkspaceStatus.ARCHIVED.value})
+            logger.info(f"Archived organization {organization_id} and all its children.")
+    except Exception as e:
+        logger.error(f"Failed to archive organization: {e}")
+        raise e
+
+async def archive_project(project_id: str):
+    driver = get_driver()
+    query = """
+    MATCH (p:Project {id: $pid})
+    SET p.status = $status
+    WITH p
+    OPTIONAL MATCH (p)-[:HAS_THEME]->(t:Theme)
+    SET t.status = $status
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {"pid": project_id, "status": WorkspaceStatus.ARCHIVED.value})
+            logger.info(f"Archived project {project_id} and all its children.")
+    except Exception as e:
+        logger.error(f"Failed to archive project: {e}")
+        raise e
+
+async def archive_theme(theme_id: str):
+    driver = get_driver()
+    query = """
+    MATCH (t:Theme {id: $tid})
+    SET t.status = $status
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {"tid": theme_id, "status": WorkspaceStatus.ARCHIVED.value})
+            logger.info(f"Archived theme {theme_id}.")
+    except Exception as e:
+        logger.error(f"Failed to archive theme: {e}")
+        raise e
+
+async def reactivate_organization(organization_id: str):
+    driver = get_driver()
+    # Only reactivate the organization, NOT children
+    query = """
+    MATCH (o:Organization {id: $oid})
+    SET o.status = $status
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {"oid": organization_id, "status": WorkspaceStatus.ACTIVE.value})
+            logger.info(f"Reactivated organization {organization_id}.")
+    except Exception as e:
+        logger.error(f"Failed to reactivate organization: {e}")
+        raise e
+
+async def reactivate_project(project_id: str):
+    driver = get_driver()
+    # Check parent status first? Ideally yes, but technically one might reactivate a project and move it.
+    # For now, simplistic reactivation.
+    query = """
+    MATCH (p:Project {id: $pid})
+    SET p.status = $status
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {"pid": project_id, "status": WorkspaceStatus.ACTIVE.value})
+            logger.info(f"Reactivated project {project_id}.")
+    except Exception as e:
+        logger.error(f"Failed to reactivate project: {e}")
+        raise e
+
+async def reactivate_theme(theme_id: str):
+    driver = get_driver()
+    query = """
+    MATCH (t:Theme {id: $tid})
+    SET t.status = $status
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {"tid": theme_id, "status": WorkspaceStatus.ACTIVE.value})
+            logger.info(f"Reactivated theme {theme_id}.")
+    except Exception as e:
+        logger.error(f"Failed to reactivate theme: {e}")
+        raise e
+
 # Manual Factor & Claim Management
 
 async def create_factor_manual(name: str, description: Optional[str] = None, type: str = "systeemelement", theme_id: Optional[str] = None) -> str:
     driver = get_driver()
+    
+    if theme_id:
+        check_query = "MATCH (t:Theme {id: $tid}) RETURN t.status as status"
+        try:
+            with driver.session() as session:
+                result = session.run(check_query, {"tid": theme_id})
+                record = result.single()
+                if record and record["status"] == WorkspaceStatus.ARCHIVED.value:
+                    raise Exception(f"Cannot create factor in archived theme {theme_id}")
+        except Exception as e:
+            logger.error(f"Failed to check theme status: {e}")
+            raise e
+            
     fid = str(uuid.uuid4())
     query = """
     MERGE (f:Factor {name: $name})
@@ -534,6 +716,19 @@ async def update_factor_manual(factor_id: str, name: Optional[str] = None, descr
 
 async def create_claim_manual(theme_id: str, source_id: str, target_id: str, statement: str, polarity: str = "+", confidence: float = 1.0):
     driver = get_driver()
+    
+    # Guard: Check Theme Status
+    check_query = "MATCH (t:Theme {id: $tid}) RETURN t.status as status"
+    try:
+        with driver.session() as session:
+            result = session.run(check_query, {"tid": theme_id})
+            record = result.single()
+            if record and record["status"] == WorkspaceStatus.ARCHIVED.value:
+                raise Exception(f"Cannot create claim in archived theme {theme_id}")
+    except Exception as e:
+        logger.error(f"Failed to check theme status: {e}")
+        raise e
+
     cid = str(uuid.uuid4())
     # Match by ID or Name as fallback
     query = """
