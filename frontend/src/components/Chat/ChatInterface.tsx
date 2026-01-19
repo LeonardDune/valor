@@ -6,8 +6,8 @@ import {
     MessagePrimitive,
     AssistantRuntimeProvider,
     useLocalRuntime,
-    useThreadRuntime,
-    useMessage,
+    useAssistantApi,    // New
+    useAssistantState,  // New
     type ChatModelAdapter,
     type ThreadMessage
 } from "@assistant-ui/react";
@@ -48,12 +48,7 @@ const AgentBlock: React.FC<{ agent: AgentResponse }> = ({ agent }) => {
 };
 
 const MyMessage: React.FC = () => {
-    const messageState = useMessage();
-    // Access metadata from the message state. The type might need casting or custom access.
-    // In assistant-ui 0.5+, useMessage returns the message object (or similar).
-    // The lint error said "Property 'message' does not exist on MessageState".
-    // So messageState IS the object we should look at?
-    // Let's try matching the ThreadMessage type.
+    const messageState = useAssistantState(state => state.message);
     const metadata = (messageState as any).metadata?.custom;
     const agentResponses = metadata?.agent_responses as AgentResponse[] | undefined;
 
@@ -82,7 +77,8 @@ const MyMessage: React.FC = () => {
 }
 
 const ChatInitializer: React.FC<{ topic: string, onClaimsUpdate: (claims: Claim[]) => void, conversationIdRef: React.MutableRefObject<string | undefined> }> = ({ topic, onClaimsUpdate, conversationIdRef }) => {
-    const thread = useThreadRuntime();
+    const assistant = useAssistantApi();
+    const threadMessagesLength = useAssistantState(state => state.thread.messages.length);
     const hasInitializedRef = useRef<string | null>(null);
 
     useEffect(() => {
@@ -104,7 +100,7 @@ const ChatInitializer: React.FC<{ topic: string, onClaimsUpdate: (claims: Claim[
                 }
 
                 // Append the initial greeting to the runtime
-                thread.append({
+                assistant.thread().append({
                     role: "assistant",
                     content: [{ type: "text", text: response.reply }],
                     metadata: {
@@ -115,7 +111,7 @@ const ChatInitializer: React.FC<{ topic: string, onClaimsUpdate: (claims: Claim[
                 });
             } catch (error) {
                 console.error("Initial chat error:", error);
-                thread.append({
+                assistant.thread().append({
                     role: "assistant",
                     content: [{ type: "text", text: "Er is een fout opgetreden bij het verbinden met de agent." }]
                 });
@@ -123,10 +119,10 @@ const ChatInitializer: React.FC<{ topic: string, onClaimsUpdate: (claims: Claim[
         };
 
         // Only run if the thread is empty to avoid duplicates on re-renders if distinct from topic change
-        if (thread.getState().messages.length === 0) {
+        if (threadMessagesLength === 0) {
             initChat();
         }
-    }, [topic, thread, onClaimsUpdate, conversationIdRef]);
+    }, [topic, assistant, onClaimsUpdate, conversationIdRef, threadMessagesLength]);
 
     return null;
 };
