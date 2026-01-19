@@ -20,4 +20,5 @@ export interface CausalLink {
     // Visualization properties (US-CAUSA-05/06)
     status?: 'proposed' | 'validated' | 'rejected';
     certainty?: number; // 0.0 - 1.0
+    statement?: string;
 }

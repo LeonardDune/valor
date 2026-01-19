@@ -3,7 +3,6 @@ import ReactFlow, {
     useNodesState,
     useEdgesState,
     Background,
-    Controls,
     MarkerType,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -14,6 +13,9 @@ import type { LayoutNode } from '../layout/types';
 import CLDNode from './nodes/CLDNode';
 import { SystemScopeNode } from './nodes/SystemScopeNode';
 import CLDEdge from './edges/CLDEdge';
+import { CanvasContextMenu } from '@/components/Shell/CanvasContextMenu';
+import { ViewControls } from '@/components/Shell/ViewControls';
+import type { ConversationContext } from '@/types/conversation';
 
 // Correct path if types are in parent/parent
 import type { CausalNode, CausalLink } from '../types';
@@ -26,6 +28,8 @@ interface CLDViewProps {
     onSelect?: (selection: { type: 'node' | 'link'; data: any } | null) => void;
     selection?: { type: 'node' | 'link'; data: any } | null;
     layoutMode?: 'free' | 'system';
+    onOpenConversation: (context: ConversationContext) => void;
+    onEdit?: (selection: { type: 'node' | 'link'; data: any }) => void;
 }
 
 const nodeTypes = {
@@ -43,12 +47,51 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     session,
     runner,
     onSelect,
-    layoutMode
+    layoutMode,
+    onOpenConversation,
+    onEdit
 }) => {
     // React Flow State
     const [rfInstance, setRfInstance] = useState<any>(null);
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+    // Context Menu State
+    const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; nodeId: string; type: string; label?: string; data?: any } | null>(null);
+
+    const onNodeContextMenu = (event: React.MouseEvent, node: any) => {
+        event.preventDefault();
+        setContextMenu({
+            visible: true,
+            x: event.clientX,
+            y: event.clientY,
+            nodeId: node.id,
+            type: 'node', // Explicitly 'node' to match Shell contract
+            label: node.data?.label || node.id // Use label from data
+        });
+    };
+
+    const onEdgeContextMenu = (event: React.MouseEvent, edge: any) => {
+        event.preventDefault();
+        setContextMenu({
+            visible: true,
+            x: event.clientX,
+            y: event.clientY,
+            nodeId: edge.id,
+            type: 'link',
+            label: 'Relatie', // Static label for edges for now
+            data: { id: edge.id, source: edge.source, target: edge.target, ...edge.data } // Pass full data for editing
+        });
+    };
+
+    const handleOpenObjectConversation = (object: any) => {
+        onOpenConversation({
+            scope: 'object',
+            perspective: 'CAUSA',
+            contextId: object.id,
+            label: object.label || object.type
+        });
+    };
 
     // 1. Topology Sync (Handle Adds/Removes/Updates from Domain)
     useEffect(() => {
@@ -173,7 +216,10 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                     data: {
                         polarity: cl.polarity,
                         status: cl.status || 'validated',
-                        certainty: cl.certainty
+                        certainty: cl.certainty,
+                        statement: cl.statement, // Include statement/claim text
+                        source: cl.source, // redundancy for data access
+                        target: cl.target  // redundancy for data access
                     }
                 };
             });
@@ -308,18 +354,27 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                 onNodeClick={(_, node) => {
                     if (onSelect) {
                         // Reconstruct a data object that mimics what Inspector expects.
-                        // Ideally we pass the full Factor object.
-                        // For now: passing id and data.
                         onSelect({ type: 'node', data: { id: node.id, ...node.data } });
+                    }
+                }}
+                onNodeDoubleClick={(_, node) => {
+                    if (onEdit) {
+                        onEdit({ type: 'node', data: { id: node.id, ...node.data } });
                     }
                 }}
                 onEdgeClick={(_, edge) => {
                     if (onSelect) {
-                        onSelect({ type: 'link', data: { id: edge.id, ...edge.data } });
+                        onSelect({ type: 'link', data: { id: edge.id, source: edge.source, target: edge.target, ...edge.data } });
+                    }
+                }}
+                onEdgeDoubleClick={(_, edge) => {
+                    if (onEdit) {
+                        onEdit({ type: 'link', data: { id: edge.id, source: edge.source, target: edge.target, ...edge.data } });
                     }
                 }}
                 onPaneClick={() => {
                     if (onSelect) onSelect(null);
+                    setContextMenu(null);
                 }}
                 onNodeDragStart={(_, node) => {
                     if (runner.onDrag) {
@@ -346,13 +401,25 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                     }
                 }}
                 nodeOrigin={[0.5, 0.5]}
+                onNodeContextMenu={onNodeContextMenu}
+                onEdgeContextMenu={onEdgeContextMenu}
                 minZoom={0.1}
                 maxZoom={4}
                 fitView
             >
                 <Background />
-                <Controls />
+                <ViewControls />
             </ReactFlow>
+
+            {contextMenu && (
+                <CanvasContextMenu
+                    position={{ x: contextMenu.x, y: contextMenu.y }}
+                    contextObject={{ id: contextMenu.nodeId, type: contextMenu.type, label: contextMenu.label }}
+                    onDismiss={() => setContextMenu(null)}
+                    onOpenObjectConversation={handleOpenObjectConversation}
+                    onEdit={(obj) => onEdit && onEdit({ type: obj.type as any, data: contextMenu.data || obj })}
+                />
+            )}
         </div>
     );
 };
