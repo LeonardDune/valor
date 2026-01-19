@@ -65,6 +65,11 @@ class WorkspaceStatus(str, Enum):
     ACTIVE = "active"
     ARCHIVED = "archived"
 
+class Role(str, Enum):
+    ADMIN = "admin"
+    MEMBER = "member"
+    VIEWER = "viewer"
+
 class Organization(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
