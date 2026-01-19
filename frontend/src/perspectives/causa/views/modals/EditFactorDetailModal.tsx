@@ -69,8 +69,19 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
             // Link
             const data = selection.data;
             setStatement(data.statement || '');
-            setPolarity(data.polarity || '+');
-            setConfidence(data.confidence || 0.5);
+
+            // Map internal polarity (words) back to API/Form format (symbols)
+            let formPolarity = '+'; // default
+            if (data.polarity === 'negative') formPolarity = '-';
+            if (data.polarity === 'ambiguous') formPolarity = '?';
+            // If data.polarity is already a symbol (e.g. from raw api?), keep it.
+            if (data.polarity === '+' || data.polarity === '-' || data.polarity === '?') formPolarity = data.polarity;
+
+            setPolarity(formPolarity);
+
+            // Map certainty (internal) to confidence (API/Form)
+            setConfidence(data.certainty ?? data.confidence ?? 0.5);
+
             setSourceId(data.source_id || data.source || '');
             setTargetId(data.target_id || data.target || '');
         }
@@ -244,8 +255,23 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
                         </>
                     ) : (
                         <>
+                            <div className="flex flex-col gap-4 bg-muted/50 p-3 rounded-md mb-4">
+                                <div className="grid gap-1">
+                                    <Label className="text-xs text-muted-foreground uppercase tracking-wide">Van</Label>
+                                    <div className="text-sm font-medium leading-relaxed break-words">
+                                        {_factors.find(f => f.id === sourceId)?.name || sourceId}
+                                    </div>
+                                </div>
+                                <div className="grid gap-1 border-t border-black/5 pt-2">
+                                    <Label className="text-xs text-muted-foreground uppercase tracking-wide">Naar</Label>
+                                    <div className="text-sm font-medium leading-relaxed break-words">
+                                        {_factors.find(f => f.id === targetId)?.name || targetId}
+                                    </div>
+                                </div>
+                            </div>
+
                             <div className="grid gap-2">
-                                <Label htmlFor="statement">Argumentatie</Label>
+                                <Label htmlFor="statement">Claim</Label>
                                 <Textarea id="statement" value={statement} onChange={e => setStatement(e.target.value)} />
                             </div>
                             <div className="grid grid-cols-2 gap-4">

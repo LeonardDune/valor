@@ -30,7 +30,8 @@ export const mapClaimToLink = (claim: Claim): CausalLink => {
         polarity: polarity,
         // Using US-CAUSA-05 default logic for now until backend supports it
         status: 'validated',
-        certainty: claim.confidence || 1.0
+        certainty: claim.confidence || 1.0,
+        statement: claim.statement
     };
 };
 

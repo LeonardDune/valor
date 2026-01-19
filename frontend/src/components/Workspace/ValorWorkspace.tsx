@@ -1,15 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import ChatInterface from '../Chat/ChatInterface';
-// import CausalGraph from '../Graph/CausalGraph';
-// import { ReactFlowCanvas } from '../Graph/ReactFlowCanvas';
-import { InspectorSidebar } from '../Graph/InspectorSidebar';
 import { CausaShell } from '../../perspectives/causa';
 import { api, type Claim } from '../../services/api';
-import { FactorModal } from '../Graph/FactorModal';
-import { Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, ArrowLeft } from 'lucide-react';
+import { Maximize2, Minimize2, ArrowLeft } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import type { ConversationContext } from '../../types/conversation';
+import { ConversationPane } from '../Shell/ConversationPane';
 
 interface ValorWorkspaceProps {
     projectId: string;
@@ -23,11 +19,8 @@ type AgentType = 'CAUSA' | 'AXIA' | 'ACTOR' | 'PRAXIS';
 
 export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, projectName, themeName, onBack }) => {
     const [activeAgent, setActiveAgent] = useState<AgentType>('CAUSA');
-    // const [claims, setClaims] = useState<Claim[]>([]);
-    const [factors, setFactors] = useState<any[]>([]);
-    const [selection, setSelection] = useState<{ type: 'node' | 'link'; data: any } | null>(null);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isChatOpen, setIsChatOpen] = useState(true);
+    // const [factors, setFactors] = useState<any[]>([]); // Cleaned up unused state
+    const [activeConversation, setActiveConversation] = useState<ConversationContext | null>(null);
     const [focusMode, setFocusMode] = useState(false);
 
     const refreshData = useCallback(async () => {
@@ -36,9 +29,8 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                 api.getThemeClaims(themeId),
                 api.getThemeFactors(themeId)
             ]);
-            console.log('WS: Refreshed Data', { claims: existingClaims.length, factors: themeFactors.length, themeFactors });
-            // setClaims(existingClaims);
-            setFactors(themeFactors);
+            console.log('WS: Refreshed Data', { claims: existingClaims.length, factors: themeFactors.length });
+
         } catch (error) {
             console.error('Failed to fetch theme data:', error);
         }
@@ -49,22 +41,20 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
         refreshData();
     }, [refreshData]);
 
+    const handleOpenConversation = (context: ConversationContext) => {
+        setActiveConversation(context);
+    };
+
+    const handleCloseConversation = () => {
+        setActiveConversation(null);
+    };
+
     const handleClaimsUpdate = async (_newClaims: Claim[]) => {
-        // Important: Refresh factors too as chat agent might have created new ones
         await refreshData();
     };
 
-    const handleSaveFactor = async (name: string, type: any, description: string) => {
-        try {
-            await api.createFactor(themeId, name, description, type);
-            refreshData();
-        } catch (error) {
-            console.error('Failed to create factor', error);
-        }
-    };
-
     return (
-        <div className="flex flex-col h-screen bg-background overflow-hidden">
+        <div className="flex flex-col h-screen bg-background overflow-hidden relative">
             <header className="h-14 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 flex items-center justify-between px-4 shrink-0 z-30">
                 <div className="flex items-center gap-4">
                     <Button variant="ghost" size="icon" onClick={onBack} title="Terug">
@@ -111,46 +101,12 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
             <main className="flex-1 flex overflow-hidden relative">
                 {activeAgent === 'CAUSA' ? (
                     <div className="flex-1 flex overflow-hidden">
-                        {/* Left: Chat */}
-                        <div
-                            className={`border-r border-border bg-background flex flex-col h-full shrink-0 z-10 transition-all duration-300 ease-in-out overflow-hidden ${!focusMode && isChatOpen ? 'w-[400px] opacity-100' : 'w-0 opacity-0 border-none'
-                                }`}
-                        >
-                            <div className="w-[400px] h-full">
-                                <ChatInterface topic={themeName} onClaimsUpdate={handleClaimsUpdate} />
-                            </div>
-                        </div>
-
-                        {/* Middle: Graph */}
-                        <div className="flex-1 bg-muted/30 h-full relative overflow-hidden transition-all duration-300">
-                            <div className="absolute top-4 left-4 z-20 flex gap-2 items-center">
-                                <Button
-                                    variant="outline"
-                                    size="icon"
-                                    onClick={() => setIsChatOpen(!isChatOpen)}
-                                    className="h-8 w-8 bg-background/90 backdrop-blur"
-                                    title={isChatOpen ? "Verberg Agent" : "Toon Agent"}
-                                >
-                                    {isChatOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
-                                </Button>
-                                <Badge variant="outline" className="bg-background/90 backdrop-blur font-bold uppercase tracking-wider text-[10px]">
-                                    Causaal Model
-                                </Badge>
-                            </div>
-
-                            <CausaShell themeId={themeId} />
-                        </div>
-
-                        {/* Right: Sidebar */}
-                        {selection && !focusMode && (
-                            <InspectorSidebar
-                                selection={selection}
+                        <div className="flex-1 bg-muted/30 h-full relative overflow-hidden">
+                            <CausaShell
                                 themeId={themeId}
-                                factors={factors}
-                                onClose={() => setSelection(null)}
-                                onRefresh={refreshData}
+                                onOpenConversation={handleOpenConversation}
                             />
-                        )}
+                        </div>
                     </div>
                 ) : (
                     <div className="flex-1 flex flex-col items-center justify-center bg-muted/10 text-muted-foreground">
@@ -163,10 +119,12 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                 )}
             </main>
 
-            <FactorModal
-                isOpen={isModalOpen}
-                onClose={() => setIsModalOpen(false)}
-                onSave={handleSaveFactor}
+            <ConversationPane
+                isOpen={!!activeConversation}
+                onClose={handleCloseConversation}
+                context={activeConversation}
+                topic={themeName}
+                onClaimsUpdate={handleClaimsUpdate}
             />
         </div>
     );

@@ -1,24 +1,34 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+// ToggleGroup moved to PerspectiveToolbar component
 import { Button } from "@/components/ui/button";
-import { LayoutGrid, Network, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { PerspectiveToolbar } from '@/components/Shell/PerspectiveToolbar';
 import { CLDView } from './views/CLDView';
 import { useCausaData } from './hooks/useCausaData';
 import { LayoutSession } from './layout/session';
 import { ForceRunner } from './layout/runners/force';
 import { RailRunner } from './layout/runners/rail';
-import { FactorModal } from '../../components/Graph/FactorModal';
+// import { FactorModal } from '../../components/Graph/FactorModal';
+import { CreateFactorModal } from './views/modals/CreateFactorModal';
 import { EditFactorDetailModal } from './views/modals/EditFactorDetailModal';
 import { api } from '../../services/api';
+import type { ConversationContext } from '@/types/conversation';
 
 export interface CausaShellProps {
     themeId: string;
     // We keep onSelect prop for backward compatibility but Shell handles the interaction
     onSelect?: (selection: { type: 'node' | 'link'; data: any } | null) => void;
     selection?: { type: 'node' | 'link'; data: any } | null;
+    onOpenConversation: (context: ConversationContext) => void;
 }
 
-export const CausaShell = ({ themeId, onSelect: _onSelect }: CausaShellProps) => {
+export const CausaShell = ({ themeId, onSelect: _onSelect, onOpenConversation }: CausaShellProps) => {
     // A. Local UI State
     const [localSelection, setLocalSelection] = useState<{ type: 'node' | 'link'; data: any } | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -52,7 +62,7 @@ export const CausaShell = ({ themeId, onSelect: _onSelect }: CausaShellProps) =>
             alphaDecay: 0.0228,
             velocityDecay: 0.4
         }, cachedPositions);
-    }, [layoutMode]); // Re-run when mode changes (Critical for isolation)
+    }, [layoutMode, loading, nodes, links]); // Dependencies updated to include data
 
     // Switch Runner based on Mode
     const runner = useMemo(() => {
@@ -70,13 +80,12 @@ export const CausaShell = ({ themeId, onSelect: _onSelect }: CausaShellProps) =>
             // Critical Fix for Initial Load & Hydration
             // Notify runner of updated data. 
             // Since session is fresh on mode swap, this ensures runner gets the initial data.
-            if (runner.updateData) {
-                runner.updateData(session.getNodes(), session.getLinks());
+            // Check if updateData exists (it does on ForceRunner, maybe not RailRunner base?)
+            if ('updateData' in runner) {
+                (runner as any).updateData(session.getNodes(), session.getLinks());
             }
         }
     }, [session, nodes, links, loading, runner]);
-
-    // ...
 
     // Helper to switch mode safely
     const switchMode = (newMode: 'free' | 'system') => {
@@ -96,9 +105,11 @@ export const CausaShell = ({ themeId, onSelect: _onSelect }: CausaShellProps) =>
     // E. Interactions
     const handleSelect = (sel: { type: 'node' | 'link'; data: any } | null) => {
         setLocalSelection(sel);
-        if (sel) {
-            setIsEditModalOpen(true);
-        }
+    };
+
+    const handleEdit = (sel: { type: 'node' | 'link'; data: any }) => {
+        setLocalSelection(sel); // Ensure it is selected
+        setIsEditModalOpen(true);
     };
 
     const handleCreateFactor = async (name: string, type: any, description: string) => {
@@ -115,34 +126,33 @@ export const CausaShell = ({ themeId, onSelect: _onSelect }: CausaShellProps) =>
     return (
         <div className="w-full h-full bg-background relative">
             {/* Header / Toolbar Overlay */}
-            <div className="absolute top-4 right-4 z-10 flex gap-2 items-center">
-                {/* Layout Toggle */}
-                <div className="bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 rounded-md shadow-sm border p-0.5">
-                    <ToggleGroup
-                        type="single"
-                        value={layoutMode}
-                        onValueChange={(value) => value && switchMode(value as 'free' | 'system')}
-                    >
-                        <ToggleGroupItem value="free" size="sm" aria-label="Free Layout">
-                            <Network className="h-4 w-4 mr-2" />
-                            Vrij
-                        </ToggleGroupItem>
-                        <ToggleGroupItem value="system" size="sm" aria-label="System Layout">
-                            <LayoutGrid className="h-4 w-4 mr-2" />
-                            Systeem
-                        </ToggleGroupItem>
-                    </ToggleGroup>
-                </div>
-
-                <Button
-                    size="sm"
-                    onClick={() => setIsCreateModalOpen(true)}
-                    className="shadow-sm gap-1"
-                >
-                    <Plus className="h-4 w-4" />
-                    Nieuw
-                </Button>
-            </div>
+            {/* Standardized Toolbar */}
+            <PerspectiveToolbar
+                layoutMode={layoutMode}
+                onLayoutChange={(mode) => switchMode(mode)}
+                onOpenGlobalConversation={() => onOpenConversation({
+                    scope: 'view',
+                    perspective: 'CAUSA',
+                    contextId: 'main-view',
+                    label: 'Causa Assistant'
+                })}
+            >
+                <TooltipProvider>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                size="sm"
+                                onClick={() => setIsCreateModalOpen(true)}
+                                variant="ghost"
+                                className="h-8 w-8 p-0"
+                            >
+                                <Plus className="h-4 w-4" />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Nieuwe Factor</TooltipContent>
+                    </Tooltip>
+                </TooltipProvider>
+            </PerspectiveToolbar>
 
             {/* View */}
             <CLDView
@@ -153,10 +163,12 @@ export const CausaShell = ({ themeId, onSelect: _onSelect }: CausaShellProps) =>
                 onSelect={handleSelect}
                 selection={localSelection}
                 layoutMode={layoutMode}
+                onOpenConversation={onOpenConversation}
+                onEdit={handleEdit}
             />
 
             {/* Modals */}
-            <FactorModal
+            <CreateFactorModal
                 isOpen={isCreateModalOpen}
                 onClose={() => setIsCreateModalOpen(false)}
                 onSave={handleCreateFactor}
