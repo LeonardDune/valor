@@ -19,3 +19,17 @@
 *   **READ BEFORE ACTING:** Before modifying core logic (Shell, Runners, Session), you MUST read the referenced architectural documentation (e.g. `docs/rearchitecture_layouts.md`).
 *   **ISOLATION FIRST:** When the architecture specifies isolation (e.g., Layouts, Perspectieven), do NOT optimize for code reuse if it compromises that isolation. Explicit duplication is better than implicit coupling.
 *   **STATELESSNESS:** Core logical units (Runners, Agents) should be stateless where possible. State belongs in the Shell or Store, strictly scoped.
+
+## Design System & UI
+*   **Foundation:** Use **Shadcn/UI** as the base component library.
+    *   **Style:** "New York"
+    *   **Base Color:** Zinc
+    *   **Radius:** 0.5rem
+    *   **Icons:** Lucide React
+*   **Component Location:** All Shadcn primitives must reside in `src/components/ui`.
+*   **Styling Strategy:**
+    *   **Global Tokens:** Use CSS variables defined in `src/index.css` for all colors and layout constants.
+    *   **Tailwind:** Use the extended Tailwind configuration which maps to these variables (e.g., `bg-canvas`, `text-causal-positive`).
+    *   **No Hardcoded Colors:** Do not use arbitrary hex or rgb values in components. Always utilize the semantic tokens.
+*   **Path Aliases:** Use `@/` to import from `src/` (e.g., `import { Button } from "@/components/ui/button"`).
+*   **Z-Index:** Respect the global z-index scale defined in `index.css` (`--z-canvas`, `--z-panel`, `--z-overlay`, `--z-modal`, `--z-cursor`).

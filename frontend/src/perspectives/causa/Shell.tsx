@@ -8,7 +8,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { PerspectiveToolbar } from '@/components/Shell/PerspectiveToolbar';
+import { PerspectiveToolbar } from '@/components/shell/PerspectiveToolbar';
 import { CLDView } from './views/CLDView';
 import { useCausaData } from './hooks/useCausaData';
 import { LayoutSession } from './layout/session';

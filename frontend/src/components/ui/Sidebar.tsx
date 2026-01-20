@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
-    ChevronsLeft, ChevronsRight, Home,
-    Settings, LogOut, ChevronRight, Layout, Folder
+    Settings, LogOut, ChevronRight, Layout, Folder, Activity,
+    ChevronsLeft, ChevronsRight, Home
 } from 'lucide-react';
 import { useOrganization } from '../../context/OrganizationContext';
 import { useAuth } from '../../context/AuthContext';
@@ -75,6 +75,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     label="Projecten"
                     isActive={view === 'PROJECT_LIST'}
                     onClick={() => setView('PROJECT_LIST')}
+                    isCollapsed={isCollapsed}
+                />
+
+                <NavItem
+                    icon={<Activity size={20} />}
+                    label="Collaboratie"
+                    isActive={view === 'DASHBOARD'}
+                    onClick={() => setView('DASHBOARD')}
                     isCollapsed={isCollapsed}
                 />
 
