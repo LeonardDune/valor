@@ -1,24 +1,33 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ProjectList } from './components/Dashboard/ProjectList';
 import { ThemeList } from './components/Dashboard/ThemeList';
 import { ValorWorkspace } from './components/Workspace/ValorWorkspace';
-import { UserList } from './components/Settings/UserList';
+import { MemberManagement } from './components/Settings/MemberManagement';
 import { Sidebar } from './components/UI/Sidebar'; // New Sidebar
 import { useOrganization } from './context/OrganizationContext';
 import { useAuth } from './context/AuthContext';
 import { LoginPage } from './pages/LoginPage';
 import OnboardingPage from './pages/OnboardingPage';
+import { AcceptInvitePage } from './pages/AcceptInvitePage';
 
-type ViewSate = 'PROJECT_LIST' | 'THEME_LIST' | 'WORKSPACE' | 'SETTINGS';
+type ViewSate = 'PROJECT_LIST' | 'THEME_LIST' | 'WORKSPACE' | 'SETTINGS' | 'ACCEPT_INVITE';
 
 function App() {
   const { session, isLoading: authLoading } = useAuth();
-  const { activeOrganization, organizations, isLoading: orgLoading } = useOrganization();
+  const { activeOrganization, organizations, isLoading: orgLoading, refreshOrganizations } = useOrganization();
   const [view, setView] = useState<ViewSate>('PROJECT_LIST');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedProjectName, setSelectedProjectName] = useState<string>('');
-  const [selectedThemeId, setSelectedThemeId] = useState<string>(''); // Changed to string (not null) to satisfy TS if needed, or handle null check
+  const [selectedThemeId, setSelectedThemeId] = useState<string>('');
   const [selectedThemeName, setSelectedThemeName] = useState<string>('');
+
+  // Check URL query params for invite code on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('code') || window.location.pathname.includes('/invite')) {
+      setView('ACCEPT_INVITE');
+    }
+  }, []);
 
   const handleSelectProject = (id: string, name: string) => {
     setSelectedProjectId(id);
@@ -38,12 +47,18 @@ function App() {
   };
 
   const handleNavigateThemeList = () => {
-    // Go to theme list of current project
     setView('THEME_LIST');
     // Keep selectedProjectId
   };
 
-  if (authLoading || orgLoading) {
+  const handleInviteSuccess = async () => {
+    // Refresh organizations to show the new one
+    await refreshOrganizations();
+    setView('PROJECT_LIST');
+    // URL is cleared in AcceptInvitePage, but good to be sure
+  };
+
+  if (authLoading) { // Removed orgLoading check for View 'ACCEPT_INVITE' potential
     return <div className="flex items-center justify-center min-h-screen text-slate-500">Laden...</div>;
   }
 
@@ -51,7 +66,13 @@ function App() {
     return <LoginPage />;
   }
 
-  if (organizations.length === 0) {
+  // Special case: If accepting invite, do not block on organizations.length === 0
+  if (view === 'ACCEPT_INVITE') {
+    return <AcceptInvitePage onSuccess={handleInviteSuccess} />;
+  }
+
+  // Only block if not loading and no orgs
+  if (!orgLoading && organizations.length === 0) {
     return <OnboardingPage />;
   }
 
@@ -72,7 +93,7 @@ function App() {
       <main className="flex-1 overflow-auto relative flex flex-col">
         {view === 'SETTINGS' && activeOrganization && (
           <div className="p-8">
-            <UserList organizationId={activeOrganization.id} />
+            <MemberManagement entityId={activeOrganization.id} entityType="organization" />
           </div>
         )}
 

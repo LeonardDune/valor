@@ -61,16 +61,32 @@ class ConversationResponse(BaseModel):
     extracted_claims: List[Claim] = []
     agent_responses: List[AgentResponse] = []
 
+class WorkspaceStatus(str, Enum):
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+class Role(str, Enum):
+    ADMIN = "admin"
+    MEMBER = "member"
+    VIEWER = "viewer"
+
+class InviteStatus(str, Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    EXPIRED = "expired"
+
 class Organization(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     description: Optional[str] = None
+    status: WorkspaceStatus = WorkspaceStatus.ACTIVE
     created_at: datetime = Field(default_factory=datetime.now)
 
 class User(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     email: str
     name: Optional[str] = None
+    is_platform_admin: bool = False
     created_at: datetime = Field(default_factory=datetime.now)
 
 class Project(BaseModel):
@@ -78,6 +94,7 @@ class Project(BaseModel):
     name: str
     description: Optional[str] = None
     organization_id: str # Required link to Organization
+    status: WorkspaceStatus = WorkspaceStatus.ACTIVE
     created_at: datetime = Field(default_factory=datetime.now)
 
 class Theme(BaseModel):
@@ -85,4 +102,5 @@ class Theme(BaseModel):
     name: str # The central topic
     description: Optional[str] = None
     project_id: str
+    status: WorkspaceStatus = WorkspaceStatus.ACTIVE
     created_at: datetime = Field(default_factory=datetime.now)

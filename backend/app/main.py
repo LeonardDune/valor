@@ -11,8 +11,10 @@ import uuid
 from contextlib import asynccontextmanager
 from app.db.utils import close_driver, verify_connectivity
 from app.auth import get_current_user
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 import logging
+from app.db.invites import create_invite, get_pending_invites, accept_invite
+from app.models.domain import InviteStatus, Role
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -114,7 +116,8 @@ from app.db.crud import (
     get_claims_for_theme, create_organization, get_organizations, create_user,
     get_organization_users, add_user_to_organization, update_org_member_role,
     remove_user_from_organization, update_user_profile, get_user_organizations,
-    get_projects, create_project, get_project_themes, create_theme
+    get_projects, create_project, get_project_themes, create_theme, get_user_by_email,
+    check_permission, get_project_users, get_theme_users, get_all_users
 )
 from pydantic import BaseModel
 
@@ -203,6 +206,115 @@ async def remove_member(org_id: str, user_id: str, user: dict = Depends(get_curr
 @app.get("/projects")
 async def list_projects(organization_id: str, user: dict = Depends(get_current_user)):
     return await get_projects(organization_id)
+
+@app.get("/projects/{project_id}/users")
+async def list_project_users(project_id: str, user: dict = Depends(get_current_user)):
+    # Add permission check?
+    return await get_project_users(project_id)
+
+@app.get("/themes/{theme_id}/users")
+async def list_theme_users(theme_id: str, user: dict = Depends(get_current_user)):
+    return await get_theme_users(theme_id)
+
+@app.get("/users")
+async def list_all_users(user: dict = Depends(get_current_user)):
+    # Check if platform admin
+    email = user.get("email")
+    is_admin = await check_permission(email, "GLOBAL", Role.ADMIN) 
+    # Wait, check_permission needs an ID. 
+    # For global check, we rely on the `permissions.py` update which checks `user.is_platform_admin`.
+    # But check_permission logic requires an Entity ID to traverse.
+    # We should add a specific check or pass a dummy ID?
+    # Actually, simpler: fetch user and check flag directly.
+    
+    current_user_data = await get_user_by_email(email)
+    if not current_user_data or not current_user_data.get('is_platform_admin'):
+         raise HTTPException(status_code=403, detail="Only Platform Admins can view all users")
+         
+    return await get_all_users()
+
+# Invite Endpoints
+
+class InviteRequest(BaseModel):
+    email: str
+    entity_id: str
+    role: str = "member"
+    expires_in_days: Optional[int] = 7
+
+class InviteAcceptRequest(BaseModel):
+    code: str
+
+@app.post("/invites")
+async def create_new_invite(invite: InviteRequest, user: dict = Depends(get_current_user)):
+    user_email = user.get("email")
+    if not user_email:
+        raise HTTPException(status_code=401, detail="User not authenticated")
+    
+    # Hybrid Logic: Check if user exists
+    existing_user = await get_user_by_email(invite.email)
+    if existing_user:
+        # User exists: Add directly (assuming admin consent implies user consent for now, or just notify)
+        # Check permissions via add_user wrapper or directly here
+        # For consistency with "Invite" flow, let's just add them as MEMBER_OF
+        # BUT: Check if inviter has permission
+        can_add = await check_permission(user_email, invite.entity_id, Role.ADMIN)
+        if not can_add:
+            raise HTTPException(status_code=403, detail="Not authorized to add members")
+            
+        await add_user_to_organization(invite.email, invite.entity_id, invite.role)
+        return {"status": "added", "message": f"User {invite.email} added directly."}
+    else:
+        # User does not exist: Create Invite
+        try:
+            result = await create_invite(
+                inviter_email=user_email,
+                target_email=invite.email,
+                entity_id=invite.entity_id,
+                role=Role(invite.role),
+                expires_in_days=invite.expires_in_days or 7
+            )
+            return {"status": "invited", "invite": result}
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/organizations/{org_id}/invites")
+async def list_org_invites(org_id: str, user: dict = Depends(get_current_user)):
+    # Check permissions? (Admin only)
+    user_email = user.get("email")
+    can_view = await check_permission(user_email, org_id, Role.ADMIN)
+    if not can_view:
+        raise HTTPException(status_code=403, detail="Not authorized to view invites")
+        
+    return await get_pending_invites(org_id)
+
+@app.get("/projects/{project_id}/invites")
+async def list_project_invites(project_id: str, user: dict = Depends(get_current_user)):
+    user_email = user.get("email")
+    can_view = await check_permission(user_email, project_id, Role.ADMIN)
+    if not can_view:
+        raise HTTPException(status_code=403, detail="Not authorized to view invites")
+    return await get_pending_invites(project_id)
+
+@app.get("/themes/{theme_id}/invites")
+async def list_theme_invites(theme_id: str, user: dict = Depends(get_current_user)):
+    user_email = user.get("email")
+    can_view = await check_permission(user_email, theme_id, Role.ADMIN)
+    if not can_view:
+        raise HTTPException(status_code=403, detail="Not authorized to view invites")
+    return await get_pending_invites(theme_id)
+
+@app.post("/invites/accept")
+async def accept_invite_endpoint(data: InviteAcceptRequest, user: dict = Depends(get_current_user)):
+    user_email = user.get("email")
+    if not user_email:
+        raise HTTPException(status_code=401, detail="User not authenticated")
+        
+    try:
+        result = await accept_invite(data.code, user_email)
+        return result
+    except Exception as e:
+        logger.error(f"Error accepting invite: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/projects")
 async def create_new_project(project: ProjectCreate, user: dict = Depends(get_current_user)):
