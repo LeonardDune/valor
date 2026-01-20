@@ -16,7 +16,7 @@ async def assign_role(user_email: str, entity_id: str, role: Role):
     MATCH (u:User {email: toLower($email)})
     MATCH (e) WHERE e.id = $entity_id
     MERGE (u)-[r:HAS_ROLE]->(e)
-    SET r.type = $role, r.updated_at = datetime()
+    SET r.role = $role, r.updated_at = datetime()
     """
     try:
         with driver.session() as session:
@@ -54,27 +54,37 @@ async def check_permission(user_email: str, entity_id: str, required_role: Role)
     MATCH (target {id: $entity_id})
     MATCH (u:User {email: toLower($email)})
     
+    // Check Platform Admin
+    WITH u, target, COALESCE(u.is_platform_admin, false) as is_platform_admin
+    
     // Find all paths from target up to root (Organization)
-    // Relationship can be OWNS (Org->Proj) or HAS_THEME (Proj->Theme)
-    // We reverse direction for lookup: (child)<-[:OWNS|HAS_THEME*0..]-(parent)
     MATCH path = (parent)-[:OWNS|HAS_THEME*0..]->(target)
     
     // Check if user has a role on any node in this path (parent or target)
-    MATCH (u)-[r:HAS_ROLE]->(parent)
+    OPTIONAL MATCH (u)-[r:HAS_ROLE]->(parent)
     
-    RETURN r.type as role
+    RETURN is_platform_admin, collect(r.role) as roles
     """
     
     try:
         with driver.session() as session:
             result = session.run(query, {"email": user_email, "entity_id": entity_id})
-            user_roles = [record["role"] for record in result]
+            record = result.single()
+            
+            if not record:
+                return False
+
+            if record["is_platform_admin"]:
+                return True
+                
+            user_roles = record["roles"]
             
             # Check if ANY of the found roles satisfy the requirement
             for role_str in user_roles:
-                weight = role_weights.get(role_str, 0)
-                if weight >= required_weight:
-                    return True
+                if role_str: # role can be None if OPTIONAL MATCH fails
+                    weight = role_weights.get(role_str, 0)
+                    if weight >= required_weight:
+                        return True
             
             return False
             
@@ -113,7 +123,7 @@ async def get_user_navigation_tree(user_email: str):
     
     // 1. Collect descendants if Admin
     OPTIONAL MATCH (root_access_node)-[:OWNS|HAS_THEME*1..]->(child)
-    WHERE r.type = 'admin'
+    WHERE r.role = 'admin'
     
     // 2. Identify all accessible nodes: the root ones + children if admin
     WITH u, collect(root_access_node) + collect(child) as accessible_nodes

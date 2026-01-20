@@ -1,11 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { CausaShell } from '../../perspectives/causa';
 import { api, type Claim } from '../../services/api';
-import { Maximize2, Minimize2, ArrowLeft } from 'lucide-react';
+import { Maximize2, Minimize2, ArrowLeft, Settings } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
 import type { ConversationContext } from '../../types/conversation';
 import { ConversationPane } from '../Shell/ConversationPane';
+import { MemberManagement } from '../Settings/MemberManagement';
 
 interface ValorWorkspaceProps {
     projectId: string;
@@ -22,6 +29,7 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
     // const [factors, setFactors] = useState<any[]>([]); // Cleaned up unused state
     const [activeConversation, setActiveConversation] = useState<ConversationContext | null>(null);
     const [focusMode, setFocusMode] = useState(false);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
     const refreshData = useCallback(async () => {
         try {
@@ -89,6 +97,14 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                     <Button
                         variant="ghost"
                         size="icon"
+                        onClick={() => setIsSettingsOpen(true)}
+                        title="Thema Instellingen & Leden"
+                    >
+                        <Settings size={18} />
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
                         onClick={() => setFocusMode(!focusMode)}
                         title={focusMode ? "Exit Focus Mode" : "Enter Focus Mode"}
                         className={focusMode ? 'text-primary bg-primary/10' : ''}
@@ -126,6 +142,17 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                 topic={themeName}
                 onClaimsUpdate={handleClaimsUpdate}
             />
+
+            <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
+                <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle>Thema Instellingen: {themeName}</DialogTitle>
+                    </DialogHeader>
+                    <div className="py-4">
+                        <MemberManagement entityId={themeId} entityType="theme" />
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 };

@@ -70,6 +70,7 @@ export interface User {
     username?: string;
     role?: string;
     joined_at?: string;
+    is_platform_admin?: boolean;
 }
 
 export interface Theme {
@@ -77,6 +78,15 @@ export interface Theme {
     name: string;
     description: string;
     project_id: string;
+}
+
+export interface Invite {
+    id: string;
+    email: string;
+    role: string;
+    created_at: string;
+    expires_at: string;
+    code: string;
 }
 
 export const api = {
@@ -121,6 +131,21 @@ export const api = {
         return response.data;
     },
 
+    getProjectUsers: async (projectId: string) => {
+        const response = await apiClient.get<User[]>(`/projects/${projectId}/users`);
+        return response.data;
+    },
+
+    getThemeUsers: async (themeId: string) => {
+        const response = await apiClient.get<User[]>(`/themes/${themeId}/users`);
+        return response.data;
+    },
+
+    getAllUsers: async () => {
+        const response = await apiClient.get<User[]>('/users');
+        return response.data;
+    },
+
     addOrganizationUser: async (orgId: string, email: string, role: string = 'member') => {
         const response = await apiClient.post(`/organizations/${orgId}/users`, { email, role });
         return response.data;
@@ -133,6 +158,26 @@ export const api = {
 
     removeOrgMember: async (orgId: string, userId: string) => {
         const response = await apiClient.delete(`/organizations/${orgId}/users/${userId}`);
+        return response.data;
+    },
+
+    // Invites
+    createInvite: async (email: string, entityId: string, role: string, expiresInDays: number = 7) => {
+        const response = await apiClient.post('/invites', { email, entity_id: entityId, role, expires_in_days: expiresInDays });
+        return response.data;
+    },
+
+    getPendingInvites: async (entityId: string, entityType: 'organization' | 'project' | 'theme' = 'organization') => {
+        let endpoint = `/organizations/${entityId}/invites`;
+        if (entityType === 'project') endpoint = `/projects/${entityId}/invites`;
+        if (entityType === 'theme') endpoint = `/themes/${entityId}/invites`;
+
+        const response = await apiClient.get<Invite[]>(endpoint);
+        return response.data;
+    },
+
+    acceptInvite: async (code: string) => {
+        const response = await apiClient.post('/invites/accept', { code });
         return response.data;
     },
 
