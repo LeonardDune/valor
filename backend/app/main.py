@@ -4,6 +4,7 @@ from typing import Optional
 import os
 from dotenv import load_dotenv
 from app.models.domain import ConversationRequest, ConversationResponse
+from app.routers import proposals
 from app.agent.core import process_user_message
 from app.db.crud import save_claims, set_conversation_topic
 import uuid
@@ -87,6 +88,8 @@ app.add_middleware(
 @app.get("/")
 async def root():
     return {"message": "Welcome to CAUSA API", "status": "running"}
+
+app.include_router(proposals.router)
 
 @app.get("/health")
 async def health_check():

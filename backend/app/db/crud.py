@@ -2,7 +2,7 @@ import logging
 import uuid
 from typing import List, Optional
 from app.db.utils import get_driver
-from app.models.domain import Claim, ChatMessage, WorkspaceStatus, Role
+from app.models.domain import Claim, ChatMessage, WorkspaceStatus, Role, Proposal, LifecycleStatus
 from app.db.permissions import get_user_navigation_tree, assign_role, check_permission
 
 logger = logging.getLogger(__name__)
@@ -940,3 +940,111 @@ async def delete_claim_manual(claim_id: str):
     except Exception as e:
         logger.error(f"Failed to delete claim: {e}")
         raise e
+
+# Proposal Management
+
+async def create_proposal(title: str, author_id: str, description: Optional[str] = None) -> str:
+    driver = get_driver()
+    pid = str(uuid.uuid4())
+    # Create Proposal node
+    # Since we need to know WHO creates it, we assume we have an author_id (User UUID)
+    
+    query = """
+    MATCH (u:User {id: $uid})
+    MERGE (p:Proposal {id: $pid})
+    ON CREATE SET p.title = $title, 
+                  p.description = $desc,
+                  p.status = 'draft',
+                  p.created_at = datetime(),
+                  p.author_id = $uid
+    MERGE (u)-[:AUTHORED]->(p)
+    RETURN p.id as id
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {
+                "pid": pid, "title": title, "desc": description, "uid": author_id
+            })
+            record = result.single()
+            if not record:
+                 # Fallback if user not found, create orphan proposal? Or fail?
+                 # ideally fail. But let's check
+                 raise Exception(f"Author not found: {author_id}")
+            return record["id"]
+    except Exception as e:
+        logger.error(f"Failed to create proposal: {e}")
+        raise e
+
+async def get_proposals(status: Optional[str] = None, author_id: Optional[str] = None) -> List[Proposal]:
+    driver = get_driver()
+    
+    # Base query
+    query = "MATCH (p:Proposal)"
+    where_clauses = []
+    params = {}
+    
+    if status:
+        where_clauses.append("p.status = $status")
+        params['status'] = status
+    
+    if author_id:
+        # Match author relationship
+        query += "<-[:AUTHORED]-(u:User {id: $uid})"
+        params['uid'] = author_id
+
+    if where_clauses:
+        query += " WHERE " + " AND ".join(where_clauses)
+    
+    query += " RETURN p ORDER BY p.created_at DESC"
+    
+    try:
+        with driver.session() as session:
+            result = session.run(query, params)
+            proposals = []
+            for record in result:
+                node = record["p"]
+                data = dict(node)
+                # Convert datetime
+                if data.get('created_at') and hasattr(data['created_at'], 'isoformat'):
+                    data['created_at'] = data['created_at'].isoformat()
+                
+                # Ensure status is enum compatible? 
+                # domain.py uses str Enum.
+                
+                proposals.append(Proposal(**data))
+            return proposals
+    except Exception as e:
+        logger.error(f"Failed to get proposals: {e}")
+        return []
+
+async def get_proposal_by_id(proposal_id: str) -> Optional[Proposal]:
+    driver = get_driver()
+    query = "MATCH (p:Proposal {id: $pid}) RETURN p"
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"pid": proposal_id})
+            record = result.single()
+            if record:
+                data = dict(record["p"])
+                if data.get('created_at') and hasattr(data['created_at'], 'isoformat'):
+                    data['created_at'] = data['created_at'].isoformat()
+                return Proposal(**data)
+            return None
+    except Exception as e:
+        logger.error(f"Failed to get proposal {proposal_id}: {e}")
+        return None
+
+async def update_proposal_status(proposal_id: str, status: str) -> bool:
+    driver = get_driver()
+    query = """
+    MATCH (p:Proposal {id: $pid})
+    SET p.status = $status
+    RETURN p.id
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"pid": proposal_id, "status": status})
+            return result.single() is not None
+    except Exception as e:
+        logger.error(f"Failed to update proposal status: {e}")
+        return False
