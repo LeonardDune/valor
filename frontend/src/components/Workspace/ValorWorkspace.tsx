@@ -11,7 +11,7 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import type { ConversationContext } from '../../types/conversation';
-import { ConversationPane } from '../Shell/ConversationPane';
+import { ConversationPane } from '../shell/ConversationPane';
 import { MemberManagement } from '../Settings/MemberManagement';
 
 interface ValorWorkspaceProps {

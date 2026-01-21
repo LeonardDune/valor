@@ -1,21 +1,23 @@
 import { useState, useEffect } from 'react';
-import { ProjectList } from './components/Dashboard/ProjectList';
-import { ThemeList } from './components/Dashboard/ThemeList';
+import { ProjectList } from './components/dashboard/ProjectList';
+import { ThemeList } from './components/dashboard/ThemeList';
 import { ValorWorkspace } from './components/Workspace/ValorWorkspace';
 import { MemberManagement } from './components/Settings/MemberManagement';
-import { Sidebar } from './components/UI/Sidebar'; // New Sidebar
+import { Sidebar } from './components/ui/Sidebar'; // New Sidebar
 import { useOrganization } from './context/OrganizationContext';
 import { useAuth } from './context/AuthContext';
 import { LoginPage } from './pages/LoginPage';
 import OnboardingPage from './pages/OnboardingPage';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
 
-type ViewSate = 'PROJECT_LIST' | 'THEME_LIST' | 'WORKSPACE' | 'SETTINGS' | 'ACCEPT_INVITE';
+import { DashboardLayout } from './views/shell/DashboardLayout';
+
+type ViewSate = 'PROJECT_LIST' | 'THEME_LIST' | 'WORKSPACE' | 'SETTINGS' | 'ACCEPT_INVITE' | 'DASHBOARD';
 
 function App() {
   const { session, isLoading: authLoading } = useAuth();
   const { activeOrganization, organizations, isLoading: orgLoading, refreshOrganizations } = useOrganization();
-  const [view, setView] = useState<ViewSate>('PROJECT_LIST');
+  const [view, setView] = useState<ViewSate>('DASHBOARD'); // Start at Dashboard
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [selectedProjectName, setSelectedProjectName] = useState<string>('');
   const [selectedThemeId, setSelectedThemeId] = useState<string>('');
@@ -91,6 +93,10 @@ function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-auto relative flex flex-col">
+        {view === 'DASHBOARD' && (
+          <DashboardLayout />
+        )}
+
         {view === 'SETTINGS' && activeOrganization && (
           <div className="p-8">
             <MemberManagement entityId={activeOrganization.id} entityType="organization" />
