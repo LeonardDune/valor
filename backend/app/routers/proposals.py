@@ -18,7 +18,10 @@ from pydantic import BaseModel
 class CreateProposalRequest(BaseModel):
     title: str
     description: Optional[str] = None
-    author_id: str 
+    description: Optional[str] = None
+    type: Optional[str] = "standard" # standard, access_request, etc
+    author_id: str
+    target_id: Optional[str] = None # For ACCESS_REQUEST: entity_id
 
 class UpdateProposalStatusRequest(BaseModel):
     status: LifecycleStatus
@@ -26,7 +29,7 @@ class UpdateProposalStatusRequest(BaseModel):
 @router.post("/", response_model=str)
 async def create_new_proposal(request: CreateProposalRequest):
     try:
-        pid = await create_proposal(request.title, request.author_id, request.description)
+        pid = await create_proposal(request.title, request.author_id, request.description, request.type, request.target_id)
         return pid
     except Exception as e:
         logger.error(f"Error creating proposal: {e}")
@@ -53,4 +56,14 @@ async def update_status(proposal_id: str, request: UpdateProposalStatusRequest):
     if not success:
          # Could be not found or error, let's assume not found for simplicity or check logic
          raise HTTPException(status_code=404, detail="Proposal not found or update failed")
+    # If ACCESS_REQUEST is accepted, trigger membership logic
+    # This requires checking the proposal type first.
+    # Ideally, move this to a service layer, but for now:
+    repo_proposal = await get_proposal_by_id(proposal_id)
+    
+    if success and request.status == LifecycleStatus.ACCEPTED and repo_proposal:
+         # TODO: Check if type is ACCESS_REQUEST and call add_member
+         # This needs expansion in CRUD to support type/target_id storage first.
+         pass
+
     return {"status": "updated", "new_status": request.status}

@@ -16,7 +16,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 
 interface ChatInterfaceProps {
-    topic: string;
+    topicLabel: string;
+    topicId?: string;
     onClaimsUpdate: (claims: Claim[]) => void;
 }
 
@@ -34,21 +35,30 @@ const MyMessage: React.FC = () => {
     )
 }
 
-const ChatInitializer: React.FC<{ topic: string, onClaimsUpdate: (claims: Claim[]) => void, conversationIdRef: React.MutableRefObject<string | undefined> }> = ({ topic, onClaimsUpdate, conversationIdRef }) => {
+const ChatInitializer: React.FC<{
+    topicLabel: string,
+    topicId?: string,
+    onClaimsUpdate: (claims: Claim[]) => void,
+    conversationIdRef: React.MutableRefObject<string | undefined>
+}> = ({ topicLabel, topicId, onClaimsUpdate, conversationIdRef }) => {
     const thread = useThreadRuntime();
     const hasInitializedRef = useRef<string | null>(null);
 
     useEffect(() => {
-        if (hasInitializedRef.current === topic) return;
+        const initKey = topicId || topicLabel;
+        if (hasInitializedRef.current === initKey) return;
 
         const initChat = async () => {
-            hasInitializedRef.current = topic;
+            hasInitializedRef.current = initKey;
             try {
-                // Initial greeting request
+                // For the API we prefer topicId if available
+                const apiTopic = topicId || topicLabel;
+
+                // Initial greeting request - using the friendly label
                 const response = await api.chat(
-                    `Ik wil graag aan de slag met het thema "${topic}". Heb je suggesties voor relevante factoren?`,
+                    `Ik wil graag aan de slag met het thema "${topicLabel}". Heb je suggesties voor relevante factoren?`,
                     undefined,
-                    topic
+                    apiTopic
                 );
                 conversationIdRef.current = response.conversation_id;
 
@@ -81,12 +91,12 @@ const ChatInitializer: React.FC<{ topic: string, onClaimsUpdate: (claims: Claim[
         if (thread.getState().messages.length === 0) {
             initChat();
         }
-    }, [topic, thread, onClaimsUpdate, conversationIdRef]);
+    }, [topicLabel, topicId, thread, onClaimsUpdate, conversationIdRef]);
 
     return null;
 };
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ topic, onClaimsUpdate }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ topicLabel, topicId, onClaimsUpdate }) => {
     const conversationIdRef = useRef<string | undefined>(undefined);
 
     const adapter: ChatModelAdapter = {
@@ -97,7 +107,8 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ topic, onClaimsUpdate }) 
             const text = lastMessage.content[0].text;
 
             try {
-                const response = await api.chat(text, conversationIdRef.current, topic);
+                const apiTopic = topicId || topicLabel;
+                const response = await api.chat(text, conversationIdRef.current, apiTopic);
                 conversationIdRef.current = response.conversation_id;
 
                 if (response.extracted_claims) {
@@ -125,16 +136,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ topic, onClaimsUpdate }) 
 
     const runtime = useLocalRuntime(adapter);
 
-    // Reset conversation ID when topic changes (handled by new instance of runtime usually, but safe to clear)
+    // Reset conversation ID when topic changes
     useEffect(() => {
         conversationIdRef.current = undefined;
-    }, [topic]);
+    }, [topicId, topicLabel]);
 
     return (
         <div className="h-full w-full bg-background border-r border-border flex flex-col items-stretch">
             <AssistantRuntimeProvider runtime={runtime}>
                 <ThreadPrimitive.Root className="flex flex-col h-full">
-                    <ChatInitializer topic={topic} onClaimsUpdate={onClaimsUpdate} conversationIdRef={conversationIdRef} />
+                    <ChatInitializer
+                        topicLabel={topicLabel}
+                        topicId={topicId}
+                        onClaimsUpdate={onClaimsUpdate}
+                        conversationIdRef={conversationIdRef}
+                    />
                     <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto p-4 scroll-smooth">
                         <ThreadPrimitive.Empty>
                             <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8 text-center">

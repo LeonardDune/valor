@@ -121,7 +121,7 @@ export const CausaShell = ({ themeId, onSelect: _onSelect, onOpenConversation }:
         }
     };
 
-    if (!themeId) return <div className="p-10 text-slate-400">No Theme Context</div>;
+    if (!themeId) return <div className="p-10 text-muted-foreground italic">Geen thema geactiveerd.</div>;
 
     return (
         <div className="w-full h-full bg-background relative">
@@ -169,8 +169,8 @@ export const CausaShell = ({ themeId, onSelect: _onSelect, onOpenConversation }:
 
             {/* Modals */}
             <CreateFactorModal
-                isOpen={isCreateModalOpen}
-                onClose={() => setIsCreateModalOpen(false)}
+                open={isCreateModalOpen}
+                onOpenChange={setIsCreateModalOpen}
                 onSave={handleCreateFactor}
             />
 

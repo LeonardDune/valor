@@ -59,6 +59,7 @@ export interface Organization {
     id: string;
     name: string;
     description: string;
+    role?: string;
 }
 
 export interface User {
@@ -69,6 +70,7 @@ export interface User {
     last_name?: string;
     username?: string;
     role?: string;
+    status?: string;
     joined_at?: string;
     is_platform_admin?: boolean;
 }
@@ -78,6 +80,48 @@ export interface Theme {
     name: string;
     description: string;
     project_id: string;
+    role?: string;
+}
+
+export interface DashboardTheme {
+    id: string;
+    name: string;
+    description: string;
+    project_name?: string;
+    organization_name: string;
+    role?: string;
+    status?: string;
+    is_archived?: boolean;
+    stats?: {
+        active_claims: number;
+        members: number;
+    };
+    perspectives?: {
+        name: string;
+        color: string;
+        progress: number;
+    }[];
+    type: 'THEME';
+}
+
+export interface DashboardProject {
+    id: string;
+    name: string;
+    description?: string;
+    role?: string;
+    status?: string;
+    type: 'PROJECT';
+    themes: DashboardTheme[];
+}
+
+export interface DashboardEnvironment {
+    id: string;
+    name: string;
+    description?: string;
+    role?: string;
+    status?: string;
+    type: 'ORGANIZATION';
+    projects: DashboardProject[];
 }
 
 export interface Invite {
@@ -112,6 +156,16 @@ export const api = {
 
     createOrganization: async (name: string, description?: string) => {
         const response = await apiClient.post('/organizations', { name, description });
+        return response.data;
+    },
+
+    updateOrganization: async (orgId: string, name?: string, description?: string) => {
+        const response = await apiClient.patch(`/organizations/${orgId}`, { name, description });
+        return response.data;
+    },
+
+    archiveOrganization: async (orgId: string) => {
+        const response = await apiClient.delete(`/organizations/${orgId}`);
         return response.data;
     },
 
@@ -151,13 +205,33 @@ export const api = {
         return response.data;
     },
 
-    updateOrgMember: async (orgId: string, userId: string, role: string, name?: string) => {
-        const response = await apiClient.put(`/organizations/${orgId}/users/${userId}`, { role, name });
+    updateOrgMember: async (orgId: string, userId: string, role: string, name?: string, status?: string) => {
+        const response = await apiClient.put(`/organizations/${orgId}/users/${userId}`, { role, name, status });
         return response.data;
     },
 
     removeOrgMember: async (orgId: string, userId: string) => {
         const response = await apiClient.delete(`/organizations/${orgId}/users/${userId}`);
+        return response.data;
+    },
+
+    updateProjectMember: async (projectId: string, userId: string, role: string, name?: string, status?: string) => {
+        const response = await apiClient.put(`/projects/${projectId}/users/${userId}`, { role, name, status });
+        return response.data;
+    },
+
+    removeProjectMember: async (projectId: string, userId: string) => {
+        const response = await apiClient.delete(`/projects/${projectId}/users/${userId}`);
+        return response.data;
+    },
+
+    updateThemeMember: async (themeId: string, userId: string, role: string, name?: string, status?: string) => {
+        const response = await apiClient.put(`/themes/${themeId}/users/${userId}`, { role, name, status });
+        return response.data;
+    },
+
+    removeThemeMember: async (themeId: string, userId: string) => {
+        const response = await apiClient.delete(`/themes/${themeId}/users/${userId}`);
         return response.data;
     },
 
@@ -192,6 +266,16 @@ export const api = {
         return response.data;
     },
 
+    updateProject: async (projectId: string, name?: string, description?: string) => {
+        const response = await apiClient.patch(`/projects/${projectId}`, { name, description });
+        return response.data;
+    },
+
+    archiveProject: async (projectId: string) => {
+        const response = await apiClient.delete(`/projects/${projectId}`);
+        return response.data;
+    },
+
     getProjectThemes: async (projectId: string) => {
         const response = await apiClient.get<Theme[]>(`/projects/${projectId}/themes`);
         return response.data;
@@ -199,6 +283,16 @@ export const api = {
 
     createTheme: async (projectId: string, name: string, description?: string) => {
         const response = await apiClient.post(`/projects/${projectId}/themes`, { project_id: projectId, name, description });
+        return response.data;
+    },
+
+    updateTheme: async (themeId: string, name?: string, description?: string) => {
+        const response = await apiClient.patch(`/themes/${themeId}`, { name, description });
+        return response.data;
+    },
+
+    archiveTheme: async (themeId: string) => {
+        const response = await apiClient.delete(`/themes/${themeId}`);
         return response.data;
     },
 
@@ -254,5 +348,51 @@ export const api = {
     deleteClaim: async (id: string) => {
         const response = await apiClient.delete(`/claims/${id}`);
         return response.data;
+    },
+
+    // Dashboard
+    getDashboardEnvironments: async () => {
+        const response = await apiClient.get<DashboardEnvironment[]>('/dashboard/environments');
+        return response.data;
+    },
+
+    getDashboardThemes: async () => {
+        const response = await apiClient.get<DashboardTheme[]>('/dashboard/themes');
+        return response.data;
+    },
+
+    // Proposals
+    createProposal: async (data: {
+        title: string;
+        description?: string;
+        type?: string;
+        target_id?: string;
+        author_id: string;
+    }) => {
+        // Backend expects CreateProposalRequest body
+        const response = await apiClient.post('/proposals/', data);
+        return response.data;
+    },
+
+    // ... existing interfaces ...
+
+    getProposals: async (status?: string, author?: string) => {
+        const response = await apiClient.get<Proposal[]>('/proposals/', {
+            params: { status, author }
+        });
+        return response.data;
     }
 };
+
+export type LifecycleStatus = 'draft' | 'proposed' | 'accepted' | 'rejected' | 'deprecated';
+
+export interface Proposal {
+    id: string;
+    title: string;
+    description?: string;
+    status: LifecycleStatus;
+    author_id: string;
+    created_at: string;
+    type?: string;
+    target_id?: string;
+}
