@@ -33,6 +33,7 @@ export interface Project {
     status?: string;
     type: 'PROJECT';
     themes?: any[];
+    created_at?: string;
 }
 
 interface ProjectCardProps {

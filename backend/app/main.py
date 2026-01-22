@@ -237,11 +237,12 @@ async def add_org_member(org_id: str, member: AddMemberRequest, user: dict = Dep
 class UpdateMemberRequest(BaseModel):
     role: str
     name: Optional[str] = None
+    status: Optional[str] = None
 
 @app.put("/organizations/{org_id}/users/{user_id}")
 async def update_member(org_id: str, user_id: str, data: UpdateMemberRequest, user: dict = Depends(get_current_user)):
-    await update_org_member_role(org_id, user_id, data.role, data.name)
-    return {"status": "updated", "user_id": user_id, "role": data.role, "name": data.name}
+    await update_org_member_role(org_id, user_id, data.role, data.name, data.status)
+    return {"status": "updated", "user_id": user_id, "role": data.role, "name": data.name, "member_status": data.status}
 
 @app.delete("/organizations/{org_id}/users/{user_id}")
 async def remove_member(org_id: str, user_id: str, user: dict = Depends(get_current_user)):
@@ -256,8 +257,8 @@ async def update_project_member(project_id: str, user_id: str, data: UpdateMembe
     email = user.get("email")
     if not await check_permission(email, project_id, Role.ADMIN):
         raise HTTPException(status_code=403, detail="Not authorized to manage this project")
-    await update_project_member_role(project_id, user_id, data.role, data.name)
-    return {"status": "updated", "user_id": user_id, "role": data.role, "name": data.name}
+    await update_project_member_role(project_id, user_id, data.role, data.name, data.status)
+    return {"status": "updated", "user_id": user_id, "role": data.role, "name": data.name, "member_status": data.status}
 
 @app.delete("/projects/{project_id}/users/{user_id}")
 async def remove_project_member_endpoint(project_id: str, user_id: str, user: dict = Depends(get_current_user)):
@@ -272,8 +273,8 @@ async def update_theme_member(theme_id: str, user_id: str, data: UpdateMemberReq
     email = user.get("email")
     if not await check_permission(email, theme_id, Role.ADMIN):
         raise HTTPException(status_code=403, detail="Not authorized to manage this theme")
-    await update_theme_member_role(theme_id, user_id, data.role, data.name)
-    return {"status": "updated", "user_id": user_id, "role": data.role, "name": data.name}
+    await update_theme_member_role(theme_id, user_id, data.role, data.name, data.status)
+    return {"status": "updated", "user_id": user_id, "role": data.role, "name": data.name, "member_status": data.status}
 
 @app.delete("/themes/{theme_id}/users/{user_id}")
 async def remove_theme_member_endpoint(theme_id: str, user_id: str, user: dict = Depends(get_current_user)):
@@ -285,7 +286,7 @@ async def remove_theme_member_endpoint(theme_id: str, user_id: str, user: dict =
 
 @app.get("/projects")
 async def list_projects(organization_id: str, user: dict = Depends(get_current_user)):
-    return await get_projects(organization_id)
+    return await get_projects(organization_id, user.get("email"))
 
 @app.get("/projects/{project_id}/users")
 async def list_project_users(project_id: str, user: dict = Depends(get_current_user)):
@@ -418,8 +419,8 @@ async def archive_project_endpoint(project_id: str, user: dict = Depends(get_cur
     return {"status": "archived"}
 
 @app.get("/projects/{project_id}/themes")
-async def list_themes(project_id: str):
-    return await get_project_themes(project_id)
+async def list_themes(project_id: str, user: dict = Depends(get_current_user)):
+    return await get_project_themes(project_id, user.get("email"))
 
 @app.post("/projects/{project_id}/themes")
 async def create_new_theme(project_id: str, theme: ThemeCreate):

@@ -20,9 +20,15 @@ interface MemberManagementProps {
     entityId: string;
     entityType: 'organization' | 'project' | 'theme' | 'global';
     hideHeader?: boolean;
+    isAdmin?: boolean;
 }
 
-export const MemberManagement: React.FC<MemberManagementProps> = ({ entityId, entityType, hideHeader }) => {
+export const MemberManagement: React.FC<MemberManagementProps> = ({
+    entityId,
+    entityType,
+    hideHeader,
+    isAdmin: propIsAdmin
+}) => {
     const [users, setUsers] = useState<User[]>([]);
     const [invites, setInvites] = useState<Invite[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -30,9 +36,13 @@ export const MemberManagement: React.FC<MemberManagementProps> = ({ entityId, en
     const [inviteEmail, setInviteEmail] = useState('');
     const [inviteRole, setInviteRole] = useState('member');
     const [inviteDays, setInviteDays] = useState('7');
+
+    // Editing State
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
     const [editRole, setEditRole] = useState('member');
     const [editName, setEditName] = useState('');
+    const [editStatus, setEditStatus] = useState('active');
+
     const [activeTab, setActiveTab] = useState<'users' | 'details'>('users');
     const [entityName, setEntityName] = useState('');
     const [entityDesc, setEntityDesc] = useState('');
@@ -43,7 +53,13 @@ export const MemberManagement: React.FC<MemberManagementProps> = ({ entityId, en
 
     // Auth Check
     const { user: currentUser } = useAuth();
-    const [isAdmin, setIsAdmin] = useState(false);
+    const [isAdmin, setIsAdmin] = useState(propIsAdmin ?? false);
+
+    useEffect(() => {
+        if (propIsAdmin !== undefined) {
+            setIsAdmin(propIsAdmin);
+        }
+    }, [propIsAdmin]);
 
     useEffect(() => {
         fetchUsers();
@@ -80,16 +96,15 @@ export const MemberManagement: React.FC<MemberManagementProps> = ({ entityId, en
             }
             setUsers(data);
 
-            if (currentUser) {
-                if (entityType === 'global') {
+            if (currentUser && propIsAdmin === undefined) {
+                if (entityType === 'global' || currentUser.role === 'admin') {
                     setIsAdmin(true);
-                } else {
-                    const myMembership = data.find(u => u.email === currentUser.email);
-                    if (myMembership && myMembership.role === 'admin') {
+                } else if (currentUser.email) {
+                    const myEmail = currentUser.email;
+                    const myMembership = data.find(u => u.email.toLowerCase() === myEmail.toLowerCase());
+                    if (myMembership && (myMembership.role === 'admin' || myMembership.is_platform_admin)) {
                         setIsAdmin(true);
                         fetchInvites();
-                    } else if (currentUser.role === 'admin') {
-                        setIsAdmin(false);
                     } else {
                         setIsAdmin(false);
                     }
@@ -133,16 +148,17 @@ export const MemberManagement: React.FC<MemberManagementProps> = ({ entityId, en
         setEditingUserId(user.id);
         setEditRole(user.role || 'member');
         setEditName(user.name || '');
+        setEditStatus(user.status || 'active');
     };
 
     const saveEdit = async (userId: string) => {
         try {
             if (entityType === 'organization') {
-                await api.updateOrgMember(entityId, userId, editRole, editName);
+                await api.updateOrgMember(entityId, userId, editRole, editName, editStatus);
             } else if (entityType === 'project') {
-                await api.updateProjectMember(entityId, userId, editRole, editName);
+                await api.updateProjectMember(entityId, userId, editRole, editName, editStatus);
             } else if (entityType === 'theme') {
-                await api.updateThemeMember(entityId, userId, editRole, editName);
+                await api.updateThemeMember(entityId, userId, editRole, editName, editStatus);
             }
             setEditingUserId(null);
             fetchUsers();
@@ -265,8 +281,7 @@ export const MemberManagement: React.FC<MemberManagementProps> = ({ entityId, en
                                 <TableRow>
                                     <TableHead>Naam</TableHead>
                                     <TableHead>E-mail</TableHead>
-                                    <TableHead>Rol</TableHead>
-                                    {entityType === 'global' && <TableHead>Status</TableHead>}
+                                    <TableHead>Rol & Status</TableHead>
                                     <TableHead>Lid Sinds</TableHead>
                                     <TableHead className="text-right">Acties</TableHead>
                                 </TableRow>
@@ -296,6 +311,7 @@ export const MemberManagement: React.FC<MemberManagementProps> = ({ entityId, en
                                                         value={editName}
                                                         onChange={(e) => setEditName(e.target.value)}
                                                         className="h-8 w-[150px]"
+                                                        placeholder="Naam"
                                                     />
                                                 ) : (
                                                     user.name || "-"
@@ -304,21 +320,37 @@ export const MemberManagement: React.FC<MemberManagementProps> = ({ entityId, en
                                             <TableCell>{user.email}</TableCell>
                                             <TableCell>
                                                 {editingUserId === user.id && (entityType === 'organization' || entityType === 'project' || entityType === 'theme') ? (
-                                                    <Select value={editRole} onValueChange={setEditRole}>
-                                                        <SelectTrigger className="h-8 w-[130px]">
-                                                            <SelectValue />
-                                                        </SelectTrigger>
-                                                        <SelectContent>
-                                                            <SelectItem value="member">Lid</SelectItem>
-                                                            <SelectItem value="viewer">Kijker</SelectItem>
-                                                            <SelectItem value="admin">Beheerder</SelectItem>
-                                                        </SelectContent>
-                                                    </Select>
-                                                ) : (
                                                     <div className="flex gap-2">
+                                                        <Select value={editRole} onValueChange={setEditRole}>
+                                                            <SelectTrigger className="h-8 w-[110px]">
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="member">Lid</SelectItem>
+                                                                <SelectItem value="viewer">Kijker</SelectItem>
+                                                                <SelectItem value="admin">Beheerder</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                        <Select value={editStatus} onValueChange={setEditStatus}>
+                                                            <SelectTrigger className={`h-8 w-[100px] ${editStatus === 'inactive' ? 'text-muted-foreground' : 'text-green-600'}`}>
+                                                                <SelectValue />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem value="active">Actief</SelectItem>
+                                                                <SelectItem value="inactive">Inactief</SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex gap-2 items-center">
                                                         <Badge variant={user.role === 'admin' ? 'default' : 'secondary'}>
                                                             {user.role === 'admin' ? 'Beheerder' : (user.role || 'Lid')}
                                                         </Badge>
+                                                        {user.status === 'inactive' && (
+                                                            <Badge variant="outline" className="text-muted-foreground border-muted-foreground/50">
+                                                                Inactief
+                                                            </Badge>
+                                                        )}
                                                         {user.is_platform_admin && (
                                                             <Badge variant="outline" className="border-blue-500 text-blue-500 flex items-center gap-1">
                                                                 <ShieldCheck className="h-3 w-3" />

@@ -16,7 +16,7 @@ async def assign_role(user_email: str, entity_id: str, role: Role):
     MATCH (u:User {email: toLower($email)})
     MATCH (e) WHERE e.id = $entity_id
     MERGE (u)-[r:HAS_ROLE]->(e)
-    SET r.role = $role, r.updated_at = datetime()
+    SET r.role = $role, r.updated_at = datetime(), r.status = coalesce(r.status, 'active')
     """
     try:
         with driver.session() as session:
@@ -62,6 +62,7 @@ async def check_permission(user_email: str, entity_id: str, required_role: Role)
     
     // Check if user has a role on any node in this path (parent or target)
     OPTIONAL MATCH (u)-[r:HAS_ROLE]->(parent)
+    WHERE r.status IS NULL OR r.status = 'active'
     
     RETURN is_platform_admin, collect(r.role) as roles
     """

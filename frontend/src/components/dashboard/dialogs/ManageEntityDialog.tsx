@@ -218,7 +218,7 @@ export const ManageEntityDialog: React.FC<ManageEntityDialogProps> = ({
 
                         <TabsContent value="members" className="mt-0">
                             {/* We wrap MemberManagement in a div that resets styles or we update MemberManagement itself */}
-                            <MemberManagement entityId={entityId} entityType={entityType} />
+                            <MemberManagement entityId={entityId} entityType={entityType} isAdmin={isAdmin} />
                         </TabsContent>
 
                         <TabsContent value="structure" className="mt-0 space-y-6">

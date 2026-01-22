@@ -1,10 +1,8 @@
 import { useEffect } from 'react';
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
-import { ProjectList } from './components/dashboard/ProjectList';
-import { ThemeList } from './components/dashboard/ThemeList';
-import { ThemeGrid } from './components/dashboard/ThemeGrid';
 import { OrganizationGrid } from './components/dashboard/OrganizationGrid';
 import { ProjectGrid } from './components/dashboard/ProjectGrid';
+import { ThemeGrid } from './components/dashboard/ThemeGrid';
 import { PerspectivesLanding } from './views/shell/PerspectivesLanding';
 import { ValorWorkspace } from './components/Workspace/ValorWorkspace';
 import { MemberManagement } from './components/Settings/MemberManagement';
@@ -127,14 +125,17 @@ function App() {
 // Wrappers to adapt explicit ID routing to components that might need specific props
 const ThemeListWrapper = () => {
   const { projectId } = useParams();
-  const navigate = useNavigate();
-  // In a real implementation we would fetch the project name here
+  const { organizations } = useOrganization();
+
+  // Find project name in context data
+  const project = organizations
+    .flatMap(org => org.projects)
+    .find(p => p.id === projectId);
+
   return (
-    <ThemeList
+    <ThemeGrid
       projectId={projectId!}
-      projectName="Project"
-      onSelectTheme={(id: string) => navigate(`/themes/${id}`)}
-      onBack={() => navigate(-1)}
+      projectName={project?.name || "Project"}
     />
   );
 }
@@ -155,11 +156,10 @@ const WorkspaceWrapper = () => {
 
 const OrganizationRouteWrapper = () => {
   const { orgId } = useParams();
-  const navigate = useNavigate();
   const { activeOrganization, switchOrganization, organizations, isLoading } = useOrganization();
 
   useEffect(() => {
-    // Sync URL -> Context
+    // Sync URL -> Context for global components (Sidebar, etc)
     if (orgId && organizations.length > 0 && activeOrganization?.id !== orgId) {
       switchOrganization(orgId);
     }
@@ -167,20 +167,23 @@ const OrganizationRouteWrapper = () => {
 
   if (isLoading) return <div className="p-8">Laden...</div>;
 
-  // If we have organizations but the ID is invalid, or if we haven't selected one yet
-  if (!activeOrganization) {
-    // Try to find it one last time or redirect
-    const found = organizations.find(o => o.id === orgId);
-    if (found) {
-      return <div className="p-8">Laden...</div>; // Will switch in useEffect
+  // Source of truth is the URL orgId. We find the org in the loaded list.
+  // This avoids rendering with a stale 'activeOrganization' from context while switching.
+  const currentOrg = organizations.find(o => o.id === orgId) || activeOrganization;
+
+  if (!currentOrg) {
+    // If we have organizations but the ID is invalid
+    if (organizations.length > 0) {
+      return <Navigate to="/" />;
     }
-    return <Navigate to="/" />;
+    return <div className="p-8">Laden...</div>;
   }
 
   return (
-    <div className="p-8">
-      <ProjectList onSelectProject={(id, _name) => navigate(`/projects/${id}`)} />
-    </div>
+    <ProjectGrid
+      organizationId={currentOrg.id}
+      organizationName={currentOrg.name}
+    />
   );
 };
 

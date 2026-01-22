@@ -9,34 +9,30 @@ import type { Claim } from '@/services/api';
 interface ConversationPaneProps {
     isOpen: boolean;
     onClose: () => void;
-    context: ConversationContext | null; // The context determining WHAT to show
-    topic: string; // Global topic (Theme Name) for fallback
+    context: ConversationContext | null;
+    topicId?: string;
+    topicLabel: string;
     onClaimsUpdate: (claims: Claim[]) => void;
     className?: string;
 }
 
-/**
- * Standardized Conversation Pane (Template).
- * Acts as a container for conversation views (e.g. ChatInterface).
- */
 export const ConversationPane: React.FC<ConversationPaneProps> = ({
     isOpen,
     onClose,
     context,
-    topic,
+    topicId,
+    topicLabel,
     onClaimsUpdate,
     className
 }) => {
-    // If not open or no context, we render nothing (or null)
     if (!isOpen) return null;
 
-    // Derived State
     const title = context?.label || 'AI Agent';
     const subTitle = context ? `${context.perspective} • ${context.scope} Context` : 'Global Context';
 
-    const chatTopic = (context?.scope === 'object' && context.label)
-        ? `${topic} - ${context.label}`
-        : topic;
+    const chatTopicLabel = (context?.scope === 'object' && context.label)
+        ? `${topicLabel} - ${context.label}`
+        : topicLabel;
 
     return (
         <div className={cn(
@@ -56,10 +52,11 @@ export const ConversationPane: React.FC<ConversationPaneProps> = ({
                 </Button>
             </div>
 
-            {/* Content Area - Router Switch would go here later */}
+            {/* Content Area */}
             <div className="flex-1 overflow-hidden relative">
                 <ChatInterface
-                    topic={chatTopic}
+                    topicLabel={chatTopicLabel}
+                    topicId={topicId}
                     onClaimsUpdate={onClaimsUpdate}
                 />
             </div>

@@ -70,6 +70,7 @@ export interface User {
     last_name?: string;
     username?: string;
     role?: string;
+    status?: string;
     joined_at?: string;
     is_platform_admin?: boolean;
 }
@@ -204,8 +205,8 @@ export const api = {
         return response.data;
     },
 
-    updateOrgMember: async (orgId: string, userId: string, role: string, name?: string) => {
-        const response = await apiClient.put(`/organizations/${orgId}/users/${userId}`, { role, name });
+    updateOrgMember: async (orgId: string, userId: string, role: string, name?: string, status?: string) => {
+        const response = await apiClient.put(`/organizations/${orgId}/users/${userId}`, { role, name, status });
         return response.data;
     },
 
@@ -214,8 +215,8 @@ export const api = {
         return response.data;
     },
 
-    updateProjectMember: async (projectId: string, userId: string, role: string, name?: string) => {
-        const response = await apiClient.put(`/projects/${projectId}/users/${userId}`, { role, name });
+    updateProjectMember: async (projectId: string, userId: string, role: string, name?: string, status?: string) => {
+        const response = await apiClient.put(`/projects/${projectId}/users/${userId}`, { role, name, status });
         return response.data;
     },
 
@@ -224,8 +225,8 @@ export const api = {
         return response.data;
     },
 
-    updateThemeMember: async (themeId: string, userId: string, role: string, name?: string) => {
-        const response = await apiClient.put(`/themes/${themeId}/users/${userId}`, { role, name });
+    updateThemeMember: async (themeId: string, userId: string, role: string, name?: string, status?: string) => {
+        const response = await apiClient.put(`/themes/${themeId}/users/${userId}`, { role, name, status });
         return response.data;
     },
 

@@ -153,7 +153,8 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                 isOpen={!!activeConversation}
                 onClose={handleCloseConversation}
                 context={activeConversation}
-                topic={themeName}
+                topicId={themeId}
+                topicLabel={themeName}
                 onClaimsUpdate={handleClaimsUpdate}
             />
 
