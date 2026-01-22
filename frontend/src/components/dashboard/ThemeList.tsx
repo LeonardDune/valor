@@ -2,21 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { api, type Theme } from '../../services/api';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from "@/components/ui/dialog";
 import { Plus, ArrowLeft, Settings } from "lucide-react";
 import { MemberManagement } from '../Settings/MemberManagement';
+import { CreateThemeDialog } from './dialogs/CreateThemeDialog';
 
 interface ThemeListProps {
     projectId: string;
@@ -29,8 +19,6 @@ export const ThemeList: React.FC<ThemeListProps> = ({ projectId, projectName, on
     const [themes, setThemes] = useState<Theme[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
-    const [newThemeName, setNewThemeName] = useState('');
-    const [newThemeDesc, setNewThemeDesc] = useState('');
     const [activeTab, setActiveTab] = useState("themes");
 
     useEffect(() => {
@@ -45,21 +33,6 @@ export const ThemeList: React.FC<ThemeListProps> = ({ projectId, projectName, on
             console.error('Failed to fetch themes', error);
         } finally {
             setIsLoading(false);
-        }
-    };
-
-    const handleCreate = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!newThemeName) return;
-
-        try {
-            await api.createTheme(projectId, newThemeName, newThemeDesc);
-            setNewThemeName('');
-            setNewThemeDesc('');
-            setIsDialogOpen(false);
-            fetchThemes();
-        } catch (error) {
-            console.error('Failed to create theme', error);
         }
     };
 
@@ -93,49 +66,18 @@ export const ThemeList: React.FC<ThemeListProps> = ({ projectId, projectName, on
                 <TabsContent value="themes" className="space-y-8 mt-6">
                     <div className="flex justify-between items-end">
                         <p className="text-muted-foreground">Selecteer een thema om te verkennen.</p>
-                        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                            <DialogTrigger asChild>
+                        <CreateThemeDialog
+                            projectId={projectId}
+                            open={isDialogOpen}
+                            onOpenChange={setIsDialogOpen}
+                            trigger={
                                 <Button className="gap-2">
                                     <Plus className="h-4 w-4" />
                                     Nieuw Thema
                                 </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                                <DialogHeader>
-                                    <DialogTitle>Nieuw Thema Toevoegen</DialogTitle>
-                                    <DialogDescription>
-                                        Voeg een specifiek thema of probleem toe aan dit project.
-                                    </DialogDescription>
-                                </DialogHeader>
-                                <form onSubmit={handleCreate} className="space-y-4 py-4">
-                                    <div className="space-y-2">
-                                        <Label htmlFor="name">Naam</Label>
-                                        <Input
-                                            id="name"
-                                            value={newThemeName}
-                                            onChange={e => setNewThemeName(e.target.value)}
-                                            placeholder="Bijv. Sneeuwoverlast"
-                                            autoFocus
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label htmlFor="desc">Omschrijving</Label>
-                                        <Textarea
-                                            id="desc"
-                                            value={newThemeDesc}
-                                            onChange={e => setNewThemeDesc(e.target.value)}
-                                            placeholder="Wat gaan we onderzoeken?"
-                                            rows={3}
-                                        />
-                                    </div>
-                                    <DialogFooter>
-                                        <Button type="submit" disabled={!newThemeName}>
-                                            Aanmaken
-                                        </Button>
-                                    </DialogFooter>
-                                </form>
-                            </DialogContent>
-                        </Dialog>
+                            }
+                            onSuccess={fetchThemes}
+                        />
                     </div>
 
                     <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">

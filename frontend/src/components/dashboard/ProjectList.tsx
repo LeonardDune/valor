@@ -3,19 +3,8 @@ import { api } from '../../services/api';
 import { useOrganization } from '../../context/OrganizationContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from "@/components/ui/dialog";
 import { Plus } from "lucide-react";
+import { CreateProjectDialog } from "./dialogs/CreateProjectDialog";
 
 interface Project {
     id: string;
@@ -33,8 +22,6 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onSelectProject }) => 
     const [projects, setProjects] = useState<Project[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
-    const [newProjectName, setNewProjectName] = useState('');
-    const [newProjectDesc, setNewProjectDesc] = useState('');
 
     useEffect(() => {
         if (activeOrganization) {
@@ -45,30 +32,18 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onSelectProject }) => 
     const fetchProjects = async () => {
         if (!activeOrganization) return;
         setIsLoading(true);
+        console.log(`[ProjectList] Fetching projects for org: ${activeOrganization.name} (${activeOrganization.id})`);
         try {
             const data = await api.getProjects(activeOrganization.id);
+            console.log(`[ProjectList] Found ${data.length} projects`);
             setProjects(data);
         } catch (error) {
-            console.error('Failed to fetch projects', error);
+            console.error('[ProjectList] Failed to fetch projects', error);
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleCreate = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!newProjectName || !activeOrganization) return;
-
-        try {
-            await api.createProject(newProjectName, activeOrganization.id, newProjectDesc);
-            setNewProjectName('');
-            setNewProjectDesc('');
-            setIsDialogOpen(false);
-            fetchProjects();
-        } catch (error) {
-            console.error('Failed to create project', error);
-        }
-    };
 
     if (isLoading) return <div className="p-8 text-muted-foreground">Projecten laden...</div>;
 
@@ -82,49 +57,18 @@ export const ProjectList: React.FC<ProjectListProps> = ({ onSelectProject }) => 
                     </p>
                 </div>
 
-                <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                    <DialogTrigger asChild>
+                <CreateProjectDialog
+                    organizationId={activeOrganization?.id || ''}
+                    open={isDialogOpen}
+                    onOpenChange={setIsDialogOpen}
+                    trigger={
                         <Button className="gap-2">
                             <Plus className="h-4 w-4" />
                             Nieuw Project
                         </Button>
-                    </DialogTrigger>
-                    <DialogContent>
-                        <DialogHeader>
-                            <DialogTitle>Nieuw Project Starten</DialogTitle>
-                            <DialogDescription>
-                                Maak een nieuw project aan om analyses in te organiseren.
-                            </DialogDescription>
-                        </DialogHeader>
-                        <form onSubmit={handleCreate} className="space-y-4 py-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="name">Naam</Label>
-                                <Input
-                                    id="name"
-                                    value={newProjectName}
-                                    onChange={e => setNewProjectName(e.target.value)}
-                                    placeholder="Bijv. Bereikbaarheid Randstad"
-                                    autoFocus
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <Label htmlFor="desc">Omschrijving</Label>
-                                <Textarea
-                                    id="desc"
-                                    value={newProjectDesc}
-                                    onChange={e => setNewProjectDesc(e.target.value)}
-                                    placeholder="Korte toelichting op het project..."
-                                    rows={3}
-                                />
-                            </div>
-                            <DialogFooter>
-                                <Button type="submit" disabled={!newProjectName}>
-                                    Aanmaken
-                                </Button>
-                            </DialogFooter>
-                        </form>
-                    </DialogContent>
-                </Dialog>
+                    }
+                    onSuccess={fetchProjects}
+                />
             </div>
 
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">

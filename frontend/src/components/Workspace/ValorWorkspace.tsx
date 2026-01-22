@@ -4,6 +4,7 @@ import { api, type Claim } from '../../services/api';
 import { Maximize2, Minimize2, ArrowLeft, Settings } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useSearchParams } from 'react-router-dom';
 import {
     Dialog,
     DialogContent,
@@ -25,7 +26,20 @@ interface ValorWorkspaceProps {
 type AgentType = 'CAUSA' | 'AXIA' | 'ACTOR' | 'PRAXIS';
 
 export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, projectName, themeName, onBack }) => {
-    const [activeAgent, setActiveAgent] = useState<AgentType>('CAUSA');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const mode = searchParams.get('mode') as AgentType | null;
+
+    const [activeAgent, setActiveAgent] = useState<AgentType>(mode || 'CAUSA');
+
+    // Sync state to URL if changed via UI
+    useEffect(() => {
+        if (activeAgent) {
+            setSearchParams(prev => {
+                prev.set('mode', activeAgent);
+                return prev;
+            });
+        }
+    }, [activeAgent, setSearchParams]);
     // const [factors, setFactors] = useState<any[]>([]); // Cleaned up unused state
     const [activeConversation, setActiveConversation] = useState<ConversationContext | null>(null);
     const [focusMode, setFocusMode] = useState(false);

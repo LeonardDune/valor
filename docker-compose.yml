@@ -17,3 +17,5 @@ services:
       - 8.8.4.4
     environment:
       - WATCHFILES_FORCE_POLLING=true # Often needed for hot reload in Docker on some systems
+    # Neo4j is cloud-hosted (AuraDB)
+    # See backend/.env for connection details
