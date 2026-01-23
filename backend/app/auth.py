@@ -10,28 +10,25 @@ load_dotenv()
 security = HTTPBearer()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 
-def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+def verify_token_string(token: str):
     if not SUPABASE_URL:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Server misconfiguration: Missing SUPABASE_URL"
-        )
-    
-    token = credentials.credentials
-    jwks_url = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+        raise Exception("Server misconfiguration: Missing SUPABASE_URL")
 
+    jwks_url = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+    jwks_client = PyJWKClient(jwks_url)
+    signing_key = jwks_client.get_signing_key_from_jwt(token)
+    
+    return jwt.decode(
+        token,
+        signing_key.key,
+        algorithms=["RS256", "ES256"],
+        audience="authenticated",
+        options={"verify_exp": True}
+    )
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     try:
-        jwks_client = PyJWKClient(jwks_url)
-        signing_key = jwks_client.get_signing_key_from_jwt(token)
-        
-        payload = jwt.decode(
-            token,
-            signing_key.key,
-            algorithms=["RS256", "ES256"],
-            audience="authenticated",
-            options={"verify_exp": True}
-        )
-        return payload
+        return verify_token_string(credentials.credentials)
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

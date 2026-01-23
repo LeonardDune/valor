@@ -8,7 +8,7 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { PerspectiveToolbar } from '@/components/Shell/PerspectiveToolbar';
+import { PerspectiveToolbar } from '@/components/shell/PerspectiveToolbar';
 import { CLDView } from './views/CLDView';
 import { useCausaData } from './hooks/useCausaData';
 import { LayoutSession } from './layout/session';
@@ -19,21 +19,29 @@ import { CreateFactorModal } from './views/modals/CreateFactorModal';
 import { EditFactorDetailModal } from './views/modals/EditFactorDetailModal';
 import { api } from '../../services/api';
 import type { ConversationContext } from '@/types/conversation';
+import { PresenceLayer } from '@/components/graph/PresenceLayer';
 
 export interface CausaShellProps {
     themeId: string;
+    projectId: string;
+    websocket: {
+        lastMessage: any;
+        sendMessage: (type: string, payload: any) => void;
+    };
+    currentUserId?: string; // Add Identity Prop
     // We keep onSelect prop for backward compatibility but Shell handles the interaction
     onSelect?: (selection: { type: 'node' | 'link'; data: any } | null) => void;
     selection?: { type: 'node' | 'link'; data: any } | null;
     onOpenConversation: (context: ConversationContext) => void;
 }
 
-export const CausaShell = ({ themeId, onSelect: _onSelect, onOpenConversation }: CausaShellProps) => {
+export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSelect: _onSelect, onOpenConversation }: CausaShellProps) => {
     // A. Local UI State
     const [localSelection, setLocalSelection] = useState<{ type: 'node' | 'link'; data: any } | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [layoutMode, setLayoutMode] = useState<'free' | 'system'>('free');
+    const containerRef = useRef<HTMLDivElement>(null);
 
     // Cache for layout positions per mode (Persists across renders, does not trigger render)
     // Stores { [nodeId]: {x, y} } for each mode
@@ -87,6 +95,20 @@ export const CausaShell = ({ themeId, onSelect: _onSelect, onOpenConversation }:
         }
     }, [session, nodes, links, loading, runner]);
 
+    // WebSocket Data Sync
+    useEffect(() => {
+        if (!websocket.lastMessage) return;
+        const msg = websocket.lastMessage;
+        // Check for data updates types
+        if (['FACTOR_CREATED', 'FACTOR_UPDATED', 'FACTOR_DELETED', 'CLAIM_CREATED', 'CLAIM_UPDATED', 'CLAIM_DELETED'].includes(msg.type)) {
+            // Basic refresh for now. 
+            // Ideally we shouldn't re-fetch everything but update local cache.
+            // Given MVP and useCausaData structure, calling refresh() is safest.
+            console.log('WS: Received update, refreshing graph...', msg.type);
+            refresh();
+        }
+    }, [websocket.lastMessage, refresh]);
+
     // Helper to switch mode safely
     const switchMode = (newMode: 'free' | 'system') => {
         if (newMode === layoutMode) return;
@@ -105,6 +127,16 @@ export const CausaShell = ({ themeId, onSelect: _onSelect, onOpenConversation }:
     // E. Interactions
     const handleSelect = (sel: { type: 'node' | 'link'; data: any } | null) => {
         setLocalSelection(sel);
+
+        // Broadcast Focus
+        if (websocket.sendMessage) {
+            if (sel?.type === 'node' && sel.data?.id) {
+                websocket.sendMessage('NODE_FOCUS', { nodeId: sel.data.id });
+            } else {
+                // Explicitly clear focus if deselected or selecting a link
+                websocket.sendMessage('NODE_FOCUS', { nodeId: null });
+            }
+        }
     };
 
     const handleEdit = (sel: { type: 'node' | 'link'; data: any }) => {
@@ -121,10 +153,13 @@ export const CausaShell = ({ themeId, onSelect: _onSelect, onOpenConversation }:
         }
     };
 
-    if (!themeId) return <div className="p-10 text-slate-400">No Theme Context</div>;
+    // Viewport State for Presence Sync
+    const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
+
+    if (!themeId) return <div className="p-10 text-muted-foreground italic">Geen thema geactiveerd.</div>;
 
     return (
-        <div className="w-full h-full bg-background relative">
+        <div ref={containerRef} className="w-full h-full bg-background relative">
             {/* Header / Toolbar Overlay */}
             {/* Standardized Toolbar */}
             <PerspectiveToolbar
@@ -165,12 +200,13 @@ export const CausaShell = ({ themeId, onSelect: _onSelect, onOpenConversation }:
                 layoutMode={layoutMode}
                 onOpenConversation={onOpenConversation}
                 onEdit={handleEdit}
+                onViewportChange={setViewport}
             />
 
             {/* Modals */}
             <CreateFactorModal
-                isOpen={isCreateModalOpen}
-                onClose={() => setIsCreateModalOpen(false)}
+                open={isCreateModalOpen}
+                onOpenChange={setIsCreateModalOpen}
                 onSave={handleCreateFactor}
             />
 
@@ -182,6 +218,17 @@ export const CausaShell = ({ themeId, onSelect: _onSelect, onOpenConversation }:
                 factors={factors}
                 onRefresh={refresh}
             />
+            {/* Presence Overlay */}
+            <div className="absolute inset-0 pointer-events-none z-50">
+                <PresenceLayer
+                    projectId={projectId}
+                    websocket={websocket}
+                    containerRef={containerRef}
+                    nodes={session.getNodes()}
+                    currentUserId={currentUserId}
+                    viewport={viewport}
+                />
+            </div>
         </div>
     );
 };

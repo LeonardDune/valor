@@ -10,3 +10,5 @@ pyjwt
 cryptography
 crewai
 langchain-community
+supabase
+supabase

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { api } from '@/services/api';
 
 interface AuthContextType {
     session: Session | null;
@@ -22,6 +23,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setSession(session);
             setUser(session?.user ?? null);
             setIsLoading(false);
+            if (session?.user?.email) {
+                // Determine display name
+                const meta = session.user.user_metadata;
+                const name = meta?.full_name || meta?.name || session.user.email.split('@')[0];
+                // Sync user to Neo4j (idempotent)
+                api.createUser(session.user.email, name).catch(err => {
+                    console.error("Failed to sync user to graph:", err);
+                });
+            }
         });
 
         // Listen for changes
@@ -29,6 +39,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             setSession(session);
             setUser(session?.user ?? null);
             setIsLoading(false);
+            if (session?.user?.email) {
+                const meta = session.user.user_metadata;
+                const name = meta?.full_name || meta?.name || session.user.email.split('@')[0];
+                api.createUser(session.user.email, name).catch(err => {
+                    console.error("Failed to sync user to graph:", err);
+                });
+            }
         });
 
         return () => subscription.unsubscribe();

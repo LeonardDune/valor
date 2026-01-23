@@ -1,64 +1,39 @@
-import { useState, useEffect } from 'react';
-import { ProjectList } from './components/Dashboard/ProjectList';
-import { ThemeList } from './components/Dashboard/ThemeList';
+import { useEffect } from 'react';
+import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
+import { OrganizationGrid } from './components/dashboard/OrganizationGrid';
+import { ProjectGrid } from './components/dashboard/ProjectGrid';
+import { ThemeGrid } from './components/dashboard/ThemeGrid';
+import { PerspectivesLanding } from './views/shell/PerspectivesLanding';
 import { ValorWorkspace } from './components/Workspace/ValorWorkspace';
 import { MemberManagement } from './components/Settings/MemberManagement';
-import { Sidebar } from './components/UI/Sidebar'; // New Sidebar
+
 import { useOrganization } from './context/OrganizationContext';
 import { useAuth } from './context/AuthContext';
 import { LoginPage } from './pages/LoginPage';
 import OnboardingPage from './pages/OnboardingPage';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
-
-type ViewSate = 'PROJECT_LIST' | 'THEME_LIST' | 'WORKSPACE' | 'SETTINGS' | 'ACCEPT_INVITE';
+import { DashboardLayout } from './views/shell/DashboardLayout';
 
 function App() {
   const { session, isLoading: authLoading } = useAuth();
   const { activeOrganization, organizations, isLoading: orgLoading, refreshOrganizations } = useOrganization();
-  const [view, setView] = useState<ViewSate>('PROJECT_LIST');
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
-  const [selectedProjectName, setSelectedProjectName] = useState<string>('');
-  const [selectedThemeId, setSelectedThemeId] = useState<string>('');
-  const [selectedThemeName, setSelectedThemeName] = useState<string>('');
+  const navigate = useNavigate();
+  const location = useLocation();
 
-  // Check URL query params for invite code on mount
+  // Handle Invitations
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('code') || window.location.pathname.includes('/invite')) {
-      setView('ACCEPT_INVITE');
+      // Let the Route handle it
     }
   }, []);
 
-  const handleSelectProject = (id: string, name: string) => {
-    setSelectedProjectId(id);
-    setSelectedProjectName(name);
-    setView('THEME_LIST');
-  };
-
-  const handleSelectTheme = (id: string, name: string) => {
-    setSelectedThemeId(id);
-    setSelectedThemeName(name);
-    setView('WORKSPACE');
-  };
-
-  const handleNavigateProject = () => {
-    setView('PROJECT_LIST');
-    setSelectedProjectId(null);
-  };
-
-  const handleNavigateThemeList = () => {
-    setView('THEME_LIST');
-    // Keep selectedProjectId
-  };
-
   const handleInviteSuccess = async () => {
-    // Refresh organizations to show the new one
     await refreshOrganizations();
-    setView('PROJECT_LIST');
-    // URL is cleared in AcceptInvitePage, but good to be sure
+    navigate('/');
   };
 
-  if (authLoading) { // Removed orgLoading check for View 'ACCEPT_INVITE' potential
+  if (authLoading) {
     return <div className="flex items-center justify-center min-h-screen text-slate-500">Laden...</div>;
   }
 
@@ -66,68 +41,180 @@ function App() {
     return <LoginPage />;
   }
 
-  // Special case: If accepting invite, do not block on organizations.length === 0
-  if (view === 'ACCEPT_INVITE') {
-    return <AcceptInvitePage onSuccess={handleInviteSuccess} />;
-  }
+  // Determine if we should show Onboarding
+  // CRITICAL: Verify we are not in an incoherent state. 
+  // If useOrganization is loading, we wait.
+  // If we just accepted an invite, the org list SHOULD be populated.
+  const showOnboarding =
+    !orgLoading &&
+    !authLoading &&
+    organizations.length === 0 &&
+    !location.pathname.includes('/invite');
 
-  // Only block if not loading and no orgs
-  if (!orgLoading && organizations.length === 0) {
+  if (showOnboarding) {
+    // Safety check: If we just came from an invite redirect?
+    // For now, rely on refreshOrganizations having done its job.
     return <OnboardingPage />;
   }
 
   return (
     <div className="flex h-screen bg-canvas font-sans text-text-primary overflow-hidden">
-
-      {/* Sidebar Navigation */}
-      <Sidebar
-        view={view}
-        setView={setView}
-        selectedProjectName={selectedProjectName}
-        selectedThemeName={selectedThemeName}
-        onNavigateProject={handleNavigateProject}
-        onNavigateTheme={handleNavigateThemeList}
-      />
+      {/* Sidebar removed here, managed by DashboardLayout */}
 
       {/* Main Content Area */}
       <main className="flex-1 overflow-auto relative flex flex-col">
-        {view === 'SETTINGS' && activeOrganization && (
-          <div className="p-8">
-            <MemberManagement entityId={activeOrganization.id} entityType="organization" />
-          </div>
-        )}
+        <Routes>
+          <Route path="/" element={<DashboardLayout><ThemeGrid /></DashboardLayout>} />
+          <Route path="/dashboard" element={<DashboardLayout><ThemeGrid /></DashboardLayout>} />
+          <Route path="/dashboard/themes" element={<DashboardLayout><ThemeGrid /></DashboardLayout>} />
 
-        {view === 'PROJECT_LIST' && activeOrganization && (
-          <div className="p-8">
-            <ProjectList onSelectProject={handleSelectProject} />
-          </div>
-        )}
+          <Route path="/dashboard/organizations" element={
+            <DashboardLayout>
+              <OrganizationGrid />
+            </DashboardLayout>
+          } />
 
-        {view === 'THEME_LIST' && selectedProjectId && (
-          <div className="h-full">
-            <ThemeList
-              projectId={selectedProjectId}
-              projectName={selectedProjectName}
-              onSelectTheme={handleSelectTheme}
-              onBack={handleNavigateProject}
-            />
-          </div>
-        )}
+          <Route path="/dashboard/projects" element={
+            <DashboardLayout>
+              <ProjectGrid />
+            </DashboardLayout>
+          } />
 
-        {view === 'WORKSPACE' && selectedProjectId && selectedThemeId && (
-          <div className="h-full">
-            <ValorWorkspace
-              projectId={selectedProjectId}
-              projectName={selectedProjectName}
-              themeId={selectedThemeId}
-              themeName={selectedThemeName}
-              onBack={handleNavigateThemeList}
-            />
-          </div>
-        )}
+          <Route path="/dashboard/perspectives" element={
+            <DashboardLayout>
+              <PerspectivesLanding />
+            </DashboardLayout>
+          } />
+
+          {/* Organization View (Project List) - Wrapped */}
+          <Route path="/organizations/:orgId" element={
+            <DashboardLayout>
+              <OrganizationRouteWrapper />
+            </DashboardLayout>
+          } />
+
+          {/* Project View (Theme List) - Wrapped */}
+          <Route path="/projects/:projectId" element={
+            <DashboardLayout>
+              <div className="h-full">
+                <ThemeListWrapper />
+              </div>
+            </DashboardLayout>
+          } />
+
+          {/* Workspace View (Theme Context) - Wrapped (Maybe? Or does workspace need full screen?) */}
+          {/* Workspace usually needs its own layout or full screen. Keeping it wrapped for now for consistency, but maybe Sidebar should be collapsible there. */}
+          {/* Actually Workspace likely wants full screen with its own internal nav. Let's keep it wrapped for consistency of Global Nav. */}
+          <Route path="/themes/:themeId" element={
+            <DashboardLayout>
+              <div className="h-full">
+                <WorkspaceWrapper />
+              </div>
+            </DashboardLayout>
+          } />
+
+          {/* Settings - Wrapped */}
+          <Route path="/settings" element={
+            activeOrganization ? (
+              <DashboardLayout>
+                <div className="p-8">
+                  <MemberManagement entityId={activeOrganization.id} entityType="organization" />
+                </div>
+              </DashboardLayout>
+            ) : <Navigate to="/" />
+          } />
+
+          <Route path="/invite" element={<AcceptInvitePage onSuccess={handleInviteSuccess} />} />
+        </Routes>
       </main>
     </div>
   );
 }
+
+// Wrappers to adapt explicit ID routing to components that might need specific props
+const ThemeListWrapper = () => {
+  const { projectId } = useParams();
+  const { organizations } = useOrganization();
+
+  // Find project name in context data
+  const project = organizations
+    .flatMap(org => org.projects)
+    .find(p => p.id === projectId);
+
+  return (
+    <ThemeGrid
+      projectId={projectId!}
+      projectName={project?.name || "Project"}
+    />
+  );
+}
+
+const WorkspaceWrapper = () => {
+  const { themeId } = useParams();
+  const navigate = useNavigate();
+  const { organizations, isLoading } = useOrganization();
+
+  // Find the context (Project & Theme) from the loaded structure
+  // Need to traverse Org -> Project -> Theme
+  const found = organizations.flatMap(org =>
+    org.projects.flatMap(proj =>
+      proj.themes.map(theme => ({
+        project: proj,
+        theme
+      }))
+    )
+  ).find(item => item.theme.id === themeId);
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-screen">Laden...</div>;
+  }
+
+  if (!found) {
+    return <div className="flex items-center justify-center h-screen">Thema niet gevonden of geen toegang.</div>;
+  }
+
+  return (
+    <ValorWorkspace
+      projectId={found.project.id}
+      projectName={found.project.name}
+      themeId={found.theme.id}
+      themeName={found.theme.name}
+      onBack={() => navigate(-1)} // Or navigate to project view
+    />
+  );
+}
+
+const OrganizationRouteWrapper = () => {
+  const { orgId } = useParams();
+  const { activeOrganization, switchOrganization, organizations, isLoading } = useOrganization();
+
+  useEffect(() => {
+    // Sync URL -> Context for global components (Sidebar, etc)
+    if (orgId && organizations.length > 0 && activeOrganization?.id !== orgId) {
+      switchOrganization(orgId);
+    }
+  }, [orgId, organizations, activeOrganization, switchOrganization]);
+
+  if (isLoading) return <div className="p-8">Laden...</div>;
+
+  // Source of truth is the URL orgId. We find the org in the loaded list.
+  // This avoids rendering with a stale 'activeOrganization' from context while switching.
+  const currentOrg = organizations.find(o => o.id === orgId) || activeOrganization;
+
+  if (!currentOrg) {
+    // If we have organizations but the ID is invalid
+    if (organizations.length > 0) {
+      return <Navigate to="/" />;
+    }
+    return <div className="p-8">Laden...</div>;
+  }
+
+  return (
+    <ProjectGrid
+      organizationId={currentOrg.id}
+      organizationName={currentOrg.name}
+    />
+  );
+};
 
 export default App;

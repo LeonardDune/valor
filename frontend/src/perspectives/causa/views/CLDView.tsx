@@ -13,8 +13,8 @@ import type { LayoutNode } from '../layout/types';
 import CLDNode from './nodes/CLDNode';
 import { SystemScopeNode } from './nodes/SystemScopeNode';
 import CLDEdge from './edges/CLDEdge';
-import { CanvasContextMenu } from '@/components/Shell/CanvasContextMenu';
-import { ViewControls } from '@/components/Shell/ViewControls';
+import { CanvasContextMenu } from '@/components/shell/CanvasContextMenu';
+import { ViewControls } from '@/components/shell/ViewControls';
 import type { ConversationContext } from '@/types/conversation';
 
 // Correct path if types are in parent/parent
@@ -30,6 +30,7 @@ interface CLDViewProps {
     layoutMode?: 'free' | 'system';
     onOpenConversation: (context: ConversationContext) => void;
     onEdit?: (selection: { type: 'node' | 'link'; data: any }) => void;
+    onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void;
 }
 
 const nodeTypes = {
@@ -49,7 +50,8 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     onSelect,
     layoutMode,
     onOpenConversation,
-    onEdit
+    onEdit,
+    onViewportChange
 }) => {
     // React Flow State
     const [rfInstance, setRfInstance] = useState<any>(null);
@@ -406,6 +408,11 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                 minZoom={0.1}
                 maxZoom={4}
                 fitView
+                onMove={(_, viewport) => {
+                    if (onViewportChange) {
+                        onViewportChange(viewport);
+                    }
+                }}
             >
                 <Background />
                 <ViewControls />

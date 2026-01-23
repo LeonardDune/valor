@@ -1,191 +1,80 @@
-import logging
+from typing import List, Optional, Dict, Any
 import uuid
-from typing import List, Optional
+import logging
+from datetime import datetime
 from app.db.utils import get_driver
-from app.models.domain import Claim, ChatMessage, WorkspaceStatus, Role
-from app.db.permissions import get_user_navigation_tree, assign_role, check_permission
+from app.models.domain import Role, LifecycleStatus, Claim, Factor, Proposal
+from app.db.permissions import check_permission
+
+# Re-export get_driver for main.py compatibility
+# from app.db.utils import get_driver (already imported)
 
 logger = logging.getLogger(__name__)
 
+# --- Agent / Conversation ---
+
 async def save_claims(conversation_id: str, claims: List[Claim]):
-    if not claims:
-        return
-    
+    """
+    Persists claims extracted by the Agent.
+    Creates Factor nodes if they don't exist.
+    Creates / Updates relationships using reified schema.
+    """
     driver = get_driver()
     query = """
-    UNWIND $claims AS claim
+    MERGE (ct:ConversationThread {id: $cid})
+    WITH ct, ct.topic as theme_id
+    UNWIND $claims as claim
+    
+    // Merge Source
     MERGE (source:Factor {name: claim.source_node})
-    ON CREATE SET source.id = randomUUID()
-    SET source.id = coalesce(source.id, randomUUID())
+    ON CREATE SET source.id = randomUUID(), source.type = coalesce(claim.source_type, 'systeemelement'), source.created_at = datetime()
     
+    // Merge Target
     MERGE (target:Factor {name: claim.target_node})
-    ON CREATE SET target.id = randomUUID()
-    SET target.id = coalesce(target.id, randomUUID())
+    ON CREATE SET target.id = randomUUID(), target.type = coalesce(claim.target_type, 'systeemelement'), target.created_at = datetime()
     
+    // Create Reified Relationship (Claim node + links)
     MERGE (c:Claim {id: claim.id})
     SET c.statement = claim.statement,
         c.confidence = claim.confidence,
         c.polarity = claim.polarity,
-        c.relationship_type = claim.relationship_type,
-        c.created_at = datetime(claim.created_at)
+        c.relationship_type = coalesce(claim.relationship_type, 'CAUSES'),
+        c.created_at = datetime()
         
-    MERGE (source)-[:CLAIMS]-(c)
+    MERGE (source)-[:CLAIMS]->(c)
     MERGE (c)-[:TO]->(target)
     
-    WITH c, claim, source, target
-    MATCH (t:ConversationThread {id: $conversation_id})
-    MERGE (t)-[:GENERATED]->(c)
-    
-    WITH source, target, t, claim
-    OPTIONAL MATCH (t)-[:BELONGS_TO]->(th:Theme)
-    FOREACH (_ IN CASE WHEN th IS NOT NULL THEN [1] ELSE [] END |
-        MERGE (th)-[r1:HAS_FACTOR]->(source)
-        SET r1.role = coalesce(claim.source_type, r1.role, 'systeemelement')
-        MERGE (th)-[r2:HAS_FACTOR]->(target)
-        SET r2.role = coalesce(claim.target_type, r2.role, 'systeemelement')
-    )
+    // Link to Conversation
+    MERGE (ct)-[:GENERATED]->(c)
+
+    // Robust Linking: If conversation has a topic (Theme ID), link factors to that Theme
+    WITH source, target, theme_id
+    WHERE theme_id IS NOT NULL
+    MATCH (t:Theme {id: theme_id})
+    MERGE (t)-[:HAS_FACTOR]->(source)
+    MERGE (t)-[:HAS_FACTOR]->(target)
     """
     
-    # Prepare data for Neo4j (dict serialization)
-    claims_data = [c.model_dump(mode='json') for c in claims]
-    
+    # Transform claims to dicts
+    claims_data = []
+    for c in claims:
+        # Use .dict() if Pydantic, else __dict__
+        c_dict = c.dict() if hasattr(c, 'dict') else c.__dict__ if hasattr(c, '__dict__') else c
+        # Ensure ID
+        if isinstance(c_dict, dict) and not c_dict.get('id'): c_dict['id'] = str(uuid.uuid4())
+        claims_data.append(c_dict)
+
     try:
         with driver.session() as session:
-            # Ensure conversation exists first (simple check)
-            session.run("""
-                MERGE (t:ConversationThread {id: $cid})
-                ON CREATE SET t.created_at = datetime()
-            """, {"cid": conversation_id})
-            
-            session.run(query, {"claims": claims_data, "conversation_id": conversation_id})
-            logger.info(f"Persisted {len(claims)} claims for conversation {conversation_id}")
+            session.run(query, {"cid": conversation_id, "claims": claims_data})
     except Exception as e:
         logger.error(f"Failed to save claims: {e}")
-        raise e
-
-async def revoke_claims(conversation_id: str, revocations: List[dict]):
-    if not revocations:
-        return
-
-    driver = get_driver()
-    query = """
-    UNWIND $revocations AS rev
-    MATCH (t:ConversationThread {id: $cid})
-    MATCH (s:Factor {name: rev.source})-[:CLAIMS]-(c:Claim)-[:TO]->(target:Factor {name: rev.target})
-    MATCH (t)-[:GENERATED]->(c)
-    DETACH DELETE c
-    """
-    try:
-        with driver.session() as session:
-            session.run(query, {"cid": conversation_id, "revocations": revocations})
-            logger.info(f"Revoked {len(revocations)} claims for conversation {conversation_id}")
-    except Exception as e:
-        logger.error(f"Failed to revoke claims: {e}")
-
-
-async def get_claims_for_conversation(conversation_id: str) -> List[Claim]:
-    driver = get_driver()
-    query = """
-    MATCH (t:ConversationThread {id: $cid})-[:GENERATED]->(c:Claim)
-    MATCH (s:Factor)-[:CLAIMS]-(c)-[:TO]->(t_node:Factor)
-    RETURN c, s.name as source, s.id as source_id, t_node.name as target, t_node.id as target_id
-    """
-    
-    try:
-        with driver.session() as session:
-            result = session.run(query, {"cid": conversation_id})
-            claims = []
-            for record in result:
-                node = record["c"]
-                claim_data = dict(node)
-                claim_data['source_node'] = record["source"]
-                claim_data['source_id'] = record["source_id"]
-                claim_data['target_node'] = record["target"]
-                claim_data['target_id'] = record["target_id"]
-                claims.append(Claim(**claim_data))
-            return claims
-    except Exception as e:
-        logger.error(f"Failed to fetch claims: {e}")
-        return []
-
-async def get_claims_for_theme(theme_id: str) -> List[Claim]:
-    driver = get_driver()
-    # Fetch claims across all threads in this theme
-    query = """
-    MATCH (th:Theme {id: $tid})<-[:BELONGS_TO]-(t:ConversationThread)-[:GENERATED]->(c:Claim)
-    MATCH (s:Factor)-[:CLAIMS]-(c)-[:TO]->(t_node:Factor)
-    OPTIONAL MATCH (th)-[rs:HAS_FACTOR]->(s)
-    OPTIONAL MATCH (th)-[rt:HAS_FACTOR]->(t_node)
-    RETURN c, s.name as source, s.id as source_id, rs.role as s_type, 
-           t_node.name as target, t_node.id as target_id, rt.role as t_type
-    """
-    
-    try:
-        with driver.session() as session:
-            result = session.run(query, {"tid": theme_id})
-            claims = []
-            for record in result:
-                node = record["c"]
-                claim_data = dict(node)
-                claim_data['source_node'] = record["source"]
-                claim_data['source_id'] = record["source_id"]
-                claim_data['source_type'] = record["s_type"]
-                claim_data['target_node'] = record["target"]
-                claim_data['target_id'] = record["target_id"]
-                claim_data['target_type'] = record["t_type"]
-                # Convert neo4j datetime to string for Pydantic if necessary
-                if 'created_at' in claim_data and hasattr(claim_data['created_at'], 'isoformat'):
-                    claim_data['created_at'] = claim_data['created_at'].isoformat()
-                claims.append(Claim(**claim_data))
-            return claims
-    except Exception as e:
-        logger.error(f"Failed to fetch theme claims: {e}")
-        return []
-
-async def get_factors_for_theme(theme_id: str) -> List[dict]:
-    driver = get_driver()
-    query = """
-    MATCH (th:Theme {id: $tid})-[r:HAS_FACTOR]->(f:Factor)
-    RETURN f.id as id, f.name as name, f.description as description, r.role as type
-    """
-    try:
-        with driver.session() as session:
-            result = session.run(query, {"tid": theme_id})
-            return [dict(record) for record in result]
-    except Exception as e:
-        logger.error(f"Failed to fetch theme factors: {e}")
-        return []
-
-async def fetch_existing_factors(conversation_id: str) -> List[str]:
-    driver = get_driver()
-    # Find all factors within the SAME THEME scope.
-    # If no theme, fall back to just the thread.
-    query = """
-    MATCH (t:ConversationThread {id: $cid})
-    OPTIONAL MATCH (t)-[:BELONGS_TO]->(th:Theme)<-[:BELONGS_TO]-(other_t:ConversationThread)
-    WITH coalesce(other_t, t) as scope_thread
-    MATCH (scope_thread)-[:GENERATED]->(c:Claim)
-    MATCH (c)-[:TO|CLAIMS]-(f:Factor)
-    RETURN DISTINCT f.name as name, f.type as type
-    """
-    try:
-        with driver.session() as session:
-            result = session.run(query, {"cid": conversation_id})
-            return [f"{record['name']} ({record['type']})" for record in result]
-    except Exception as e:
-        logger.error(f"Failed to fetch factors: {e}")
-        return []
 
 async def set_conversation_topic(conversation_id: str, topic: str):
     driver = get_driver()
     query = """
-    MERGE (t:ConversationThread {id: $cid})
-    ON CREATE SET t.created_at = datetime()
-    
-    MERGE (th:Theme {name: $topic})
-    ON CREATE SET th.id = randomUUID(), th.created_at = datetime()
-    SET th.id = coalesce(th.id, randomUUID())
-    MERGE (t)-[:BELONGS_TO]->(th)
+    MERGE (c:ConversationThread {id: $cid})
+    SET c.topic = $topic, c.updated_at = datetime()
     """
     try:
         with driver.session() as session:
@@ -195,100 +84,262 @@ async def set_conversation_topic(conversation_id: str, topic: str):
 
 async def get_conversation_topic(conversation_id: str) -> Optional[str]:
     driver = get_driver()
+    query = "MATCH (c:ConversationThread {id: $cid}) RETURN c.topic as topic"
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"cid": conversation_id})
+            record = result.single()
+            return record["topic"] if record else None
+    except Exception as e:
+        return None
+
+async def fetch_existing_factors(conversation_id: str) -> List[str]:
+    """Returns names of factors mentioned in this conversation or context."""
+    driver = get_driver()
     query = """
-    MATCH (t:ConversationThread {id: $cid})-[:BELONGS_TO]->(th:Theme)
-    RETURN th.name as topic
+    MATCH (c:ConversationThread {id: $cid})-[:GENERATED]->(cl:Claim)
+    MATCH (source)-[:CLAIMS]->(cl)-[:TO]->(target)
+    RETURN collect(distinct source.name) + collect(distinct target.name) as factors
     """
     try:
         with driver.session() as session:
             result = session.run(query, {"cid": conversation_id})
             record = result.single()
             if record:
-                return record["topic"]
-            return None
+                # flatten and distinct
+                names = list(set(record["factors"]))
+                return names
+            return []
     except Exception as e:
-        logger.error(f"Failed to get topic: {e}")
-        return None
+        logger.error(f"Failed to fetch factors: {e}")
+        return []
 
-# Project & Theme Hierarchy Management
-
-async def create_organization(name: str, description: Optional[str] = None, owner_email: Optional[str] = None) -> str:
+async def revoke_claims(conversation_id: str):
+    """Marks claims from this conversation as revoked or deletes them?"""
     driver = get_driver()
-    oid = str(uuid.uuid4())
     query = """
-    MERGE (o:Organization {name: $name})
-    ON CREATE SET o.id = $oid, 
-                  o.description = $desc,
-                  o.created_at = datetime(),
-                  o.status = 'active'
-    ON MATCH SET o.id = coalesce(o.id, $oid, randomUUID())
-    
-    WITH o
-    // If owner_email is provided, link them as admin
-    CALL {
-        WITH o
-        WITH o WHERE $owner_email IS NOT NULL
-        MERGE (u:User {email: $owner_email})
-        ON CREATE SET u.id = randomUUID(), u.created_at = datetime()
-        MERGE (u)-[r:HAS_ROLE]->(o)
-        SET r.role = 'admin', r.joined_at = datetime()
-    }
-    
-    RETURN o.id as id
+    MATCH (c:ConversationThread {id: $cid})-[rel:GENERATED]->(cl:Claim)
+    DETACH DELETE cl
     """
     try:
         with driver.session() as session:
-            result = session.run(query, {"oid": oid, "name": name, "desc": description, "owner_email": owner_email})
-            return result.single()["id"]
+            session.run(query, {"cid": conversation_id})
     except Exception as e:
-        logger.error(f"Failed to create organization: {e}")
+        logger.error(f"Failed to revoke claims: {e}")
+
+# --- Proposals (Restored) ---
+
+async def create_proposal(title: str, author_id: str, description: Optional[str] = None, type: str = "standard", target_id: Optional[str] = None) -> str:
+    driver = get_driver()
+    proposal_id = str(uuid.uuid4())
+    
+    query = """
+    MATCH (u:User {id: $author_id}) # Expecting internal ID, or match by email if author_id is email?
+    # Usually author_id is passed as internal ID from get_current_user logic if available, 
+    # but currently our user/auth system uses email often. 
+    # Let's assume author_id is ID. If fails, we might need to MATCH by email?
+    # In main.py create_proposal uses request.author_id.
+    
+    CREATE (p:Proposal {
+        id: $id,
+        title: $title,
+        description: $description,
+        type: $type,
+        target_id: $target_id,
+        status: 'proposed',
+        created_at: datetime()
+    })
+    CREATE (u)-[:CREATED]->(p)
+    RETURN p.id as id
+    """
+    # Fallback if author_id is actually an email (common in this codebase transitions)
+    # logic: try match by id, if not found try match by email? 
+    # Cypher: MATCH (u:User) WHERE u.id = $aid OR u.email = $aid
+    
+    query = """
+    MATCH (u:User) WHERE u.id = $author_id OR u.email = $author_id
+    WITH u LIMIT 1
+    CREATE (p:Proposal {
+        id: $id,
+        title: $title,
+        description: $description,
+        type: $type,
+        target_id: $target_id,
+        status: 'proposed',
+        created_at: datetime()
+    })
+    CREATE (u)-[:CREATED]->(p)
+    RETURN p.id as id
+    """
+
+    try:
+        with driver.session() as session:
+            result = session.run(query, {
+                "id": proposal_id,
+                "title": title,
+                "author_id": author_id,
+                "description": description,
+                "type": type,
+                "target_id": target_id
+            })
+            record = result.single()
+            if record:
+                return record["id"]
+            raise Exception("User not found or creation failed")
+    except Exception as e:
+        logger.error(f"Error creating proposal: {e}")
         raise e
 
-async def get_organizations(include_archived: bool = False):
+async def get_proposals(status: Optional[str] = None, author_id: Optional[str] = None) -> List[Proposal]:
     driver = get_driver()
-    if include_archived:
-        query = """
-        MATCH (o:Organization)
-        RETURN o.id as id, o.name as name, o.description as description, o.status as status, o.created_at as created_at
-        ORDER BY o.created_at DESC
+    
+    query = """
+    MATCH (p:Proposal)<-[:CREATED]-(u:User)
+    """
+    
+    where_clauses = []
+    params = {}
+    
+    if status:
+        where_clauses.append("p.status = $status")
+        params["status"] = status
+        
+    if author_id:
+        where_clauses.append("(u.id = $author_id OR u.email = $author_id)")
+        params["author_id"] = author_id
+
+    if where_clauses:
+        query += " WHERE " + " AND ".join(where_clauses)
+        
+    query += """
+    RETURN p, u.id as author_id
+    ORDER BY p.created_at DESC
+    """
+    
+    try:
+        with driver.session() as session:
+            result = session.run(query, params)
+            proposals = []
+            for record in result:
+                node = record["p"]
+                auth_id = record["author_id"]
+                proposals.append(Proposal(
+                    id=node["id"],
+                    title=node["title"],
+                    description=node.get("description"),
+                    status=LifecycleStatus(node.get("status", "draft")),
+                    author_id=auth_id,
+                    type=node.get("type"),
+                    target_id=node.get("target_id"),
+                    created_at=str(node["created_at"])
+                ))
+            return proposals
+    except Exception as e:
+        logger.error(f"Error getting proposals: {e}")
+        return []
+
+async def get_proposal_by_id(proposal_id: str) -> Optional[Proposal]:
+    driver = get_driver()
+    query = """
+    MATCH (p:Proposal {id: $id})<-[:CREATED]-(u:User)
+    RETURN p, u.id as author_id
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"id": proposal_id})
+            record = result.single()
+            if record:
+                node = record["p"]
+                return Proposal(
+                    id=node["id"],
+                    title=node["title"],
+                    description=node.get("description"),
+                    status=LifecycleStatus(node.get("status", "draft")),
+                    author_id=record["author_id"],
+                    type=node.get("type"),
+                    target_id=node.get("target_id"),
+                    created_at=str(node["created_at"])
+                )
+            return None
+    except Exception as e:
+        logger.error(f"Error getting proposal {proposal_id}: {e}")
+        return None
+
+async def update_proposal_status(proposal_id: str, status: LifecycleStatus) -> bool:
+    driver = get_driver()
+    query = """
+    MATCH (p:Proposal {id: $id})
+    SET p.status = $status
+    RETURN p
+    """
+    try:
+        with driver.session() as session:
+            status_str = status.value if hasattr(status, 'value') else status
+            result = session.run(query, {"id": proposal_id, "status": status_str})
+            return result.single() is not None
+    except Exception as e:
+        logger.error(f"Error updating proposal status: {e}")
+        return False
+
+# --- Organization / User Core ---
+
+async def create_organization(name: str, description: Optional[str] = None, owner_email: Optional[str] = None) -> str:
+    driver = get_driver()
+    org_id = str(uuid.uuid4())
+    
+    # Logic: Create Org. If owner_email provided, make them Admin.
+    query = """
+    CREATE (o:Organization {id: $id, name: $name, description: $desc, created_at: datetime(), status: 'active'})
+    WITH o
+    """
+    
+    if owner_email:
+        query += """
+        MATCH (u:User {email: toLower($email)})
+        MERGE (u)-[:HAS_ROLE {role: 'admin', updated_at: datetime()}]->(o)
         """
-    else:
-        query = """
-        MATCH (o:Organization)
-        WHERE o.status = 'active' OR o.status IS NULL
-        RETURN o.id as id, o.name as name, o.description as description, o.status as status, o.created_at as created_at
-        ORDER BY o.created_at DESC
-        """
+        
+    query += " RETURN o.id as id"
+
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"id": org_id, "name": name, "desc": description, "email": owner_email})
+            record = result.single()
+            return record["id"]
+    except Exception as e:
+        logger.error(f"Error creating org: {e}")
+        raise e
+
+async def get_organizations() -> List[Dict]:
+    """Returns all organizations (for platform admin use mainly)."""
+    driver = get_driver()
+    query = """
+    MATCH (o:Organization)
+    WHERE o.status IS NULL OR o.status <> 'archived' 
+    RETURN o
+    """
     try:
         with driver.session() as session:
             result = session.run(query)
-            return [dict(record) for record in result]
+            return [dict(record["o"]) for record in result]
     except Exception as e:
-        logger.error(f"Failed to get organizations: {e}")
+        logger.error(f"Error listing orgs: {e}")
         return []
 
-async def get_user_organizations(user_email: str, include_archived: bool = False):
+async def get_user_organizations(email: str) -> List[Dict]:
+    """Returns orgs for a specific user."""
     driver = get_driver()
-    if include_archived:
-        query = """
-        MATCH (u:User)-[:HAS_ROLE]->(o:Organization)
-        WHERE toLower(u.email) = toLower($email)
-        RETURN o.id as id, o.name as name, o.description as description, o.status as status, o.created_at as created_at
-        ORDER BY o.created_at DESC
-        """
-    else:
-        query = """
-        MATCH (u:User)-[:HAS_ROLE]->(o:Organization)
-        WHERE toLower(u.email) = toLower($email) AND (o.status = 'active' OR o.status IS NULL)
-        RETURN o.id as id, o.name as name, o.description as description, o.status as status, o.created_at as created_at
-        ORDER BY o.created_at DESC
-        """
+    query = """
+    MATCH (u:User {email: toLower($email)})
+    MATCH (u)-[:HAS_ROLE]->(o:Organization)
+    WHERE o.status IS NULL OR o.status <> 'archived'
+    RETURN o
+    """
     try:
         with driver.session() as session:
-            result = session.run(query, {"email": user_email})
-            return [dict(record) for record in result]
+            result = session.run(query, {"email": email})
+            return [dict(record["o"]) for record in result]
     except Exception as e:
-        logger.error(f"Failed to get user organizations: {e}")
         return []
 
 async def create_user(email: str, name: Optional[str] = None) -> str:
@@ -296,647 +347,488 @@ async def create_user(email: str, name: Optional[str] = None) -> str:
     uid = str(uuid.uuid4())
     query = """
     MERGE (u:User {email: toLower($email)})
-    ON CREATE SET u.id = $uid, 
-                  u.name = $name,
-                  u.created_at = datetime()
+    ON CREATE SET u.id = $id, u.name = $name, u.created_at = datetime()
     ON MATCH SET u.name = coalesce($name, u.name)
     RETURN u.id as id
     """
     try:
         with driver.session() as session:
-            result = session.run(query, {"uid": uid, "email": email, "name": name})
+            result = session.run(query, {"email": email, "id": uid, "name": name})
             return result.single()["id"]
     except Exception as e:
-        logger.error(f"Failed to create user: {e}")
+        logger.error(f"Error creating user: {e}")
         raise e
 
-async def get_user_by_email(email: str) -> Optional[dict]:
+async def get_user_by_email(email: str) -> Optional[Dict]:
     driver = get_driver()
-    query = """
-    MATCH (u:User)
-    WHERE toLower(u.email) = toLower($email)
-    RETURN u.id as id, u.email as email, u.name as name, u.is_platform_admin as is_platform_admin
-    """
+    query = "MATCH (u:User {email: toLower($email)}) RETURN u"
     try:
         with driver.session() as session:
             result = session.run(query, {"email": email})
             record = result.single()
-            return dict(record) if record else None
+            return dict(record["u"]) if record else None
     except Exception as e:
-        logger.error(f"Failed to get user by email: {e}")
         return None
 
-async def update_user_profile(email: str, first_name: Optional[str] = None, last_name: Optional[str] = None, username: Optional[str] = None):
+async def get_all_users() -> List[Dict]:
     driver = get_driver()
-    # Combine first and last name for display name if provided, else keep existing
-    # This logic assumes 'name' is display name.
-    
-    query = """
-    MERGE (u:User {email: toLower($email)})
-    SET u.first_name = coalesce($fname, u.first_name),
-        u.last_name = coalesce($lname, u.last_name),
-        u.username = coalesce($uname, u.username),
-        u.updated_at = datetime()
-    
-    with u
-    // Update display name if first/last provided
-    SET u.name = CASE 
-        WHEN $fname IS NOT NULL OR $lname IS NOT NULL 
-        THEN trim(coalesce($fname, u.first_name, '') + ' ' + coalesce($lname, u.last_name, ''))
-        ELSE u.name 
-    END
-    RETURN u.id as id
-    """
+    query = "MATCH (u:User) RETURN u"
     try:
         with driver.session() as session:
-            session.run(query, {"email": email, "fname": first_name, "lname": last_name, "uname": username})
-    except Exception as e:
-        logger.error(f"Failed to update user profile: {e}")
-        raise e
+            return [dict(r["u"]) for r in session.run(query)]
+    except Exception:
+        return []
 
-async def add_user_to_organization(user_id_or_email: str, org_id_or_name: str, role: str = "member"):
+async def update_user_profile(email: str, first_name: str, last_name: str, username: str):
     driver = get_driver()
-    # First ensure user exists if email is provided
-    if "@" in user_id_or_email:
-        await create_user(user_id_or_email, user_id_or_email.split("@")[0])
-        
     query = """
-    MATCH (u:User) WHERE u.id = $uid OR toLower(u.email) = toLower($uid)
-    MATCH (o:Organization {id: $oid})
-    MERGE (u)-[r:HAS_ROLE]->(o)
-    SET r.role = $role, r.joined_at = datetime()
+    MATCH (u:User {email: toLower($email)})
+    SET u.first_name = $fn, u.last_name = $ln, u.username = $un
     """
-    try:
-        with driver.session() as session:
-            session.run(query, {"uid": user_id_or_email, "oid": org_id_or_name, "role": role})
-    except Exception as e:
-        logger.error(f"Failed to add user to org: {e}")
-        raise e
+    with driver.session() as session:
+        session.run(query, {"email": email, "fn": first_name, "ln": last_name, "un": username})
 
-async def get_organization_users(organization_id: str):
+# --- Members ---
+
+async def get_organization_users(org_id: str) -> List[Dict]:
     driver = get_driver()
     query = """
     MATCH (o:Organization {id: $oid})<-[r:HAS_ROLE]-(u:User)
-    RETURN u.id as id, u.name as name, u.email as email, r.role as role, r.joined_at as joined_at
-    ORDER BY u.name ASC
+    RETURN u, r.role as role
     """
     try:
         with driver.session() as session:
-            result = session.run(query, {"oid": organization_id})
-            results = []
-            for record in result:
-                d = dict(record)
-                # Serialize Date
-                if d.get('joined_at'):
-                    d['joined_at'] = d['joined_at'].isoformat()
-                
-                # Fallback Name
-                if not d.get('name'):
-                    # Use part of email if name is empty
-                    if d.get('email'):
-                        d['name'] = d.get('email').split('@')[0]
-                
-                results.append(d)
-                
-            return results
+            result = session.run(query, {"oid": org_id})
+            users = []
+            for rec in result:
+                u = dict(rec["u"])
+                u["role"] = rec["role"]
+                users.append(u)
+            return users
     except Exception as e:
-        logger.error(f"Failed to get org users: {e}")
         return []
 
-async def get_project_users(project_id: str):
+async def add_user_to_organization(email: str, org_id: str, role: str):
+    # Ensure user
+    await create_user(email)
     driver = get_driver()
     query = """
-    MATCH (p:Project {id: $pid})<-[r:HAS_ROLE]-(u:User)
-    RETURN u.id as id, u.name as name, u.email as email, r.role as role, r.joined_at as joined_at
-    ORDER BY u.name ASC
+    MATCH (u:User {email: toLower($email)})
+    MATCH (o:Organization {id: $oid})
+    MERGE (u)-[r:HAS_ROLE]->(o)
+    SET r.role = $role, r.updated_at = datetime()
     """
-    try:
-        with driver.session() as session:
-            result = session.run(query, {"pid": project_id})
-            results = []
-            for record in result:
-                d = dict(record)
-                if d.get('joined_at'):
-                    d['joined_at'] = d['joined_at'].isoformat()
-                if not d.get('name') and d.get('email'):
-                    d['name'] = d.get('email').split('@')[0]
-                results.append(d)
-            return results
-    except Exception as e:
-        logger.error(f"Failed to get project users: {e}")
-        return []
+    with driver.session() as session:
+        session.run(query, {"email": email, "oid": org_id, "role": role})
 
-async def get_theme_users(theme_id: str):
-    driver = get_driver()
-    query = """
-    MATCH (t:Theme {id: $tid})<-[r:HAS_ROLE]-(u:User)
-    RETURN u.id as id, u.name as name, u.email as email, r.role as role, r.joined_at as joined_at
-    ORDER BY u.name ASC
-    """
-    try:
-        with driver.session() as session:
-            result = session.run(query, {"tid": theme_id})
-            results = []
-            for record in result:
-                d = dict(record)
-                if d.get('joined_at'):
-                    d['joined_at'] = d['joined_at'].isoformat()
-                if not d.get('name') and d.get('email'):
-                    d['name'] = d.get('email').split('@')[0]
-                results.append(d)
-            return results
-    except Exception as e:
-        logger.error(f"Failed to get theme users: {e}")
-        return []
-
-async def get_all_users():
-    driver = get_driver()
-    # Return basic user info + is_platform_admin
-    query = """
-    MATCH (u:User)
-    RETURN u.id as id, u.name as name, u.email as email, u.is_platform_admin as is_platform_admin, u.created_at as created_at
-    ORDER BY u.email ASC
-    """
-    try:
-        with driver.session() as session:
-            result = session.run(query)
-            results = []
-            for record in result:
-                d = dict(record)
-                if d.get('created_at'):
-                    d['created_at'] = d['created_at'].isoformat()
-                if not d.get('name') and d.get('email'):
-                     d['name'] = d.get('email').split('@')[0]
-                results.append(d)
-            return results
-    except Exception as e:
-        logger.error(f"Failed to get all users: {e}")
-        return []
-
-async def update_org_member_role(organization_id: str, user_id: str, new_role: str, new_name: Optional[str] = None):
+async def update_org_member_role(org_id: str, user_id: str, role: str, name: Optional[str] = None):
     driver = get_driver()
     query = """
     MATCH (o:Organization {id: $oid})<-[r:HAS_ROLE]-(u:User {id: $uid})
-    SET r.role = $role
-    WITH u
-    // Conditionally update name if provided
-    CALL {
-        WITH u
-        WITH u WHERE $name IS NOT NULL
-        SET u.name = $name
-    }
+    SET r.role = $role, r.updated_at = datetime()
     """
-    try:
-        with driver.session() as session:
-            session.run(query, {"oid": organization_id, "uid": user_id, "role": new_role, "name": new_name})
-    except Exception as e:
-        logger.error(f"Failed to update member role: {e}")
-        raise e
+    if name:
+        query += ", u.name = $name"
+        
+    with driver.session() as session:
+        session.run(query, {"oid": org_id, "uid": user_id, "role": role, "name": name})
 
-async def remove_user_from_organization(organization_id: str, user_id: str):
+async def remove_user_from_organization(org_id: str, user_id: str):
     driver = get_driver()
     query = """
     MATCH (o:Organization {id: $oid})<-[r:HAS_ROLE]-(u:User {id: $uid})
     DELETE r
     """
-    try:
-        with driver.session() as session:
-            session.run(query, {"oid": organization_id, "uid": user_id})
-    except Exception as e:
-        logger.error(f"Failed to remove user from org: {e}")
-        raise e
+    with driver.session() as session:
+        session.run(query, {"oid": org_id, "uid": user_id})
+
+# Project/Theme Members shortcuts (similar logic)
+async def get_project_users(project_id: str) -> List[Dict]:
+    driver = get_driver()
+    query = "MATCH (p:Project {id: $pid})<-[r:HAS_ROLE]-(u:User) RETURN u, r.role as role"
+    with driver.session() as session:
+         return [{"id": rec["u"]["id"], "name": rec["u"].get("name",""), "email": rec["u"]["email"], "role": rec["role"]} for rec in session.run(query, {"pid": project_id})]
+
+async def update_project_member_role(project_id: str, user_id: str, role: str, name: Optional[str] = None):
+     await update_org_member_role(project_id, user_id, role, name) # Generic enough if ID is unique
+
+async def remove_project_member(project_id: str, user_id: str):
+    await remove_user_from_organization(project_id, user_id) # Generic
+
+async def get_theme_users(theme_id: str) -> List[Dict]:
+     driver = get_driver()
+     query = "MATCH (t:Theme {id: $tid})<-[r:HAS_ROLE]-(u:User) RETURN u, r.role as role"
+     with driver.session() as session:
+         return [{"id": rec["u"]["id"], "name": rec["u"].get("name",""), "email": rec["u"]["email"], "role": rec["role"]} for rec in session.run(query, {"tid": theme_id})]
+
+async def update_theme_member_role(theme_id: str, user_id: str, role: str, name: Optional[str] = None):
+     await update_org_member_role(theme_id, user_id, role, name)
+
+async def remove_theme_member(theme_id: str, user_id: str):
+     await remove_user_from_organization(theme_id, user_id)
+     
+# --- Projects / Themes Structure ---
+
+async def get_projects(organization_id: str, user_email: str) -> List[Dict]:
+    driver = get_driver()
+    query = """
+    MATCH (org:Organization {id: $oid})
+    MATCH (u:User {email: toLower($email)})
+    
+    // Determine user role in Organization
+    OPTIONAL MATCH (u)-[r_org:HAS_ROLE]->(org)
+    WITH org, u, coalesce(r_org.role, 'member') as org_role_direct
+    WITH org, u,
+         CASE WHEN u.is_platform_admin = true OR org_role_direct = 'admin' THEN 'admin' ELSE 'member' END as org_role
+    
+    // Find projects
+    MATCH (org)-[:OWNS]->(p:Project)
+    WHERE p.status IS NULL OR p.status <> 'archived'
+    
+    // Determine project role (cascade from org)
+    OPTIONAL MATCH (u)-[r_proj:HAS_ROLE]->(p)
+    WITH org, u, org_role, p, 
+         CASE 
+            WHEN org_role = 'admin' THEN 'admin'
+            ELSE coalesce(r_proj.role, 'member')
+         END as proj_role
+         
+    // Count Themes
+    OPTIONAL MATCH (p)-[:HAS_THEME]->(t:Theme)
+    WHERE t.status IS NULL OR t.status <> 'archived'
+    WITH p, proj_role, org, collect(t) as themes
+    
+    RETURN {
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        organization_name: org.name,
+        organization_id: org.id,
+        role: proj_role,
+        status: p.status,
+        type: 'PROJECT',
+        themes: themes, 
+        created_at: toString(p.created_at)
+    } as project_data
+    """
+    with driver.session() as session:
+        return [r["project_data"] for r in session.run(query, {"oid": organization_id, "email": user_email})]
 
 async def create_project(name: str, organization_id: str, description: Optional[str] = None) -> str:
     driver = get_driver()
-    
-    # Guard: Check Organization Status
-    check_query = "MATCH (o:Organization {id: $oid}) RETURN o.status as status"
-    try:
-        with driver.session() as session:
-            result = session.run(check_query, {"oid": organization_id})
-            record = result.single()
-            if not record:
-                 raise Exception(f"Organization not found with id {organization_id}")
-            if record["status"] == WorkspaceStatus.ARCHIVED.value:
-                raise Exception(f"Cannot create project in archived organization {organization_id}")
-    except Exception as e:
-        logger.error(f"Failed to check organization status: {e}")
-        raise e
-
     pid = str(uuid.uuid4())
     query = """
     MATCH (o:Organization {id: $oid})
-    MERGE (p:Project {id: $pid})
-    ON CREATE SET p.name = $name, 
-                  p.description = $desc,
-                  p.created_at = datetime(),
-                  p.status = $status
-    MERGE (o)-[:OWNS]->(p)
+    CREATE (p:Project {id: $id, name: $name, description: $desc, created_at: datetime(), status: 'active'})
+    CREATE (o)-[:OWNS]->(p)
     RETURN p.id as id
     """
-    try:
-        with driver.session() as session:
-            result = session.run(query, {
-                "pid": pid, "name": name, "desc": description, "oid": organization_id,
-                "status": WorkspaceStatus.ACTIVE.value
-            })
-            record = result.single()
-            if not record:
-                raise Exception(f"Organization not found with id {organization_id}")
-            return record["id"]
-    except Exception as e:
-        logger.error(f"Failed to create project: {e}")
-        raise e
+    with driver.session() as session:
+        return session.run(query, {"oid": organization_id, "id": pid, "name": name, "desc": description}).single()["id"]
 
-async def get_projects(organization_id: str, include_archived: bool = False):
+async def update_project(project_id: str, name: Optional[str], description: Optional[str]):
     driver = get_driver()
-    if include_archived:
-        query = """
-        MATCH (o:Organization {id: $oid})-[:OWNS]->(p:Project)
-        RETURN p.id as id, p.name as name, p.description as description, p.status as status, p.created_at as created_at
-        ORDER BY p.created_at DESC
-        """
-    else:
-        query = """
-        MATCH (o:Organization {id: $oid})-[:OWNS]->(p:Project)
-        WHERE p.status = 'active' OR p.status IS NULL
-        RETURN p.id as id, p.name as name, p.description as description, p.status as status, p.created_at as created_at
-        ORDER BY p.created_at DESC
-        """
-    try:
-        with driver.session() as session:
-            result = session.run(query, {"oid": organization_id})
-            return [dict(record) for record in result]
-    except Exception as e:
-        logger.error(f"Failed to get projects: {e}")
-        return []
-
-async def create_theme(project_id: str, name: str, description: Optional[str] = None) -> str:
-    driver = get_driver()
-    
-    # Guard: Check Project Status
-    check_query = "MATCH (p:Project {id: $pid}) RETURN p.status as status"
-    try:
-        with driver.session() as session:
-            result = session.run(check_query, {"pid": project_id})
-            record = result.single()
-            if not record:
-                 raise Exception(f"Project not found with id {project_id}")
-            if record["status"] == WorkspaceStatus.ARCHIVED.value:
-                raise Exception(f"Cannot create theme in archived project {project_id}")
-    except Exception as e:
-        logger.error(f"Failed to check project status: {e}")
-        raise e
-
-    tid = str(uuid.uuid4())
-    query = """
-    MATCH (p:Project {id: $pid})
-    MERGE (t:Theme {name: $name})
-    ON CREATE SET t.id = $tid, 
-                  t.description = $desc,
-                  t.created_at = datetime(),
-                  t.status = $status
-    ON MATCH SET t.id = coalesce(t.id, $tid, randomUUID()),
-                 t.description = coalesce($desc, t.description)
-    MERGE (p)-[:HAS_THEME]->(t)
-    RETURN t.id as id
-    """
-    try:
-        with driver.session() as session:
-            result = session.run(query, {
-                "pid": project_id, "name": name, "desc": description, "tid": tid,
-                "status": WorkspaceStatus.ACTIVE.value
-            })
-            record = result.single()
-            return record["id"] if record else None
-    except Exception as e:
-        logger.error(f"Failed to create theme: {e}")
-        raise e
-
-async def get_project_themes(project_id: str, include_archived: bool = False):
-    driver = get_driver()
-    if include_archived:
-        query = """
-        MATCH (p:Project {id: $pid})-[:HAS_THEME]->(t:Theme)
-        RETURN t.id as id, t.name as name, t.description as description, t.status as status
-        ORDER BY t.created_at DESC
-        """
-    else:
-        query = """
-        MATCH (p:Project {id: $pid})-[:HAS_THEME]->(t:Theme)
-        WHERE t.status = 'active' OR t.status IS NULL
-        RETURN t.id as id, t.name as name, t.description as description, t.status as status
-        ORDER BY t.created_at DESC
-        """
-    try:
-        with driver.session() as session:
-            result = session.run(query, {"pid": project_id})
-            return [dict(record) for record in result]
-    except Exception as e:
-        logger.error(f"Failed to get themes: {e}")
-        return []
-
-# Archive / Reactivate Logic
-
-async def archive_organization(organization_id: str):
-    driver = get_driver()
-    query = """
-    MATCH (o:Organization {id: $oid})
-    SET o.status = $status
-    WITH o
-    OPTIONAL MATCH (o)-[:OWNS]->(p:Project)
-    SET p.status = $status
-    WITH p
-    OPTIONAL MATCH (p)-[:HAS_THEME]->(t:Theme)
-    SET t.status = $status
-    """
-    try:
-        with driver.session() as session:
-            session.run(query, {"oid": organization_id, "status": WorkspaceStatus.ARCHIVED.value})
-            logger.info(f"Archived organization {organization_id} and all its children.")
-    except Exception as e:
-        logger.error(f"Failed to archive organization: {e}")
-        raise e
+    query = "MATCH (p:Project {id: $id}) SET p.name = coalesce($name, p.name), p.description = coalesce($desc, p.description)"
+    with driver.session() as session:
+        session.run(query, {"id": project_id, "name": name, "desc": description})
 
 async def archive_project(project_id: str):
     driver = get_driver()
+    query = "MATCH (p:Project {id: $id}) SET p.status = 'archived'"
+    with driver.session() as session:
+        session.run(query, {"id": project_id})
+
+async def get_project_themes(project_id: str, user_email: str) -> List[Dict]:
+    driver = get_driver()
+    query = """
+    MATCH (org:Organization)-[:OWNS]->(p:Project {id: $pid})
+    MATCH (u:User {email: toLower($email)})
+    
+    // Determine hierarchy roles
+    OPTIONAL MATCH (u)-[r_org:HAS_ROLE]->(org)
+    WITH org, p, u, coalesce(r_org.role, 'member') as org_role_direct
+    
+    OPTIONAL MATCH (u)-[r_proj:HAS_ROLE]->(p)
+    WITH org, p, u, org_role_direct, coalesce(r_proj.role, 'member') as proj_role_direct
+    
+    WITH org, p, u,
+         CASE 
+            WHEN u.is_platform_admin = true OR org_role_direct = 'admin' OR proj_role_direct = 'admin' THEN 'admin'
+            ELSE 'member'
+         END as context_role
+         
+    MATCH (p)-[:HAS_THEME]->(t:Theme)
+    WHERE t.status IS NULL OR t.status <> 'archived'
+    
+    // Determine effective theme role
+    OPTIONAL MATCH (u)-[r_theme:HAS_ROLE]->(t)
+    WITH org, p, t, u, context_role, coalesce(r_theme.role, 'member') as theme_role_direct
+    
+    WITH org, p, t, 
+         CASE
+            WHEN context_role = 'admin' THEN 'admin'
+            ELSE theme_role_direct
+         END as effective_role
+    
+    // Counting active factors/claims
+    OPTIONAL MATCH (t)-[:HAS_FACTOR]->(f:Factor)
+    WITH t, org, p, effective_role, count(f) as claim_count
+    
+    // Counting members (User -> HAS_ROLE -> Theme)
+    OPTIONAL MATCH (member:User)-[:HAS_ROLE]->(t)
+    WITH t, org, p, effective_role, claim_count, count(member) as member_count
+
+    RETURN {
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        project_name: p.name,
+        organization_name: org.name,
+        role: effective_role,
+        status: t.status,
+        is_archived: (t.status = 'archived' OR p.status = 'archived' OR org.status = 'archived'),
+        stats: {
+            active_claims: claim_count,
+            members: member_count
+        }
+    } as theme_data
+    """
+    with driver.session() as session:
+        return [r["theme_data"] for r in session.run(query, {"pid": project_id, "email": user_email})]
+
+async def create_theme(project_id: str, name: str, description: Optional[str] = None) -> str:
+    driver = get_driver()
+    tid = str(uuid.uuid4())
     query = """
     MATCH (p:Project {id: $pid})
-    SET p.status = $status
-    WITH p
-    OPTIONAL MATCH (p)-[:HAS_THEME]->(t:Theme)
-    SET t.status = $status
+    CREATE (t:Theme {id: $id, name: $name, description: $desc, created_at: datetime(), status: 'active'})
+    CREATE (p)-[:HAS_THEME]->(t)
+    RETURN t.id as id
     """
-    try:
-        with driver.session() as session:
-            session.run(query, {"pid": project_id, "status": WorkspaceStatus.ARCHIVED.value})
-            logger.info(f"Archived project {project_id} and all its children.")
-    except Exception as e:
-        logger.error(f"Failed to archive project: {e}")
-        raise e
+    with driver.session() as session:
+         return session.run(query, {"pid": project_id, "id": tid, "name": name, "desc": description}).single()["id"]
+
+async def update_theme(theme_id: str, name: Optional[str], description: Optional[str]):
+    driver = get_driver()
+    query = "MATCH (t:Theme {id: $id}) SET t.name = coalesce($name, t.name), t.description = coalesce($desc, t.description)"
+    with driver.session() as session:
+        session.run(query, {"id": theme_id, "name": name, "desc": description})
 
 async def archive_theme(theme_id: str):
     driver = get_driver()
+    query = "MATCH (t:Theme {id: $id}) SET t.status = 'archived'"
+    with driver.session() as session:
+        session.run(query, {"id": theme_id})
+
+async def get_project_id_by_theme(theme_id: str) -> Optional[str]:
+    driver = get_driver()
+    query = "MATCH (p:Project)-[:HAS_THEME]->(t:Theme {id: $tid}) RETURN p.id as pid"
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"tid": theme_id})
+            record = result.single()
+            return record["pid"] if record else None
+    except Exception as e:
+        logger.error(f"Error resolving project for theme {theme_id}: {e}")
+        return None
+
+async def get_project_id_by_factor(factor_id: str) -> Optional[str]:
+    driver = get_driver()
     query = """
-    MATCH (t:Theme {id: $tid})
-    SET t.status = $status
+    MATCH (p:Project)-[:HAS_THEME]->(t:Theme)-[:HAS_FACTOR]->(f:Factor {id: $fid})
+    RETURN p.id as pid
     """
     try:
         with driver.session() as session:
-            session.run(query, {"tid": theme_id, "status": WorkspaceStatus.ARCHIVED.value})
-            logger.info(f"Archived theme {theme_id}.")
+            result = session.run(query, {"fid": factor_id})
+            record = result.single()
+            return record["pid"] if record else None
     except Exception as e:
-        logger.error(f"Failed to archive theme: {e}")
-        raise e
+        logger.error(f"Error resolving project for factor {factor_id}: {e}")
+        return None
 
-async def reactivate_organization(organization_id: str):
+async def get_project_id_by_claim(claim_id: str) -> Optional[str]:
     driver = get_driver()
-    # Only reactivate the organization, NOT children
+    # Claim linked to Factor linked to Theme linked to Project
+    # Or Claim linked to Theme directly (via GENERATED)?
+    # Manual claims might not be directly linked to theme except via factors?
+    # Actually create_claim_manual links factors to Theme.
+    # Let's traverse via Source Factor -> Theme -> Project
     query = """
-    MATCH (o:Organization {id: $oid})
-    SET o.status = $status
+    MATCH (p:Project)-[:HAS_THEME]->(t:Theme)-[:HAS_FACTOR]->(f:Factor)-[:CLAIMS]->(c:Claim {id: $cid})
+    RETURN p.id as pid
     """
     try:
         with driver.session() as session:
-            session.run(query, {"oid": organization_id, "status": WorkspaceStatus.ACTIVE.value})
-            logger.info(f"Reactivated organization {organization_id}.")
+            result = session.run(query, {"cid": claim_id})
+            record = result.single()
+            return record["pid"] if record else None
     except Exception as e:
-        logger.error(f"Failed to reactivate organization: {e}")
-        raise e
-
-async def reactivate_project(project_id: str):
+        logger.error(f"Error resolving project for claim {claim_id}: {e}")
+        return None
+        
+async def update_organization(org_id: str, name: Optional[str], description: Optional[str]):
     driver = get_driver()
-    # Check parent status first? Ideally yes, but technically one might reactivate a project and move it.
-    # For now, simplistic reactivation.
+    query = "MATCH (o:Organization {id: $id}) SET o.name = coalesce($name, o.name), o.description = coalesce($desc, o.description)"
+    with driver.session() as session:
+        session.run(query, {"id": org_id, "name": name, "desc": description})
+
+async def archive_organization(org_id: str):
+    driver = get_driver()
+    query = "MATCH (o:Organization {id: $id}) SET o.status = 'archived'"
+    with driver.session() as session:
+        session.run(query, {"id": org_id})
+
+# --- Claims / Factors / Manual Editing ---
+
+async def get_claims_for_theme(theme_id: str) -> List[Claim]:
+    driver = get_driver()
+    # Path 1: Claims generated by conversations linked to this theme
+    # Path 2: Claims between factors that are both associated with this theme (manual claims)
     query = """
-    MATCH (p:Project {id: $pid})
-    SET p.status = $status
-    """
-    try:
-        with driver.session() as session:
-            session.run(query, {"pid": project_id, "status": WorkspaceStatus.ACTIVE.value})
-            logger.info(f"Reactivated project {project_id}.")
-    except Exception as e:
-        logger.error(f"Failed to reactivate project: {e}")
-        raise e
-
-async def reactivate_theme(theme_id: str):
-    driver = get_driver()
-    query = """
-    MATCH (t:Theme {id: $tid})
-    SET t.status = $status
-    """
-    try:
-        with driver.session() as session:
-            session.run(query, {"tid": theme_id, "status": WorkspaceStatus.ACTIVE.value})
-            logger.info(f"Reactivated theme {theme_id}.")
-    except Exception as e:
-        logger.error(f"Failed to reactivate theme: {e}")
-        raise e
-
-# Manual Factor & Claim Management
-
-async def create_factor_manual(name: str, description: Optional[str] = None, type: str = "systeemelement", theme_id: Optional[str] = None) -> str:
-    driver = get_driver()
+    MATCH (th:Theme {id: $tid})
     
-    if theme_id:
-        check_query = "MATCH (t:Theme {id: $tid}) RETURN t.status as status"
-        try:
-            with driver.session() as session:
-                result = session.run(check_query, {"tid": theme_id})
-                record = result.single()
-                if record and record["status"] == WorkspaceStatus.ARCHIVED.value:
-                    raise Exception(f"Cannot create factor in archived theme {theme_id}")
-        except Exception as e:
-            logger.error(f"Failed to check theme status: {e}")
-            raise e
-            
+    // Path 1: Conversation-based
+    OPTIONAL MATCH (th)<-[:BELONGS_TO]-(t:ConversationThread)-[:GENERATED]->(c_path1:Claim)
+    MATCH (s1:Factor)-[:CLAIMS]->(c_path1)-[:TO]->(t_node1:Factor)
+    OPTIONAL MATCH (th)-[rs1:HAS_FACTOR]->(s1)
+    OPTIONAL MATCH (th)-[rt1:HAS_FACTOR]->(t_node1)
+    WITH th, collect({
+        node: c_path1,
+        source: s1.name, source_id: s1.id, s_type: rs1.role,
+        target: t_node1.name, target_id: t_node1.id, t_type: rt1.role
+    }) as claims_list1
+    
+    // Path 2: Direct Factor connections (covers manual claims)
+    OPTIONAL MATCH (th)-[:HAS_FACTOR]->(s2:Factor)-[:CLAIMS]->(c_path2:Claim)-[:TO]->(t_node2:Factor)
+    WHERE (th)-[:HAS_FACTOR]->(t_node2)
+    OPTIONAL MATCH (th)-[rs2:HAS_FACTOR]->(s2)
+    OPTIONAL MATCH (th)-[rt2:HAS_FACTOR]->(t_node2)
+    WITH claims_list1, collect({
+        node: c_path2,
+        source: s2.name, source_id: s2.id, s_type: rs2.role,
+        target: t_node2.name, target_id: t_node2.id, t_type: rt2.role
+    }) as claims_list2
+    
+    UNWIND (claims_list1 + claims_list2) as item
+    WITH item WHERE item.node IS NOT NULL
+    RETURN DISTINCT item.node as c, item.source as source, item.source_id as source_id, item.s_type as s_type,
+                    item.target as target, item.target_id as target_id, item.t_type as t_type
+    """
+    
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"tid": theme_id})
+            claims = []
+            for record in result:
+                node = record["c"]
+                claim_data = dict(node)
+                claim_data['source_node'] = record["source"]
+                claim_data['source_id'] = record["source_id"]
+                claim_data['source_type'] = record["s_type"] or "systeemelement"
+                claim_data['target_node'] = record["target"]
+                claim_data['target_id'] = record["target_id"]
+                claim_data['target_type'] = record["t_type"] or "systeemelement"
+                
+                # Convert neo4j datetime to string for Pydantic if necessary
+                if 'created_at' in claim_data and hasattr(claim_data['created_at'], 'isoformat'):
+                    claim_data['created_at'] = claim_data['created_at'].isoformat()
+                
+                # Final safeguard: ensure ID is string
+                if 'id' in claim_data:
+                    claim_data['id'] = str(claim_data['id'])
+                
+                try:
+                    claims.append(Claim(**claim_data))
+                except Exception as ve:
+                    logger.warning(f"Skipping invalid claim {claim_data.get('id')}: {ve}")
+                    
+            return claims
+    except Exception as e:
+        logger.error(f"Failed to fetch theme claims: {e}")
+        return []
+
+async def get_factors_for_theme(theme_id: str) -> List[Dict]:
+    driver = get_driver()
+    query = """
+    MATCH (t:Theme {id: $tid})-[:HAS_FACTOR]->(f:Factor)
+    RETURN f
+    """
+    with driver.session() as session:
+        return [dict(r["f"]) for r in session.run(query, {"tid": theme_id})]
+
+async def create_factor_manual(name: str, description: Optional[str], type: str, theme_id: Optional[str]) -> str:
+    driver = get_driver()
     fid = str(uuid.uuid4())
     query = """
-    MERGE (f:Factor {name: $name})
-    ON CREATE SET f.id = $fid, 
-                  f.description = $desc,
-                  f.type = $type
-    ON MATCH SET f.id = coalesce(f.id, $fid, randomUUID()),
-                 f.description = coalesce($desc, f.description)
-    WITH f
-    OPTIONAL MATCH (th:Theme {id: $tid})
-    FOREACH (ignored in CASE WHEN th IS NOT NULL THEN [1] ELSE [] END |
-        MERGE (th)-[r:HAS_FACTOR]->(f)
-        SET r.role = $type
-    )
-    RETURN f.id as id
+    CREATE (f:Factor {id: $id, name: $name, description: $desc, type: $type, created_at: datetime()})
     """
-    try:
-        with driver.session() as session:
-            result = session.run(query, {"name": name, "desc": description, "fid": fid, "type": type, "tid": theme_id})
-            record = result.single()
-            return record["id"] if record else None
-    except Exception as e:
-        logger.error(f"Failed to create factor manually: {e}")
-        raise e
-
-async def update_factor_manual(factor_id: str, name: Optional[str] = None, description: Optional[str] = None, type: Optional[str] = None, theme_id: Optional[str] = None):
-    driver = get_driver()
-    # Update Node properties
-    query_node = """
-    MATCH (f:Factor) WHERE f.id = $fid OR f.name = $fid
-    SET f.name = coalesce($name, f.name),
-        f.description = coalesce($desc, f.description)
-    """
-    
-    # Update Relationship Role (if theme_id is provided)
-    query_rel = """
-    MATCH (f:Factor) WHERE f.id = $fid OR f.name = $fid
-    MATCH (th:Theme {id: $tid})-[r:HAS_FACTOR]-(f)
-    SET r.role = coalesce($type, r.role)
-    """
-    
-    try:
-        with driver.session() as session:
-            session.run(query_node, {"fid": factor_id, "name": name, "desc": description})
-            if theme_id and type:
-                 session.run(query_rel, {"fid": factor_id, "tid": theme_id, "type": type})
-    except Exception as e:
-        logger.error(f"Failed to update factor: {e}")
-        raise e
-
-async def create_claim_manual(theme_id: str, source_id: str, target_id: str, statement: str, polarity: str = "+", confidence: float = 1.0):
-    driver = get_driver()
-    
-    # Guard: Check Theme Status
-    check_query = "MATCH (t:Theme {id: $tid}) RETURN t.status as status"
-    try:
-        with driver.session() as session:
-            result = session.run(check_query, {"tid": theme_id})
-            record = result.single()
-            if record and record["status"] == WorkspaceStatus.ARCHIVED.value:
-                raise Exception(f"Cannot create claim in archived theme {theme_id}")
-    except Exception as e:
-        logger.error(f"Failed to check theme status: {e}")
-        raise e
-
-    cid = str(uuid.uuid4())
-    # Match by ID or Name as fallback
-    query = """
-    MATCH (th:Theme {id: $theme_id})
-    
-    // Find Source (by ID or Name)
-    OPTIONAL MATCH (s:Factor) WHERE s.id = $sid OR s.name = $sid
-    
-    // Find Target (by ID or Name)
-    OPTIONAL MATCH (t:Factor) WHERE t.id = $tid OR t.name = $tid
-    
-    WITH th, s, t
-    WHERE s IS NOT NULL AND t IS NOT NULL
-    
-    // Create or find a manual edits thread for this theme
-    MERGE (thread:ConversationThread {id: "manual_" + $theme_id})
-    ON CREATE SET thread.created_at = datetime(), thread.name = "Manual Edits"
-    MERGE (thread)-[:BELONGS_TO]->(th)
-    
-    MERGE (c:Claim {id: $cid})
-    SET c.statement = $statement,
-        c.polarity = $polarity,
-        c.confidence = $confidence,
-        c.relationship_type = 'CAUSES',
-        c.created_at = datetime()
+    if theme_id:
+        query += """
+        WITH f
+        MATCH (t:Theme {id: $tid})
+        MERGE (t)-[:HAS_FACTOR]->(f)
+        """
         
-    MERGE (s)-[:CLAIMS]-(c)
-    MERGE (c)-[:TO]->(t)
-    MERGE (thread)-[:GENERATED]->(c)
+    query += " RETURN f.id as id"
     
-    // Ensure factors are linked to the theme
-    MERGE (th)-[r1:HAS_FACTOR]->(s)
-    SET r1.role = coalesce(r1.role, 'systeemelement')
-    MERGE (th)-[r2:HAS_FACTOR]->(t)
-    SET r2.role = coalesce(r2.role, 'systeemelement')
-    RETURN c.id as id
-    """
-    try:
-        with driver.session() as session:
-            result = session.run(query, {
-                "sid": source_id, 
-                "tid": target_id, 
-                "theme_id": theme_id,
-                "statement": statement,
-                "polarity": polarity,
-                "confidence": confidence,
-                "cid": cid
-            })
-            record = result.single()
-            if not record:
-                logger.warning(f"Failed to create manual claim: Theme, Source or Target not found. theme_id={theme_id}, sid={source_id}, tid={target_id}")
-                return None
-            return record["id"]
-    except Exception as e:
-        logger.error(f"Failed to create claim manually: {e}")
-        raise e
+    with driver.session() as session:
+        return session.run(query, {"id": fid, "name": name, "desc": description, "type": type, "tid": theme_id}).single()["id"]
 
-async def update_claim_manual(claim_id: str, statement: Optional[str] = None, polarity: Optional[str] = None, confidence: Optional[float] = None, source_id: Optional[str] = None, target_id: Optional[str] = None):
+async def update_factor_manual(factor_id: str, name: Optional[str], description: Optional[str], type: Optional[str], theme_id: Optional[str]):
     driver = get_driver()
     query = """
-    MATCH (c:Claim {id: $cid})
-    SET c.statement = coalesce($statement, c.statement),
-        c.polarity = coalesce($polarity, c.polarity),
-        c.confidence = coalesce($confidence, c.confidence)
-    
-    WITH c
-    CALL {
-        WITH c
-        WITH c WHERE $sid IS NOT NULL
-        MATCH (s_new:Factor {id: $sid})
-        OPTIONAL MATCH (s_old:Factor)-[r1:CLAIMS]-(c)
-        DELETE r1
-        MERGE (s_new)-[:CLAIMS]-(c)
-    }
-    CALL {
-        WITH c
-        WITH c WHERE $tid IS NOT NULL
-        MATCH (t_new:Factor {id: $tid})
-        OPTIONAL MATCH (c)-[r2:TO]->(t_old:Factor)
-        DELETE r2
-        MERGE (c)-[:TO]->(t_new)
-    }
+    MATCH (f:Factor {id: $id})
+    SET f.name = coalesce($name, f.name), 
+        f.description = coalesce($desc, f.description),
+        f.type = coalesce($type, f.type)
     """
-    try:
-        with driver.session() as session:
-            session.run(query, {
-                "cid": claim_id, 
-                "statement": statement, 
-                "polarity": polarity, 
-                "confidence": confidence,
-                "sid": source_id,
-                "tid": target_id
-            })
-    except Exception as e:
-        logger.error(f"Failed to update claim: {e}")
-        raise e
+    with driver.session() as session:
+        session.run(query, {"id": factor_id, "name": name, "desc": description, "type": type})
 
 async def delete_factor_manual(factor_id: str):
     driver = get_driver()
-    # Detach delete factor and also any claims that ONLY belonged to this factor
+    query = "MATCH (f:Factor {id: $id}) DETACH DELETE f"
+    with driver.session() as session:
+        session.run(query, {"id": factor_id})
+
+async def create_claim_manual(theme_id: str, source_id: str, target_id: str, statement: str, polarity: str = "+", confidence: float = 1.0):
+    driver = get_driver()
+    cid = str(uuid.uuid4())
     query = """
-    MATCH (f:Factor) WHERE f.id = $fid OR f.name = $fid
-    OPTIONAL MATCH (f)-[:CLAIMS|TO]-(c:Claim)
-    DETACH DELETE f, c
+    MATCH (s:Factor {id: $sid}), (t:Factor {id: $tid})
+    MATCH (theme:Theme {id: $thid})
+    MERGE (c:Claim {id: $cid})
+    SET c.statement = $stmt, 
+        c.polarity = $pol, 
+        c.confidence = $conf, 
+        c.relationship_type = 'CAUSES',
+        c.created_at = datetime()
+        
+    MERGE (s)-[:CLAIMS]->(c)
+    MERGE (c)-[:TO]->(t)
+    
+    // Ensure factors are linked to theme
+    MERGE (theme)-[:HAS_FACTOR]->(s)
+    MERGE (theme)-[:HAS_FACTOR]->(t)
     """
-    try:
-        with driver.session() as session:
-            session.run(query, {"fid": factor_id})
-    except Exception as e:
-        logger.error(f"Failed to delete factor: {e}")
-        raise e
+    query += " RETURN c.id as id"
+    with driver.session() as session:
+        return session.run(query, {"cid": cid, "sid": source_id, "tid": target_id, "stmt": statement, "pol": polarity, "conf": confidence, "thid": theme_id}).single()["id"]
+
+async def update_claim_manual(claim_id: str, statement: Optional[str], polarity: Optional[str], confidence: Optional[float], source_id: Optional[str], target_id: Optional[str]):
+    driver = get_driver()
+    query = """
+    MATCH (c:Claim {id: $id})
+    SET c.statement = coalesce($stmt, c.statement),
+        c.polarity = coalesce($pol, c.polarity),
+        c.confidence = coalesce($conf, c.confidence)
+    """
+    with driver.session() as session:
+        session.run(query, {"id": claim_id, "stmt": statement, "pol": polarity, "conf": confidence})
 
 async def delete_claim_manual(claim_id: str):
     driver = get_driver()
-    query = """
-    MATCH (c:Claim {id: $cid})
-    DETACH DELETE c
-    """
-    try:
-        with driver.session() as session:
-            session.run(query, {"cid": claim_id})
-    except Exception as e:
-        logger.error(f"Failed to delete claim: {e}")
-        raise e
+    query = "MATCH (c:Claim {id: $id}) DETACH DELETE c"
+    with driver.session() as session:
+        session.run(query, {"id": claim_id})

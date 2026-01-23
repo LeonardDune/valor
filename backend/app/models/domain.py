@@ -15,10 +15,18 @@ class FactorType(str, Enum):
     ELEMENT = "systeemelement"
     CRITERIA = "criterium"
 
+class LifecycleStatus(str, Enum):
+    DRAFT = "draft"
+    PROPOSED = "proposed"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    DEPRECATED = "deprecated"
+
 class FactorBase(BaseModel):
     name: str
     description: Optional[str] = None
     type: FactorType = FactorType.ELEMENT
+    status: LifecycleStatus = LifecycleStatus.ACCEPTED
 
 class Factor(FactorBase):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -34,6 +42,7 @@ class ClaimBase(BaseModel):
     target_type: Optional[FactorType] = None
     relationship_type: str = "CAUSES" # CAUSES, MENTIONS
     polarity: str = "+" # +, -, or ?
+    status: LifecycleStatus = LifecycleStatus.ACCEPTED
 
 class Claim(ClaimBase):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -104,3 +113,17 @@ class Theme(BaseModel):
     project_id: str
     status: WorkspaceStatus = WorkspaceStatus.ACTIVE
     created_at: datetime = Field(default_factory=datetime.now)
+
+class Proposal(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str
+    description: Optional[str] = None
+    status: LifecycleStatus = LifecycleStatus.DRAFT
+    author_id: str
+    created_at: datetime = Field(default_factory=datetime.now)
+    # Target relationships will be handled in Graph relationships, not strictly in Pydantic model structure if dynamic
+
+class Conflict(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    detection_date: datetime = Field(default_factory=datetime.now)
+    status: str = "open" # open, resolved, ignored

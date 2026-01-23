@@ -21,14 +21,14 @@ import {
 import { Loader2 } from "lucide-react";
 
 interface CreateFactorModalProps {
-    isOpen: boolean;
-    onClose: () => void;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
     onSave: (name: string, type: string, description: string) => Promise<void>;
 }
 
 export const CreateFactorModal: React.FC<CreateFactorModalProps> = ({
-    isOpen,
-    onClose,
+    open,
+    onOpenChange,
     onSave
 }) => {
     const [name, setName] = useState('');
@@ -55,11 +55,11 @@ export const CreateFactorModal: React.FC<CreateFactorModalProps> = ({
         setName('');
         setDescription('');
         setType('middel');
-        onClose();
+        onOpenChange(false);
     };
 
     return (
-        <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
+        <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-[425px]">
                 <DialogHeader>
                     <DialogTitle>Nieuwe Factor</DialogTitle>

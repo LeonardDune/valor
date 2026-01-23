@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
-import { api, type Organization } from '../services/api';
+import { api, type DashboardEnvironment } from '../services/api';
 
 import { useAuth } from './AuthContext';
 
 interface OrganizationContextType {
-    organizations: Organization[];
-    activeOrganization: Organization | null;
+    organizations: DashboardEnvironment[];
+    activeOrganization: DashboardEnvironment | null;
     switchOrganization: (orgId: string) => void;
     refreshOrganizations: () => Promise<void>;
     isLoading: boolean;
@@ -15,8 +15,8 @@ export const OrganizationContext = createContext<OrganizationContextType | undef
 
 export const OrganizationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const { session, isLoading: authLoading } = useAuth();
-    const [organizations, setOrganizations] = useState<Organization[]>([]);
-    const [activeOrganization, setActiveOrganization] = useState<Organization | null>(null);
+    const [organizations, setOrganizations] = useState<DashboardEnvironment[]>([]);
+    const [activeOrganization, setActiveOrganization] = useState<DashboardEnvironment | null>(null);
     const [isLoading, setIsLoading] = useState(true);
 
     const fetchOrganizations = async () => {
@@ -24,12 +24,18 @@ export const OrganizationProvider: React.FC<{ children: ReactNode }> = ({ childr
 
         setIsLoading(true);
         try {
-            const orgs = await api.getOrganizations();
+            const orgs = await api.getDashboardEnvironments();
             setOrganizations(orgs);
 
             // Set active org logic (first available if none selected)
-            if (orgs.length > 0 && !activeOrganization) {
-                setActiveOrganization(orgs[0]);
+            if (orgs.length > 0) {
+                if (!activeOrganization) {
+                    setActiveOrganization(orgs[0]);
+                } else {
+                    // Refresh current active org from new list to get updated counts/projects
+                    const updated = orgs.find((o: DashboardEnvironment) => o.id === activeOrganization.id);
+                    if (updated) setActiveOrganization(updated);
+                }
             }
         } catch (error) {
             console.error("Failed to fetch organizations", error);
@@ -56,7 +62,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode }> = ({ childr
     }, [session, authLoading]);
 
     const switchOrganization = (orgId: string) => {
-        const org = organizations.find(o => o.id === orgId);
+        const org = organizations.find((o: DashboardEnvironment) => o.id === orgId);
         if (org) {
             setActiveOrganization(org);
         }

@@ -7,10 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from 'sonner';
 
 const OnboardingPage: React.FC = () => {
     const { refreshOrganizations } = useOrganization();
-    const { user: _ } = useAuth(); // Prefixed with _ to silence unused warning, or just remove if truly unused.
+    const { user: _ } = useAuth(); // Prefixed with _ to silence unused warning
     const [step, setStep] = useState(1);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -28,10 +29,11 @@ const OnboardingPage: React.FC = () => {
         setIsLoading(true);
         try {
             await api.updateUserProfile(firstName, lastName, username);
+            toast.success("Profiel bijgewerkt!");
             setStep(2);
         } catch (error) {
             console.error("Failed to update profile", error);
-            alert("Er ging iets mis bij het opslaan van je profiel.");
+            toast.error("Er ging iets mis bij het opslaan van je profiel.");
         } finally {
             setIsLoading(false);
         }
@@ -43,10 +45,11 @@ const OnboardingPage: React.FC = () => {
         try {
             await api.createOrganization(orgName, orgDesc);
             await refreshOrganizations();
+            toast.success("Organisatie aangemaakt! Je wordt doorgestuurd...");
             // App.tsx logic will handle redirection once orgs are loaded
         } catch (error) {
             console.error("Failed to create org", error);
-            alert("Er ging iets mis bij het aanmaken van de organisatie.");
+            toast.error("Er ging iets mis bij het aanmaken van de organisatie.");
         } finally {
             setIsLoading(false);
         }

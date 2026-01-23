@@ -36,4 +36,8 @@ export const mapClaimToLink = (claim: Claim): CausalLink => {
 };
 
 export const mapFactors = (factors: Factor[]) => factors.map(mapFactorToNode);
-export const mapClaims = (claims: Claim[]) => claims.filter(c => c.source_id && c.target_id).map(mapClaimToLink);
+export const mapClaims = (claims: Claim[]) => {
+    return claims
+        .filter(c => (c.source_id || c.source_node) && (c.target_id || c.target_node))
+        .map(mapClaimToLink);
+};
