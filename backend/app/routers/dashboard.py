@@ -23,6 +23,10 @@ async def get_my_environments(user: dict = Depends(get_current_user)):
         if not email:
              raise HTTPException(status_code=401, detail="User not authenticated")
              
+        # Auto-claim any pending invites for this user
+        from app.db.invites import claim_pending_invites
+        await claim_pending_invites(email)
+             
         data = await get_user_environments(email)
         return data
     except Exception as e:

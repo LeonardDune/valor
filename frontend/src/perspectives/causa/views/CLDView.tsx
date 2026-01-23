@@ -30,6 +30,7 @@ interface CLDViewProps {
     layoutMode?: 'free' | 'system';
     onOpenConversation: (context: ConversationContext) => void;
     onEdit?: (selection: { type: 'node' | 'link'; data: any }) => void;
+    onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void;
 }
 
 const nodeTypes = {
@@ -49,7 +50,8 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     onSelect,
     layoutMode,
     onOpenConversation,
-    onEdit
+    onEdit,
+    onViewportChange
 }) => {
     // React Flow State
     const [rfInstance, setRfInstance] = useState<any>(null);
@@ -406,6 +408,11 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                 minZoom={0.1}
                 maxZoom={4}
                 fitView
+                onMove={(_, viewport) => {
+                    if (onViewportChange) {
+                        onViewportChange(viewport);
+                    }
+                }}
             >
                 <Background />
                 <ViewControls />

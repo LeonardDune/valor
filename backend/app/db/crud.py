@@ -619,6 +619,53 @@ async def archive_theme(theme_id: str):
     query = "MATCH (t:Theme {id: $id}) SET t.status = 'archived'"
     with driver.session() as session:
         session.run(query, {"id": theme_id})
+
+async def get_project_id_by_theme(theme_id: str) -> Optional[str]:
+    driver = get_driver()
+    query = "MATCH (p:Project)-[:HAS_THEME]->(t:Theme {id: $tid}) RETURN p.id as pid"
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"tid": theme_id})
+            record = result.single()
+            return record["pid"] if record else None
+    except Exception as e:
+        logger.error(f"Error resolving project for theme {theme_id}: {e}")
+        return None
+
+async def get_project_id_by_factor(factor_id: str) -> Optional[str]:
+    driver = get_driver()
+    query = """
+    MATCH (p:Project)-[:HAS_THEME]->(t:Theme)-[:HAS_FACTOR]->(f:Factor {id: $fid})
+    RETURN p.id as pid
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"fid": factor_id})
+            record = result.single()
+            return record["pid"] if record else None
+    except Exception as e:
+        logger.error(f"Error resolving project for factor {factor_id}: {e}")
+        return None
+
+async def get_project_id_by_claim(claim_id: str) -> Optional[str]:
+    driver = get_driver()
+    # Claim linked to Factor linked to Theme linked to Project
+    # Or Claim linked to Theme directly (via GENERATED)?
+    # Manual claims might not be directly linked to theme except via factors?
+    # Actually create_claim_manual links factors to Theme.
+    # Let's traverse via Source Factor -> Theme -> Project
+    query = """
+    MATCH (p:Project)-[:HAS_THEME]->(t:Theme)-[:HAS_FACTOR]->(f:Factor)-[:CLAIMS]->(c:Claim {id: $cid})
+    RETURN p.id as pid
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"cid": claim_id})
+            record = result.single()
+            return record["pid"] if record else None
+    except Exception as e:
+        logger.error(f"Error resolving project for claim {claim_id}: {e}")
+        return None
         
 async def update_organization(org_id: str, name: Optional[str], description: Optional[str]):
     driver = get_driver()
@@ -765,8 +812,9 @@ async def create_claim_manual(theme_id: str, source_id: str, target_id: str, sta
     MERGE (theme)-[:HAS_FACTOR]->(s)
     MERGE (theme)-[:HAS_FACTOR]->(t)
     """
+    query += " RETURN c.id as id"
     with driver.session() as session:
-        session.run(query, {"cid": cid, "sid": source_id, "tid": target_id, "stmt": statement, "pol": polarity, "conf": confidence, "thid": theme_id})
+        return session.run(query, {"cid": cid, "sid": source_id, "tid": target_id, "stmt": statement, "pol": polarity, "conf": confidence, "thid": theme_id}).single()["id"]
 
 async def update_claim_manual(claim_id: str, statement: Optional[str], polarity: Optional[str], confidence: Optional[float], source_id: Optional[str], target_id: Optional[str]):
     driver = get_driver()

@@ -179,6 +179,11 @@ export const api = {
         return response.data;
     },
 
+    getProfile: async () => {
+        const response = await apiClient.get<User>('/users/me');
+        return response.data;
+    },
+
 
     getOrganizationUsers: async (orgId: string) => {
         const response = await apiClient.get<User[]>(`/organizations/${orgId}/users`);
@@ -237,7 +242,17 @@ export const api = {
 
     // Invites
     createInvite: async (email: string, entityId: string, role: string, expiresInDays: number = 7) => {
-        const response = await apiClient.post('/invites', { email, entity_id: entityId, role, expires_in_days: expiresInDays });
+        // Use configured App URL (prod) or fallback to current origin (dev/local).
+        const appUrl = import.meta.env.VITE_APP_URL || window.location.origin;
+        const redirectUrl = appUrl.replace(/\/$/, ""); // Ensure no trailing slash
+
+        const response = await apiClient.post('/invites', {
+            email,
+            entity_id: entityId,
+            role,
+            expires_in_days: expiresInDays,
+            redirect_url: redirectUrl
+        });
         return response.data;
     },
 

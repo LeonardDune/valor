@@ -25,11 +25,42 @@ interface ValorWorkspaceProps {
 
 type AgentType = 'CAUSA' | 'AXIA' | 'ACTOR' | 'PRAXIS';
 
-export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, projectName, themeName, onBack }) => {
+import { useWebSocket } from '../../hooks/useWebSocket';
+
+export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, themeId, projectName, themeName, onBack }) => {
     const [searchParams, setSearchParams] = useSearchParams();
     const mode = searchParams.get('mode') as AgentType | null;
 
     const [activeAgent, setActiveAgent] = useState<AgentType>(mode || 'CAUSA');
+
+    // WebSocket Integration
+    const { lastMessage, sendMessage } = useWebSocket(projectId);
+    const [currentUser, setCurrentUser] = useState<any>(null);
+
+    // Fetch user on mount for identity
+    useEffect(() => {
+        // Simple fetch or use context
+        // We can decode the session token or use API
+        // For now, let's use the local storage session or API
+        // Better: supabase.auth.getUser()
+        const fetchUser = async () => {
+            try {
+                // Ensure auth session exists first (handled by AuthContext generally, but safe to check)
+                const { data: { session } } = await import('../../lib/supabase').then(m => m.supabase.auth.getSession());
+
+                if (session) {
+                    const profile = await api.getProfile();
+                    // Use Username if available, fallback to name, then email
+                    const displayName = profile.username || profile.name || profile.email;
+                    // Spread profile first, then override specific fields if needed
+                    setCurrentUser({ ...profile, id: displayName, email: profile.email });
+                }
+            } catch (err) {
+                console.error("Failed to fetch user profile", err);
+            }
+        };
+        fetchUser();
+    }, []);
 
     // Sync state to URL if changed via UI
     useEffect(() => {
@@ -134,7 +165,10 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ themeId, project
                         <div className="flex-1 bg-muted/30 h-full relative overflow-hidden">
                             <CausaShell
                                 themeId={themeId}
+                                projectId={projectId}
                                 onOpenConversation={handleOpenConversation}
+                                websocket={{ lastMessage, sendMessage }}
+                                currentUserId={currentUser?.email || 'anon'}
                             />
                         </div>
                     </div>

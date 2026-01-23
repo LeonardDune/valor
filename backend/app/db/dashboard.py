@@ -23,23 +23,34 @@ async def get_user_environments(user_email: str) -> List[Dict]:
     query = """
     MATCH (u:User {email: toLower($email)})
     
-    // 1. Find Organizations
-    // Direct membership
+    // 1. Find Organizations via multiple paths
+    // Path A: Direct Organization Membership
     OPTIONAL MATCH (u)-[r_direct:HAS_ROLE]->(org_direct:Organization)
     
-    // Global admin access (all orgs)
-    OPTIONAL MATCH (org_all:Organization)
-    WHERE u.is_platform_admin = true
+    // Path B: Project Membership -> owning Org
+    OPTIONAL MATCH (u)-[r_proj_indirect:HAS_ROLE]->(:Project)<-[:OWNS]-(org_proj:Organization)
     
-    // Combine and unify
-    WITH u, collect({node: org_direct, role: r_direct.role}) + collect({node: org_all, role: 'admin'}) as org_list
+    // Path C: Theme Membership -> owning Project -> owning Org
+    OPTIONAL MATCH (u)-[r_theme_indirect:HAS_ROLE]->(:Theme)<-[:HAS_THEME]-(:Project)<-[:OWNS]-(org_theme:Organization)
+    
+    // Combine all reachable Orgs
+    WITH u, 
+         collect({node: org_direct, role: r_direct.role}) + 
+         collect({node: org_proj, role: null}) + 
+         collect({node: org_theme, role: null}) as org_list
+         
     UNWIND org_list as item
-    WITH DISTINCT item.node as org, item.role as user_role, u
+    WITH item.node as org, item.role as raw_role, u
     WHERE org IS NOT NULL
     
+    // Deduplicate: Group by Org and pick highest role (no implicit admin anymore)
+    WITH org, u, collect(raw_role) as roles
+    WITH org, u, 
+         CASE WHEN 'admin' IN roles THEN 'admin' ELSE head(roles) END as user_role
+
     // FILTER: Hide archived orgs UNLESS user is admin
     WITH org, user_role, u
-    WHERE (org.status IS NULL OR org.status <> 'archived') OR (user_role = 'admin' OR u.is_platform_admin = true)
+    WHERE (org.status IS NULL OR org.status <> 'archived') OR (user_role = 'admin')
     
     // 2. Find Projects in those Orgs
     OPTIONAL MATCH (org)-[:OWNS]->(proj:Project)
