@@ -12,6 +12,7 @@ import { useAuth } from './context/AuthContext';
 import { LoginPage } from './pages/LoginPage';
 import OnboardingPage from './pages/OnboardingPage';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
+import { UpdatePasswordPage } from './pages/UpdatePasswordPage';
 import { DashboardLayout } from './views/shell/DashboardLayout';
 
 function App() {
@@ -37,31 +38,37 @@ function App() {
     return <div className="flex items-center justify-center min-h-screen text-slate-500">Laden...</div>;
   }
 
+  // Public Routes (No Auth Required)
+  // Check if we are on a specific public route BEFORE ensuring session
+  if (location.pathname === '/login' || location.pathname === '/invite') {
+    // Logic handled by Routes below if we render them, but here we return early if *not* authenticated?
+    // Actually, LoginPage is rendered if !session.
+  }
+
   if (!session) {
-    return <LoginPage />;
+    // Basic protection
+    return (
+      <Routes>
+        <Route path="/invite" element={<AcceptInvitePage onSuccess={handleInviteSuccess} />} />
+        <Route path="*" element={<LoginPage />} />
+      </Routes>
+    );
   }
 
   // Determine if we should show Onboarding
-  // CRITICAL: Verify we are not in an incoherent state. 
-  // If useOrganization is loading, we wait.
-  // If we just accepted an invite, the org list SHOULD be populated.
   const showOnboarding =
     !orgLoading &&
     !authLoading &&
     organizations.length === 0 &&
-    !location.pathname.includes('/invite');
+    !location.pathname.includes('/invite') &&
+    !location.pathname.includes('/update-password'); // Don't block password update!
 
   if (showOnboarding) {
-    // Safety check: If we just came from an invite redirect?
-    // For now, rely on refreshOrganizations having done its job.
     return <OnboardingPage />;
   }
 
   return (
     <div className="flex h-screen bg-canvas font-sans text-text-primary overflow-hidden">
-      {/* Sidebar removed here, managed by DashboardLayout */}
-
-      {/* Main Content Area */}
       <main className="flex-1 overflow-auto relative flex flex-col">
         <Routes>
           <Route path="/" element={<DashboardLayout><ThemeGrid /></DashboardLayout>} />
@@ -86,14 +93,12 @@ function App() {
             </DashboardLayout>
           } />
 
-          {/* Organization View (Project List) - Wrapped */}
           <Route path="/organizations/:orgId" element={
             <DashboardLayout>
               <OrganizationRouteWrapper />
             </DashboardLayout>
           } />
 
-          {/* Project View (Theme List) - Wrapped */}
           <Route path="/projects/:projectId" element={
             <DashboardLayout>
               <div className="h-full">
@@ -102,9 +107,6 @@ function App() {
             </DashboardLayout>
           } />
 
-          {/* Workspace View (Theme Context) - Wrapped (Maybe? Or does workspace need full screen?) */}
-          {/* Workspace usually needs its own layout or full screen. Keeping it wrapped for now for consistency, but maybe Sidebar should be collapsible there. */}
-          {/* Actually Workspace likely wants full screen with its own internal nav. Let's keep it wrapped for consistency of Global Nav. */}
           <Route path="/themes/:themeId" element={
             <DashboardLayout>
               <div className="h-full">
@@ -125,6 +127,7 @@ function App() {
           } />
 
           <Route path="/invite" element={<AcceptInvitePage onSuccess={handleInviteSuccess} />} />
+          <Route path="/update-password" element={<UpdatePasswordPage />} />
         </Routes>
       </main>
     </div>
