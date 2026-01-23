@@ -57,11 +57,10 @@ async def check_permission(user_email: str, entity_id: str, required_role: Role)
     // Check Platform Admin
     WITH u, target, COALESCE(u.is_platform_admin, false) as is_platform_admin
     
-    // Find all paths from target up to root (Organization)
-    MATCH path = (parent)-[:OWNS|HAS_THEME*0..]->(target)
-    
-    // Check if user has a role on any node in this path (parent or target)
-    OPTIONAL MATCH (u)-[r:HAS_ROLE]->(parent)
+    // Find highest role on any ancestor (including self)
+    // We look for any node 'parent' that recursively owns/contains 'target', 
+    // AND where 'u' has a role on 'parent'.
+    OPTIONAL MATCH (u)-[r:HAS_ROLE]->(parent)-[:OWNS|HAS_THEME*0..]->(target)
     WHERE r.status IS NULL OR r.status = 'active'
     
     RETURN is_platform_admin, collect(r.role) as roles

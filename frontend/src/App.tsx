@@ -42,9 +42,18 @@ function App() {
   }
 
   // Determine if we should show Onboarding
-  const showOnboarding = !orgLoading && organizations.length === 0 && !location.pathname.includes('/invite');
+  // CRITICAL: Verify we are not in an incoherent state. 
+  // If useOrganization is loading, we wait.
+  // If we just accepted an invite, the org list SHOULD be populated.
+  const showOnboarding =
+    !orgLoading &&
+    !authLoading &&
+    organizations.length === 0 &&
+    !location.pathname.includes('/invite');
 
   if (showOnboarding) {
+    // Safety check: If we just came from an invite redirect?
+    // For now, rely on refreshOrganizations having done its job.
     return <OnboardingPage />;
   }
 
@@ -143,13 +152,34 @@ const ThemeListWrapper = () => {
 const WorkspaceWrapper = () => {
   const { themeId } = useParams();
   const navigate = useNavigate();
+  const { organizations, isLoading } = useOrganization();
+
+  // Find the context (Project & Theme) from the loaded structure
+  // Need to traverse Org -> Project -> Theme
+  const found = organizations.flatMap(org =>
+    org.projects.flatMap(proj =>
+      proj.themes.map(theme => ({
+        project: proj,
+        theme
+      }))
+    )
+  ).find(item => item.theme.id === themeId);
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-screen">Laden...</div>;
+  }
+
+  if (!found) {
+    return <div className="flex items-center justify-center h-screen">Thema niet gevonden of geen toegang.</div>;
+  }
+
   return (
     <ValorWorkspace
-      projectId="unknown"
-      projectName="unknown"
-      themeId={themeId!}
-      themeName="Theme"
-      onBack={() => navigate(-1)}
+      projectId={found.project.id}
+      projectName={found.project.name}
+      themeId={found.theme.id}
+      themeName={found.theme.name}
+      onBack={() => navigate(-1)} // Or navigate to project view
     />
   );
 }

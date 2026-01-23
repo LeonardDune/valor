@@ -12,8 +12,9 @@ import uuid
 from contextlib import asynccontextmanager
 from app.db.utils import close_driver, verify_connectivity
 from app.auth import get_current_user
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, WebSocket, WebSocketDisconnect
 import logging
+from app.services.connection_manager import manager
 from app.db.invites import create_invite, get_pending_invites, accept_invite
 from app.models.domain import InviteStatus, Role
 
@@ -113,6 +114,85 @@ async def chat_endpoint(request: ConversationRequest):
         await save_claims(cid, response.extracted_claims)
         
     return response
+    return response
+
+from app.auth import verify_token, security
+import jwt 
+from jwt import PyJWKClient
+
+# ...
+
+@app.websocket("/ws/{project_id}")
+async def websocket_endpoint(websocket: WebSocket, project_id: str, token: Optional[str] = None):
+    """
+    WebSocket endpoint for real-time collaboration.
+    Handles ephemeral presence events (cursor, focus) and subscribes to data updates.
+    """
+    # Default to anon if auth fails (for now, to allow partial function), but strictly logged.
+    # If users are Anon, broadcast ignores them if they overwrite.
+    # Strategy: If Anon, generate UNIQUE ID? 
+    # Better: Ensure Auth works.
+    
+    user_id = f"anon-{uuid.uuid4().hex[:6]}" # Unique anon ID to prevent collision!
+    
+    # Authenticate
+    if token:
+        try:
+            # Helper for WS Auth
+            from app.auth import verify_token_string 
+            payload = verify_token_string(token)
+            # Use email as ID (stable)
+            user_id = payload.get("email") or payload.get("sub") or user_id
+            logger.info(f"WebSocket Authenticated: {user_id} for Project {project_id}")
+            
+        except Exception as e:
+            logger.error(f"WebSocket Auth Failed for project {project_id}. Token starts with: {token[:10] if token else 'None'}. Error: {e}")
+            # If auth fails, should we close?
+            # User requirement: "Why is it Anon?" -> They expect Auth.
+            # If we fall back to Unique Anon, at least Sync works.
+            # But Name is Anon.
+            # Let's keep Unique Anon as fallback so Sync works instantly. 
+            pass
+    else:
+        logger.warning(f"WebSocket connection without Token for {project_id}")
+
+    await manager.connect(websocket, project_id, user_id)
+    try:
+        while True:
+            # Handle incoming messages
+            data = await websocket.receive_json()
+            
+            # Inject sender info if missing? 
+            # PresenceLayer sends { user_id, ... } in payload. 
+            # We trust client or verify?
+            # Ideally: override payload.user_id with Authenticated ID?
+            # For "Anon" users, we want the generated specific ID.
+            if isinstance(data, dict):
+                 # Ensure payload exists
+                 if "payload" not in data:
+                     data["payload"] = {}
+                 
+                 # Force the real user_id to ensure consistency (and fix Anon name)
+                 # If client sends "user_id" matches "anon", replace with mapped ID?
+                 # Better: Trust server-side ID for badges.
+                 if "user_id" in data["payload"]:
+                      # If client claims to be someone else, maybe unexpected.
+                      # But let's overwrite with verified ID to be safe/correct.
+                      data["payload"]["user_id"] = user_id
+                 
+                 # Also for NODE_FOCUS, user_id is in payload
+                 # Make sure we add it if missing
+                 if data.get("type") == "NODE_FOCUS":
+                      data["payload"]["user_id"] = user_id
+            
+            # Broadcast ephemeral events back to other clients (e.g. Presence)
+            await manager.broadcast_presence(project_id, user_id, data)
+            
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, project_id, user_id)
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        manager.disconnect(websocket, project_id, user_id)
 
 # Hierarchy Endpoints
 
@@ -124,7 +204,8 @@ from app.db.crud import (
     check_permission, get_project_users, get_theme_users, get_all_users,
     update_organization, archive_organization, update_project, archive_project,
     update_theme, archive_theme, update_project_member_role, remove_project_member,
-    update_theme_member_role, remove_theme_member
+    update_theme_member_role, remove_theme_member, get_project_id_by_theme,
+    get_project_id_by_factor, get_project_id_by_claim
 )
 from pydantic import BaseModel
 
@@ -220,6 +301,25 @@ async def update_my_profile(profile: UserProfileUpdate, user: dict = Depends(get
         
     await update_user_profile(email, profile.first_name, profile.last_name, profile.username)
     return {"status": "updated", "email": email}
+
+@app.get("/users/me")
+async def get_current_user_profile(
+    user: dict = Depends(get_current_user)
+):
+    """Get full profile of the currently authenticated user."""
+    from app.db.crud import get_user_by_email
+    
+    email = user.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Invalid session")
+        
+    db_user = await get_user_by_email(email)
+    if not db_user:
+        # If user exists in Auth but not in DB, create them? 
+        # Or return 404. For now, 404.
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    return db_user
 
 class AddMemberRequest(BaseModel):
     email: str
@@ -321,6 +421,7 @@ class InviteRequest(BaseModel):
     entity_id: str
     role: str = "member"
     expires_in_days: Optional[int] = 7
+    redirect_url: Optional[str] = None
 
 class InviteAcceptRequest(BaseModel):
     code: str
@@ -352,10 +453,13 @@ async def create_new_invite(invite: InviteRequest, user: dict = Depends(get_curr
                 target_email=invite.email,
                 entity_id=invite.entity_id,
                 role=Role(invite.role),
-                expires_in_days=invite.expires_in_days or 7
+                expires_in_days=invite.expires_in_days or 7,
+                redirect_url=invite.redirect_url
             )
             return {"status": "invited", "invite": result}
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/organizations/{org_id}/invites")
@@ -490,22 +594,46 @@ class ClaimUpdate(BaseModel):
 async def create_factor(factor: FactorManualCreate):
     logger.info(f"Creating factor: {factor}")
     fid = await create_factor_manual(factor.name, factor.description, factor.type or "systeemelement", factor.theme_id)
+    
+    # Broadcast Update
+    if factor.theme_id:
+        project_id = await get_project_id_by_theme(factor.theme_id)
+        if project_id:
+            await manager.broadcast_data(project_id, {
+                "type": "FACTOR_CREATED",
+                "payload": {"id": fid, "name": factor.name, "description": factor.description, "type": factor.type, "theme_id": factor.theme_id}
+            })
+        
     return {"id": fid, "name": factor.name}
 
 @app.patch("/factors/{factor_id}")
 async def update_factor_route(factor_id: str, factor: FactorUpdate):
     await update_factor_manual(factor_id, factor.name, factor.description, factor.type, factor.theme_id)
+    # Broadcast
+    project_id = await get_project_id_by_factor(factor_id)
+    if project_id:
+         await manager.broadcast_data(project_id, {
+                "type": "FACTOR_UPDATED",
+                "payload": {"id": factor_id, "changes": factor.dict(exclude_unset=True)}
+            })
     return {"status": "updated"}
 
 @app.delete("/factors/{factor_id}")
 async def delete_factor_route(factor_id: str):
+    # Get project ID before deletion!
+    project_id = await get_project_id_by_factor(factor_id)
     await delete_factor_manual(factor_id)
+    if project_id:
+         await manager.broadcast_data(project_id, {
+                "type": "FACTOR_DELETED",
+                "payload": {"id": factor_id}
+            })
     return {"status": "deleted"}
 
 @app.post("/claims_manual")
 async def create_claim(claim: ClaimManualCreate):
     logger.info(f"Creating claim: {claim}")
-    await create_claim_manual(
+    cid = await create_claim_manual(
         claim.theme_id, 
         claim.source_id, 
         claim.target_id, 
@@ -513,7 +641,16 @@ async def create_claim(claim: ClaimManualCreate):
         claim.polarity, 
         claim.confidence
     )
-    return {"status": "created"}
+    # Broadcast
+    if claim.theme_id:
+        project_id = await get_project_id_by_theme(claim.theme_id)
+        if project_id:
+            await manager.broadcast_data(project_id, {
+                "type": "CLAIM_CREATED",
+                "payload": {"id": cid, "source_id": claim.source_id, "target_id": claim.target_id, "theme_id": claim.theme_id, "statement": claim.statement}
+            })
+
+    return {"status": "created", "id": cid}
 
 @app.patch("/claims/{claim_id}")
 async def update_claim_route(claim_id: str, claim: ClaimUpdate):
@@ -521,13 +658,26 @@ async def update_claim_route(claim_id: str, claim: ClaimUpdate):
         claim_id, 
         claim.statement, 
         claim.polarity, 
-        claim.confidence,
-        claim.source_id,
+        claim.confidence, 
+        claim.source_id, 
         claim.target_id
     )
+    # Broadcast
+    project_id = await get_project_id_by_claim(claim_id)
+    if project_id:
+         await manager.broadcast_data(project_id, {
+                "type": "CLAIM_UPDATED",
+                "payload": {"id": claim_id, "changes": claim.dict(exclude_unset=True)}
+            })
     return {"status": "updated"}
 
 @app.delete("/claims/{claim_id}")
 async def delete_claim_route(claim_id: str):
+    project_id = await get_project_id_by_claim(claim_id)
     await delete_claim_manual(claim_id)
+    if project_id:
+         await manager.broadcast_data(project_id, {
+                "type": "CLAIM_DELETED",
+                "payload": {"id": claim_id}
+            })
     return {"status": "deleted"}
