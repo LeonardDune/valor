@@ -13,6 +13,7 @@ import { LoginPage } from './pages/LoginPage';
 import OnboardingPage from './pages/OnboardingPage';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
 import { UpdatePasswordPage } from './pages/UpdatePasswordPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { DashboardLayout } from './views/shell/DashboardLayout';
 
 function App() {
@@ -61,7 +62,8 @@ function App() {
     !authLoading &&
     organizations.length === 0 &&
     !location.pathname.includes('/invite') &&
-    !location.pathname.includes('/update-password'); // Don't block password update!
+    !location.pathname.includes('/update-password') &&
+    !location.pathname.includes('/forgot-password');
 
   if (showOnboarding) {
     return <OnboardingPage />;
@@ -128,6 +130,7 @@ function App() {
 
           <Route path="/invite" element={<AcceptInvitePage onSuccess={handleInviteSuccess} />} />
           <Route path="/update-password" element={<UpdatePasswordPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         </Routes>
       </main>
     </div>

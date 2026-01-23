@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -90,6 +91,11 @@ export const LoginPage: React.FC = () => {
                                 onChange={(e) => setPassword(e.target.value)}
                                 required
                             />
+                            <div className="text-right">
+                                <Link to="/forgot-password" className="text-xs text-primary hover:underline">
+                                    Wachtwoord vergeten?
+                                </Link>
+                            </div>
                         </div>
                         <Button type="submit" className="w-full" disabled={loading}>
                             {loading ? 'Laden...' : (isSignUp ? 'Registreren' : 'Inloggen')}
