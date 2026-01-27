@@ -22,10 +22,14 @@ export const ForgotPasswordPage = () => {
         // This ensures it works on localhost and production
         const redirectTo = `${window.location.origin}/update-password`;
 
+        console.log('Attempting password reset for:', email, 'Redirect to:', redirectTo);
+
         try {
-            const { error } = await supabase.auth.resetPasswordForEmail(email, {
+            const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
                 redirectTo,
             });
+
+            console.log('Supabase response:', { data, error });
 
             if (error) throw error;
 

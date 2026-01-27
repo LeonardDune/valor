@@ -1,4 +1,5 @@
-import { Search, Bell, User, Menu } from 'lucide-react';
+import { Search, Bell, Menu } from 'lucide-react';
+import { UserNav } from './UserNav';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -56,10 +57,8 @@ export function DashboardHeader({ onMenuClick, onContextPanelClick }: DashboardH
                     Context
                 </Button>
 
-                {/* User */}
-                <Button size="icon" className="rounded-full bg-primary text-primary-foreground">
-                    <User className="w-5 h-5" />
-                </Button>
+                {/* User Menu */}
+                <UserNav />
             </div>
         </header>
     );

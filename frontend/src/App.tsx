@@ -51,6 +51,8 @@ function App() {
     return (
       <Routes>
         <Route path="/invite" element={<AcceptInvitePage onSuccess={handleInviteSuccess} />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/update-password" element={<UpdatePasswordPage />} />
         <Route path="*" element={<LoginPage />} />
       </Routes>
     );
