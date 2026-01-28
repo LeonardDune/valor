@@ -40,7 +40,7 @@ export const ViewControls: React.FC<ViewControlsProps> = ({ className }) => {
     );
 
     return (
-        <div className={cn("absolute bottom-4 left-4 z-10 flex flex-col gap-1", className)}>
+        <div className={cn("absolute bottom-4 left-4 z-10 flex flex-col gap-1 no-export", className)}>
             <ControlButton onClick={() => zoomIn()} icon={ZoomIn} label="Inzoomen" />
             <ControlButton onClick={() => zoomOut()} icon={ZoomOut} label="Uitzoomen" />
             <ControlButton onClick={() => fitView()} icon={Maximize} label="Passend maken" />

@@ -36,6 +36,11 @@ interface PerspectiveToolbarProps {
      */
     onOpenGlobalConversation?: () => void;
 
+    /**
+     * Optional export actions component (e.g. <ExportMenu />)
+     */
+    exportActions?: React.ReactNode;
+
     className?: string;
 }
 
@@ -44,11 +49,12 @@ export const PerspectiveToolbar: React.FC<PerspectiveToolbarProps> = ({
     layoutMode = 'free',
     onLayoutChange,
     onOpenGlobalConversation,
+    exportActions,
     className
 }) => {
     return (
         <div className={cn(
-            "absolute top-4 right-4 z-10 flex items-center gap-2",
+            "absolute top-4 right-4 z-10 flex items-center gap-2 no-export",
             "p-1.5 rounded-lg bg-background/80 backdrop-blur-md border shadow-sm",
             className
         )}>
@@ -93,6 +99,14 @@ export const PerspectiveToolbar: React.FC<PerspectiveToolbarProps> = ({
                             </Tooltip>
                         </TooltipProvider>
                     </ToggleGroup>
+                    <div className="w-px h-6 bg-border mx-1" />
+                </>
+            )}
+
+            {/* Export Actions */}
+            {exportActions && (
+                <>
+                    {exportActions}
                     <div className="w-px h-6 bg-border mx-1" />
                 </>
             )}

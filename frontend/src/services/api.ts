@@ -17,6 +17,20 @@ apiClient.interceptors.request.use(async (config) => {
     return config;
 });
 
+// Add response interceptor to handle 401s (Token Expired / Invalid)
+apiClient.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+        if (error.response?.status === 401) {
+            console.warn("Session expired or unauthorized (401). Signing out...");
+            await supabase.auth.signOut();
+            // Force reload/redirect if needed, but AuthContext should handle it
+            // window.location.href = '/login'; 
+        }
+        return Promise.reject(error);
+    }
+);
+
 export type FactorType = 'middel' | 'extern' | 'systeemelement' | 'criterium';
 
 export interface Claim {
