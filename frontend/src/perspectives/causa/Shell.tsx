@@ -8,7 +8,10 @@ import {
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { getNodesBounds } from 'reactflow';
 import { PerspectiveToolbar } from '@/components/shell/PerspectiveToolbar';
+import { ExportMenu } from '@/components/shell/ExportMenu';
+import { useDomExport } from '@/hooks/useDomExport';
 import { CLDView } from './views/CLDView';
 import { useCausaData } from './hooks/useCausaData';
 import { LayoutSession } from './layout/session';
@@ -42,6 +45,10 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [layoutMode, setLayoutMode] = useState<'free' | 'system'>('free');
     const containerRef = useRef<HTMLDivElement>(null);
+    const { exportAsPng, exportAsPdf, exportAsSvg, isExporting } = useDomExport(containerRef);
+    const [rfInstance, setRfInstance] = useState<any>(null);
+
+
 
     // Cache for layout positions per mode (Persists across renders, does not trigger render)
     // Stores { [nodeId]: {x, y} } for each mode
@@ -52,6 +59,57 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
         free: new Map(),
         system: new Map()
     });
+
+    // Helper: Calculate Export Config for Full Diagram
+    const getExportConfig = () => {
+        if (!rfInstance || !containerRef.current) return {};
+        // Filter out hidden nodes AND system scope nodes AND explicitly set origin
+        // CLDView uses nodeOrigin={[0.5, 0.5]}, so we must tell getNodesBounds this,
+        // otherwise it calculates bounds from the center point (cutting nodes in half).
+        const nodes = rfInstance.getNodes()
+            .filter((n: any) => !n.hidden && n.type !== 'hidden' && n.type !== 'systemScope')
+            .map((n: any) => ({
+                ...n,
+                // Force origin to match CLDView's global configuration
+                origin: [0.5, 0.5]
+            }));
+
+        if (nodes.length === 0) return {};
+
+        // Use official React Flow util (getNodesBounds preferred in v11)
+        const bounds = getNodesBounds(nodes);
+
+        // Dynamic Dimensions = Exact Content Size + Comfortable Padding
+        const padding = 150;
+        const width = Math.ceil(bounds.width + (padding * 2));
+        const height = Math.ceil(bounds.height + (padding * 2));
+
+        // CRITICAL FIX: Do NOT use getViewportForBounds. 
+        // We want 1:1 scale (zoom=1). We just need to shift (translate) the viewport
+        // so that the top-left of the graph (bounds.x, bounds.y) aligns with (0,0) of our image.
+        const x = -bounds.x + padding;
+        const y = -bounds.y + padding;
+        const zoom = 1;
+
+
+
+        // Find the viewport element to export directly
+        const viewportParams = {
+            element: containerRef.current.querySelector('.react-flow__viewport') as HTMLElement,
+            width,
+            height,
+            style: {
+                width: `${width}px`,
+                height: `${height}px`,
+                transform: `translate(${x}px, ${y}px) scale(${zoom})`,
+                transformOrigin: '0 0',
+                margin: 0,
+                padding: 0
+            }
+        };
+
+        return viewportParams;
+    };
 
     // B. Fetch Data
     const { nodes, links, factors, refresh, loading } = useCausaData(themeId);
@@ -171,6 +229,18 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                     contextId: 'main-view',
                     label: 'Causa Assistant'
                 })}
+                exportActions={
+                    <>
+
+
+                        <ExportMenu
+                            onExportPng={() => exportAsPng(`Causa_Snapshot_${themeId}_${new Date().toISOString().slice(0, 10)}`, getExportConfig())}
+                            onExportPdf={() => exportAsPdf(`Causa_Snapshot_${themeId}_${new Date().toISOString().slice(0, 10)}`, getExportConfig())}
+                            onExportSvg={() => exportAsSvg(`Causa_Snapshot_${themeId}_${new Date().toISOString().slice(0, 10)}`, getExportConfig())}
+                            isExporting={isExporting}
+                        />
+                    </>
+                }
             >
                 <TooltipProvider>
                     <Tooltip>
@@ -201,7 +271,10 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                 onOpenConversation={onOpenConversation}
                 onEdit={handleEdit}
                 onViewportChange={setViewport}
+                onInit={setRfInstance}
             />
+
+
 
             {/* Modals */}
             <CreateFactorModal
@@ -229,6 +302,6 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                     viewport={viewport}
                 />
             </div>
-        </div>
+        </div >
     );
 };

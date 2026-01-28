@@ -31,7 +31,10 @@ interface CLDViewProps {
     onOpenConversation: (context: ConversationContext) => void;
     onEdit?: (selection: { type: 'node' | 'link'; data: any }) => void;
     onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void;
+    onInit?: (instance: any) => void;
 }
+
+
 
 const nodeTypes = {
     cldNode: CLDNode,
@@ -51,12 +54,17 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     layoutMode,
     onOpenConversation,
     onEdit,
-    onViewportChange
+    onViewportChange,
+    onInit
 }) => {
     // React Flow State
     const [rfInstance, setRfInstance] = useState<any>(null);
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+
+
+
 
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; nodeId: string; type: string; label?: string; data?: any } | null>(null);
@@ -348,7 +356,10 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
-                onInit={setRfInstance}
+                onInit={(instance) => {
+                    setRfInstance(instance);
+                    if (onInit) onInit(instance);
+                }}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
                 nodeTypes={nodeTypes}
