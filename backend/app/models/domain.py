@@ -114,6 +114,21 @@ class Theme(BaseModel):
     status: WorkspaceStatus = WorkspaceStatus.ACTIVE
     created_at: datetime = Field(default_factory=datetime.now)
 
+class Space(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str # e.g. "Public Debate", "Expert Panel"
+    description: Optional[str] = None
+    theme_id: str
+    status: WorkspaceStatus = WorkspaceStatus.ACTIVE
+    created_at: datetime = Field(default_factory=datetime.now)
+
+class ConversationThread(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    topic: Optional[str] = None
+    space_id: str
+    status: str = "active"
+    created_at: datetime = Field(default_factory=datetime.now)
+
 class Proposal(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     title: str

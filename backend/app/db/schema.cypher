@@ -6,6 +6,7 @@ CREATE CONSTRAINT thread_id IF NOT EXISTS FOR (t:ConversationThread) REQUIRE t.i
 CREATE CONSTRAINT org_id IF NOT EXISTS FOR (o:Organization) REQUIRE o.id IS NODE KEY;
 CREATE CONSTRAINT project_id IF NOT EXISTS FOR (p:Project) REQUIRE p.id IS NODE KEY;
 CREATE CONSTRAINT theme_id IF NOT EXISTS FOR (t:Theme) REQUIRE t.id IS NODE KEY;
+CREATE CONSTRAINT space_id IF NOT EXISTS FOR (s:Space) REQUIRE s.id IS NODE KEY;
 
 // Indexes
 CREATE INDEX claim_confidence IF NOT EXISTS FOR (c:Claim) ON (c.confidence);

@@ -620,6 +620,65 @@ async def archive_theme(theme_id: str):
     with driver.session() as session:
         session.run(query, {"id": theme_id})
 
+async def create_space(theme_id: str, name: str, description: Optional[str] = None) -> str:
+    driver = get_driver()
+    sid = str(uuid.uuid4())
+    query = """
+    MATCH (t:Theme {id: $tid})
+    CREATE (s:Space {id: $id, name: $name, description: $desc, created_at: datetime(), status: 'active'})
+    CREATE (t)-[:HAS_SPACE]->(s)
+    RETURN s.id as id
+    """
+    with driver.session() as session:
+         return session.run(query, {"tid": theme_id, "id": sid, "name": name, "desc": description}).single()["id"]
+
+async def update_space(space_id: str, name: Optional[str], description: Optional[str]):
+    driver = get_driver()
+    query = "MATCH (s:Space {id: $id}) SET s.name = coalesce($name, s.name), s.description = coalesce($desc, s.description)"
+    with driver.session() as session:
+        session.run(query, {"id": space_id, "name": name, "desc": description})
+
+async def archive_space(space_id: str):
+    driver = get_driver()
+    query = "MATCH (s:Space {id: $id}) SET s.status = 'archived'"
+    with driver.session() as session:
+        session.run(query, {"id": space_id})
+
+async def get_spaces_by_theme(theme_id: str) -> List[Dict]:
+    driver = get_driver()
+    query = """
+    MATCH (t:Theme {id: $tid})-[:HAS_SPACE]->(s:Space)
+    WHERE s.status IS NULL OR s.status <> 'archived'
+    RETURN {
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        status: s.status,
+        created_at: toString(s.created_at)
+    } as space_data
+    """
+    with driver.session() as session:
+        return [r["space_data"] for r in session.run(query, {"tid": theme_id})]
+
+async def get_space(space_id: str) -> Optional[Dict]:
+    driver = get_driver()
+    query = """
+    MATCH (s:Space {id: $sid})
+    OPTIONAL MATCH (t:Theme)-[:HAS_SPACE]->(s)
+    RETURN {
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        status: s.status,
+        theme_id: t.id,
+        created_at: toString(s.created_at)
+    } as space_data
+    """
+    with driver.session() as session:
+        result = session.run(query, {"sid": space_id})
+        record = result.single()
+        return record["space_data"] if record else None
+
 async def get_project_id_by_theme(theme_id: str) -> Optional[str]:
     driver = get_driver()
     query = "MATCH (p:Project)-[:HAS_THEME]->(t:Theme {id: $tid}) RETURN p.id as pid"
@@ -832,3 +891,29 @@ async def delete_claim_manual(claim_id: str):
     query = "MATCH (c:Claim {id: $id}) DETACH DELETE c"
     with driver.session() as session:
         session.run(query, {"id": claim_id})
+
+async def create_conversation_thread(space_id: str, topic: str) -> str:
+    driver = get_driver()
+    tid = str(uuid.uuid4())
+    query = """
+    MATCH (s:Space {id: $sid})
+    CREATE (t:ConversationThread {id: $id, topic: $topic, status: 'active', created_at: datetime()})
+    CREATE (s)-[:HAS_THREAD]->(t)
+    RETURN t.id as id
+    """
+    with driver.session() as session:
+        return session.run(query, {"sid": space_id, "id": tid, "topic": topic}).single()["id"]
+
+async def get_threads_by_space(space_id: str) -> List[Dict]:
+    driver = get_driver()
+    query = """
+    MATCH (s:Space {id: $sid})-[:HAS_THREAD]->(t:ConversationThread)
+    RETURN {
+        id: t.id,
+        topic: t.topic,
+        status: t.status,
+        created_at: toString(t.created_at)
+    } as thread_data
+    """
+    with driver.session() as session:
+        return [r["thread_data"] for r in session.run(query, {"sid": space_id})]
