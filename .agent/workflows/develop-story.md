@@ -69,16 +69,28 @@ TITLE=$(echo $JSON | jq -r .title | sed 's/[^a-zA-Z0-9]/ /g' | awk '{$1=$1};1' |
 LABELS=$(echo $JSON | jq -r .labels[].name)
 
 # Determine Branch Type and Base
+# Determine Branch Type and Base
 if [[ "$LABELS" == *"epic"* ]] || [[ "$TITLE" == "epic"* ]]; then
+  echo "⚠️  Detected EPIC label/title. Use /develop-epic for Epics!"
+  echo "Falling back to creating integration branch from main..."
   PREFIX="{epic_branch_prefix}"
-  echo "Detected EPIC. Creating integration branch from main."
   BASE_BRANCH="main"
 else
   PREFIX="{feature_branch_prefix}"
-  echo "Detected STORY. Creating feature branch."
-  # Ask user for base branch preference if working inside an Epic context
-  read -p "Is this story part of an active Epic branch? (Enter branch name or press Enter for 'main'): " USER_BASE
-  BASE_BRANCH=${USER_BASE:-main}
+  echo "Detected STORY."
+  
+  # CRITICAL: Determine Parent Branch
+  echo "❓ Is this story part of an active Epic?"
+  echo "   (Check loose file 'task.md' or ask user)"
+  read -p "Enter Parent Epic Branch Name (or press Enter for 'main'): " USER_BASE
+  
+  if [ -n "$USER_BASE" ]; then
+      BASE_BRANCH="$USER_BASE"
+      echo "✅ Child Story Mode: Branching from $BASE_BRANCH"
+  else
+      BASE_BRANCH="main"
+      echo "ℹ️  Standalone Story: Branching from main"
+  fi
 fi
 
 BRANCH_NAME="$PREFIX/issue-{issue_number}-$TITLE"
