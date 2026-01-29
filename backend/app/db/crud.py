@@ -674,36 +674,10 @@ async def get_spaces_by_theme(theme_id: str, user_email: str) -> List[Dict]:
     MATCH (t)-[:HAS_SPACE]->(s:Space)
     MATCH (u:User {email: toLower($email)})
     
-    // 1. Determine Org Role
-    OPTIONAL MATCH (u)-[r_org:HAS_ROLE]->(org)
-    WITH org, p, t, s, u, coalesce(r_org.role, 'member') as org_role_direct
+    // Simplified: Strict Explicit Membership. No inheritance.
+    // User must have a direct HAS_ROLE relationship with the Space.
     
-    // 2. Determine Project Role
-    OPTIONAL MATCH (u)-[r_proj:HAS_ROLE]->(p)
-    WITH org, p, t, s, u, org_role_direct, coalesce(r_proj.role, 'member') as proj_role_direct
-    
-    // 3. Determine Theme Role
-    OPTIONAL MATCH (u)-[r_theme:HAS_ROLE]->(t)
-    WITH org, p, t, s, u, org_role_direct, proj_role_direct, coalesce(r_theme.role, 'member') as theme_role_direct
-    
-    // 4. Determine Space Role
-    OPTIONAL MATCH (u)-[r_space:HAS_ROLE]->(s)
-    WITH org, p, t, s, u, org_role_direct, proj_role_direct, theme_role_direct, coalesce(r_space.role, 'member') as space_role_direct
-    
-    // Calculate Effective Context Role (Max of Org, Project, Theme)
-    // Simplified: Admin at any higher level grants Admin here
-    WITH s, t, p, org, space_role_direct,
-         CASE 
-            WHEN org_role_direct = 'admin' OR proj_role_direct = 'admin' OR theme_role_direct = 'admin' THEN 'admin'
-            ELSE 'member'
-         END as context_role
-         
-    // 5. Final Effective Role
-    WITH s, t, p, org,
-         CASE
-            WHEN context_role = 'admin' THEN 'admin'
-            ELSE space_role_direct
-         END as effective_role
+    MATCH (u)-[r_space:HAS_ROLE]->(s)
          
     RETURN {
         id: s.id,
@@ -711,7 +685,7 @@ async def get_spaces_by_theme(theme_id: str, user_email: str) -> List[Dict]:
         description: s.description,
         status: s.status,
         is_archived: (s.status = 'archived' OR t.status = 'archived' OR p.status = 'archived' OR org.status = 'archived'),
-        role: effective_role,
+        role: r_space.role,
         created_at: toString(s.created_at)
     } as space_data
     """
@@ -724,13 +698,8 @@ async def get_space(space_id: str, user_email: str) -> Optional[Dict]:
     MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:Theme)-[:HAS_SPACE]->(s:Space {id: $sid})
     MATCH (u:User {email: toLower($email)})
     
-    // Determine Roles (simplified for single item get, but still need cascade for auth check technically, 
-    // but usually get_space is lighter. Let's assume caller checks permission or we return role)
-    // For consistency, let's just return raw data + calculated role if possible, or keep it simple.
-    // The previous get_space implementation was simple. Let's make it robust.
-    
-    OPTIONAL MATCH (u)-[r_space:HAS_ROLE]->(s)
-    WITH s, t, p, org, coalesce(r_space.role, 'member') as space_role_direct
+    // Simplified: Strict Explicit Membership.
+    MATCH (u)-[r_space:HAS_ROLE]->(s)
     
     RETURN {
         id: s.id,
@@ -744,7 +713,7 @@ async def get_space(space_id: str, user_email: str) -> Optional[Dict]:
         project_name: p.name,
         organization_id: org.id,
         organization_name: org.name,
-        role: space_role_direct, 
+        role: r_space.role, 
         created_at: toString(s.created_at)
     } as space_data
     """
