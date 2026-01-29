@@ -671,21 +671,34 @@ async def get_spaces_by_theme(theme_id: str, user_email: str) -> List[Dict]:
     driver = get_driver()
     query = """
     MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:Theme {id: $tid})
+    MATCH (t)-[:HAS_SPACE]->(s:Space)
     MATCH (u:User {email: toLower($email)})
     
     // 1. Determine Org Role
     OPTIONAL MATCH (u)-[r_org:HAS_ROLE]->(org)
-    WITH org, p, t, u, coalesce(r_org.role, 'member') as org_role_direct
+    WITH org, p, t, s, u, coalesce(r_org.role, 'member') as org_role_direct
     
     // 2. Determine Project Role
     OPTIONAL MATCH (u)-[r_proj:HAS_ROLE]->(p)
-    WITH org, p, t, u, org_role_direct, coalesce(r_proj.role, 'member') as proj_role_direct
+    WITH org, p, t, s, u, org_role_direct, coalesce(r_proj.role, 'member') as proj_role_direct
     
     // 3. Determine Theme Role
     OPTIONAL MATCH (u)-[r_theme:HAS_ROLE]->(t)
-    WITH org, p, t, u, org_role_direct, proj_role_direct, coalesce(r_theme.role, 'member') as theme_role_direct
+    WITH org, p, t, s, u, org_role_direct, proj_role_direct, coalesce(r_theme.role, 'member') as theme_role_direct
     
-    // 6. Final Effective Role
+    // 4. Determine Space Role
+    OPTIONAL MATCH (u)-[r_space:HAS_ROLE]->(s)
+    WITH org, p, t, s, u, org_role_direct, proj_role_direct, theme_role_direct, coalesce(r_space.role, 'member') as space_role_direct
+    
+    // Calculate Effective Context Role (Max of Org, Project, Theme)
+    // Simplified: Admin at any higher level grants Admin here
+    WITH s, t, p, org, space_role_direct,
+         CASE 
+            WHEN org_role_direct = 'admin' OR proj_role_direct = 'admin' OR theme_role_direct = 'admin' THEN 'admin'
+            ELSE 'member'
+         END as context_role
+         
+    // 5. Final Effective Role
     WITH s, t, p, org,
          CASE
             WHEN context_role = 'admin' THEN 'admin'
