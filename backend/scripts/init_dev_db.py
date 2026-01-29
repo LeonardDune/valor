@@ -53,6 +53,8 @@ def init_db():
         # 3. Seed Basic Data (Optional)
         print("\nSeeding basic environment data...")
         # Create a default Organization and Admin User if they don't exist (which they don't, cause it's empty)
+        admin_email = os.getenv("DEV_ADMIN_EMAIL", "admin@valor.dev")
+        
         session.run("""
             CREATE (o:Organization {
                 id: 'org-dev-valor', 
@@ -62,14 +64,14 @@ def init_db():
             })
             CREATE (u:User {
                 id: 'user-dev-admin',
-                email: 'admin@valor.dev',
+                email: $email,
                 name: 'Dev Admin',
                 is_platform_admin: true,
                 created_at: datetime()
             })
             CREATE (u)-[:HAS_ROLE {role: 'admin'}]->(o)
-        """)
-        print("Created Org: 'Valor Development' and User: 'admin@valor.dev'")
+        """, {"email": admin_email})
+        print(f"Created Org: 'Valor Development' and User: '{admin_email}'")
 
     driver.close()
     print("\n✅ Initialization Complete. Ready for Development.")

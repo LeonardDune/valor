@@ -48,9 +48,9 @@ async def startup_migration():
             default_org_id = orgs[0]['id']
             
         # 2. Ensure Admin User
-        # We don't have a get_users yet, so we just try to create (merge handles duplicates)
-        # Actually create_user uses MERGE on email, so it's safe.
-        await create_user("admin@valor.local", "System Admin")
+        # We skip hardcoded creation here to avoid conflict. 
+        # Admin should be created via scripts/init_dev_db.py or manual onboarding.
+        pass
         
         # 3. Link Orphaned Projects
         driver = get_driver()
@@ -503,7 +503,8 @@ async def accept_invite_endpoint(data: InviteAcceptRequest, user: dict = Depends
 
 @app.post("/projects")
 async def create_new_project(project: ProjectCreate, user: dict = Depends(get_current_user)):
-    pid = await create_project(project.name, project.organization_id, project.description)
+    email = user.get("email")
+    pid = await create_project(project.name, project.organization_id, project.description, owner_email=email)
     return {"id": pid, "name": project.name}
 
 @app.patch("/projects/{project_id}")
@@ -527,8 +528,9 @@ async def list_themes(project_id: str, user: dict = Depends(get_current_user)):
     return await get_project_themes(project_id, user.get("email"))
 
 @app.post("/projects/{project_id}/themes")
-async def create_new_theme(project_id: str, theme: ThemeCreate):
-    tid = await create_theme(project_id, theme.name, theme.description)
+async def create_new_theme(project_id: str, theme: ThemeCreate, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    tid = await create_theme(project_id, theme.name, theme.description, owner_email=email)
     return {"id": tid, "name": theme.name}
 
 @app.patch("/themes/{theme_id}")
@@ -547,6 +549,69 @@ async def archive_theme_endpoint(theme_id: str, user: dict = Depends(get_current
     await archive_theme(theme_id)
     return {"status": "archived"}
 
+@app.post("/themes/{theme_id}/spaces")
+async def create_new_space(theme_id: str, space: SpaceCreate, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    sid = await create_space(theme_id, space.name, space.description, owner_email=email)
+    return {"id": sid, "name": space.name}
+
+@app.get("/themes/{theme_id}/spaces")
+async def read_theme_spaces(theme_id: str, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    return await get_spaces_by_theme(theme_id, user_email=email)
+
+@app.get("/spaces/{space_id}")
+async def read_space(space_id: str, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    space = await get_space(space_id, user_email=email)
+    if not space:
+        raise HTTPException(status_code=404, detail="Space not found")
+    return space
+
+@app.patch("/spaces/{space_id}")
+async def update_space_endpoint(space_id: str, name: str, description: Optional[str] = None, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    if not await check_permission(email, space_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to edit this space")
+    await update_space(space_id, name, description)
+    return {"status": "updated"}
+
+@app.delete("/spaces/{space_id}")
+async def archive_space_endpoint(space_id: str, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    if not await check_permission(email, space_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to archive this space")
+    await archive_space(space_id)
+    return {"status": "archived"}
+
+@app.get("/spaces/{space_id}/members")
+async def list_space_members(space_id: str, user: dict = Depends(get_current_user)):
+    return await get_space_users(space_id)
+
+@app.post("/spaces/{space_id}/members")
+async def invite_space_member(space_id: str, data: MemberInvite, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    if not await check_permission(email, space_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to invite members to this space")
+    await add_user_to_space(data.email, space_id, data.role)
+    return {"status": "invited"}
+
+@app.patch("/spaces/{space_id}/members/{user_id}")
+async def update_space_member(space_id: str, user_id: str, data: RoleUpdate, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    if not await check_permission(email, space_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to manage members in this space")
+    await update_space_member_role(space_id, user_id, data.role)
+    return {"status": "role updated"}
+
+@app.delete("/spaces/{space_id}/members/{user_id}")
+async def remove_space_member_endpoint(space_id: str, user_id: str, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    if not await check_permission(email, space_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to remove members from this space")
+    await remove_space_member(space_id, user_id)
+    return {"status": "removed"}
+
 @app.get("/themes/{theme_id}/claims")
 async def list_theme_claims(theme_id: str):
     return await get_claims_for_theme(theme_id)
@@ -560,7 +625,10 @@ async def list_theme_factors(theme_id: str):
 from app.db.crud import (
     create_factor_manual, update_factor_manual, delete_factor_manual,
     create_claim_manual, update_claim_manual, delete_claim_manual,
-    get_factors_for_theme
+    get_factors_for_theme,
+    # Space Users
+    get_space_users, add_user_to_space, update_space_member_role, remove_space_member,
+    get_space, update_space, archive_space
 )
 
 class FactorManualCreate(BaseModel):
