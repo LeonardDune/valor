@@ -11,7 +11,7 @@ import uuid
 
 from contextlib import asynccontextmanager
 from app.db.utils import close_driver, verify_connectivity
-from app.auth import get_current_user
+from app.auth import verify_token, security
 from fastapi import Depends, HTTPException, WebSocket, WebSocketDisconnect
 import logging
 from app.services.connection_manager import manager
@@ -36,7 +36,11 @@ async def lifespan(app: FastAPI):
 async def startup_migration():
     """Ensures a default organization and user exist, and links orphaned projects."""
     try:
-        from app.db.crud import create_organization, create_user, get_organizations, get_driver
+        from app.db.crud import (
+            create_organization, create_user, get_organizations, get_driver,
+            create_space, get_spaces_by_theme, get_space, update_space, archive_space, get_space_users,
+            update_space_member_role, delete_space_member, add_user_to_space
+        )
         
         # 1. Ensure Default Organization
         orgs = await get_organizations()
@@ -86,6 +90,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Authentication Dependency with JIT Sync
+async def get_current_user(payload: dict = Depends(verify_token)):
+    user_id = payload.get("sub")
+    email = payload.get("email")
+    user_meta = payload.get("user_metadata", {})
+    name = user_meta.get("full_name") or user_meta.get("name")
+    
+    if not user_id or not email:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+        
+    # JIT Sync: Ensure user exists in Neo4j and is up-to-date
+    return await ensure_user_sync(user_id, email, name)
+
 @app.get("/")
 async def root():
     return {"message": "Welcome to CAUSA API", "status": "running"}
@@ -116,7 +133,7 @@ async def chat_endpoint(request: ConversationRequest):
     return response
     return response
 
-from app.auth import verify_token, security
+
 import jwt 
 from jwt import PyJWKClient
 
@@ -205,7 +222,8 @@ from app.db.crud import (
     update_organization, archive_organization, update_project, archive_project,
     update_theme, archive_theme, update_project_member_role, remove_project_member,
     update_theme_member_role, remove_theme_member, get_project_id_by_theme,
-    get_project_id_by_factor, get_project_id_by_claim
+    get_project_id_by_factor, get_project_id_by_claim, ensure_user_sync,
+    get_user_by_id
 )
 from pydantic import BaseModel
 
@@ -281,9 +299,8 @@ async def list_organizations(user: dict = Depends(get_current_user)):
 
 @app.post("/organizations")
 async def create_new_organization(org: OrganizationCreate, user: dict = Depends(get_current_user)):
-    # Use email from token to link owner
-    email = user.get("email")
-    oid = await create_organization(org.name, org.description, owner_email=email)
+    # Use id from synced user
+    oid = await create_organization(org.name, org.description, owner_id=user["id"])
     return {"id": oid, "name": org.name}
 
 @app.patch("/organizations/{org_id}")
@@ -322,19 +339,8 @@ async def get_current_user_profile(
     user: dict = Depends(get_current_user)
 ):
     """Get full profile of the currently authenticated user."""
-    from app.db.crud import get_user_by_email
-    
-    email = user.get("email")
-    if not email:
-        raise HTTPException(status_code=400, detail="Invalid session")
-        
-    db_user = await get_user_by_email(email)
-    if not db_user:
-        # If user exists in Auth but not in DB, create them? 
-        # Or return 404. For now, 404.
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    return db_user
+    # get_current_user already returns the full DB user
+    return user
 
 class AddMemberRequest(BaseModel):
     email: str
@@ -401,7 +407,7 @@ async def remove_theme_member_endpoint(theme_id: str, user_id: str, user: dict =
 
 @app.get("/projects")
 async def list_projects(organization_id: str, user: dict = Depends(get_current_user)):
-    return await get_projects(organization_id, user.get("email"))
+    return await get_projects(organization_id, user["id"])
 
 @app.get("/projects/{project_id}/users")
 async def list_project_users(project_id: str, user: dict = Depends(get_current_user)):
@@ -518,8 +524,7 @@ async def accept_invite_endpoint(data: InviteAcceptRequest, user: dict = Depends
 
 @app.post("/projects")
 async def create_new_project(project: ProjectCreate, user: dict = Depends(get_current_user)):
-    email = user.get("email")
-    pid = await create_project(project.name, project.organization_id, project.description, owner_email=email)
+    pid = await create_project(project.name, project.organization_id, project.description, owner_id=user["id"])
     return {"id": pid, "name": project.name}
 
 @app.patch("/projects/{project_id}")
@@ -544,8 +549,7 @@ async def list_themes(project_id: str, user: dict = Depends(get_current_user)):
 
 @app.post("/projects/{project_id}/themes")
 async def create_new_theme(project_id: str, theme: ThemeCreate, user: dict = Depends(get_current_user)):
-    email = user.get("email")
-    tid = await create_theme(project_id, theme.name, theme.description, owner_email=email)
+    tid = await create_theme(project_id, theme.name, theme.description, owner_id=user["id"])
     return {"id": tid, "name": theme.name}
 
 @app.patch("/themes/{theme_id}")
@@ -566,19 +570,16 @@ async def archive_theme_endpoint(theme_id: str, user: dict = Depends(get_current
 
 @app.post("/themes/{theme_id}/spaces")
 async def create_new_space(theme_id: str, space: SpaceCreate, user: dict = Depends(get_current_user)):
-    email = user.get("email")
-    sid = await create_space(theme_id, space.name, space.description, owner_email=email)
+    sid = await create_space(theme_id, space.name, space.description, owner_id=user["id"])
     return {"id": sid, "name": space.name}
 
 @app.get("/themes/{theme_id}/spaces")
 async def read_theme_spaces(theme_id: str, user: dict = Depends(get_current_user)):
-    email = user.get("email")
-    return await get_spaces_by_theme(theme_id, user_email=email)
+    return await get_spaces_by_theme(theme_id, user_id=user["id"])
 
 @app.get("/spaces/{space_id}")
 async def read_space(space_id: str, user: dict = Depends(get_current_user)):
-    email = user.get("email")
-    space = await get_space(space_id, user_email=email)
+    space = await get_space(space_id, user_id=user["id"])
     if not space:
         raise HTTPException(status_code=404, detail="Space not found")
     return space
@@ -624,7 +625,7 @@ async def remove_space_member_endpoint(space_id: str, user_id: str, user: dict =
     email = user.get("email")
     if not await check_permission(email, space_id, Role.ADMIN):
         raise HTTPException(status_code=403, detail="Not authorized to remove members from this space")
-    await remove_space_member(space_id, user_id)
+    await delete_space_member(space_id, user_id)
     return {"status": "removed"}
 
 @app.get("/themes/{theme_id}/claims")
@@ -641,8 +642,9 @@ from app.db.crud import (
     create_factor_manual, update_factor_manual, delete_factor_manual,
     create_claim_manual, update_claim_manual, delete_claim_manual,
     get_factors_for_theme,
+    create_space, get_spaces_by_theme,
     # Space Users
-    get_space_users, add_user_to_space, update_space_member_role, remove_space_member,
+    get_space_users, add_user_to_space, update_space_member_role, delete_space_member,
     get_space, update_space, archive_space
 )
 
