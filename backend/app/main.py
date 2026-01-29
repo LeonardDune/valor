@@ -244,6 +244,21 @@ class ThemeUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
 
+class SpaceCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class SpaceUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+class MemberInvite(BaseModel):
+    email: str
+    role: str
+
+class RoleUpdate(BaseModel):
+    role: str
+
 @app.get("/organizations")
 async def list_organizations(user: dict = Depends(get_current_user)):
     email = user.get("email")
