@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { CausaShell } from '../../perspectives/causa';
-import { api, type Claim } from '../../services/api';
+import { api, type Claim, type Space } from '../../services/api';
 import { Maximize2, Minimize2, ArrowLeft, Settings } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
     Dialog,
     DialogContent,
@@ -29,6 +29,7 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 
 export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, themeId, projectName, themeName, onBack }) => {
     const [searchParams, setSearchParams] = useSearchParams();
+    const navigate = useNavigate();
     const mode = searchParams.get('mode') as AgentType | null;
 
     const [activeAgent, setActiveAgent] = useState<AgentType>(mode || 'CAUSA');
@@ -75,14 +76,18 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
     const [activeConversation, setActiveConversation] = useState<ConversationContext | null>(null);
     const [focusMode, setFocusMode] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isSpacesOpen, setIsSpacesOpen] = useState(false);
+    const [spaces, setSpaces] = useState<Space[]>([]);
 
     const refreshData = useCallback(async () => {
         try {
-            const [existingClaims, themeFactors] = await Promise.all([
+            const [existingClaims, themeFactors, themeSpaces] = await Promise.all([
                 api.getThemeClaims(themeId),
-                api.getThemeFactors(themeId)
+                api.getThemeFactors(themeId),
+                api.getThemeSpaces(themeId)
             ]);
-            console.log('WS: Refreshed Data', { claims: existingClaims.length, factors: themeFactors.length });
+            setSpaces(themeSpaces);
+            console.log('WS: Refreshed Data', { claims: existingClaims.length, factors: themeFactors.length, spaces: themeSpaces.length });
 
         } catch (error) {
             console.error('Failed to fetch theme data:', error);
@@ -139,6 +144,14 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsSpacesOpen(true)}
+                        className="mr-2"
+                    >
+                        Spaces ({spaces.length})
+                    </Button>
                     <Button
                         variant="ghost"
                         size="icon"
@@ -199,6 +212,36 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
                     </DialogHeader>
                     <div className="py-4">
                         <MemberManagement entityId={themeId} entityType="theme" />
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={isSpacesOpen} onOpenChange={setIsSpacesOpen}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>Conversation Spaces</DialogTitle>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                        {spaces.length === 0 ? (
+                            <p className="text-muted-foreground text-center py-8">No spaces found in this theme.</p>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {spaces.map(space => (
+                                    <div
+                                        key={space.id}
+                                        className="border rounded-lg p-4 hover:bg-muted/50 cursor-pointer transition-colors"
+                                        onClick={() => {
+                                            setIsSpacesOpen(false);
+                                            navigate(`/spaces/${space.id}`);
+                                        }}
+                                    >
+                                        <h3 className="font-semibold">{space.name}</h3>
+                                        <p className="text-sm text-muted-foreground line-clamp-2">{space.description}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <Button className="w-full" disabled>Create New Space (Coming Soon)</Button>
                     </div>
                 </DialogContent>
             </Dialog>
