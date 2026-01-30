@@ -38,8 +38,9 @@ async def startup_migration():
     try:
         from app.db.crud import (
             create_organization, create_user, get_organizations, get_driver,
-            create_space, get_spaces_by_theme, get_space, update_space, archive_space, get_space_users,
-            update_space_member_role, delete_space_member, add_user_to_space
+            create_organization, create_user, get_organizations, get_driver,
+            create_theme_version, get_theme_versions_by_theme, get_theme_version, update_theme_version, archive_theme_version, get_theme_version_users,
+            update_theme_version_member_role, delete_theme_version_member, add_user_to_theme_version
         )
         
         # 1. Ensure Default Organization
@@ -223,7 +224,9 @@ from app.db.crud import (
     update_theme, archive_theme, update_project_member_role, remove_project_member,
     update_theme_member_role, remove_theme_member, get_project_id_by_theme,
     get_project_id_by_factor, get_project_id_by_claim, ensure_user_sync,
-    get_user_by_id, create_conversation_thread, get_threads_by_space
+    get_user_by_id, create_conversation_thread, get_threads_by_theme_version,
+    get_theme_versions_by_theme, create_theme_version, get_theme_version, update_theme_version, archive_theme_version,
+    get_theme_version_users, add_user_to_theme_version, update_theme_version_member_role, delete_theme_version_member
 )
 from pydantic import BaseModel
 
@@ -262,11 +265,11 @@ class ThemeUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
 
-class SpaceCreate(BaseModel):
+class ThemeVersionCreate(BaseModel):
     name: str
     description: Optional[str] = None
 
-class SpaceUpdate(BaseModel):
+class ThemeVersionUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
 
@@ -568,82 +571,94 @@ async def archive_theme_endpoint(theme_id: str, user: dict = Depends(get_current
     await archive_theme(theme_id)
     return {"status": "archived"}
 
-@app.post("/themes/{theme_id}/spaces")
-async def create_new_space(theme_id: str, space: SpaceCreate, user: dict = Depends(get_current_user)):
-    sid = await create_space(theme_id, space.name, space.description, owner_id=user["id"])
-    return {"id": sid, "name": space.name}
+@app.post("/themes/{theme_id}/versions")
+@app.post("/themes/{theme_id}/spaces", deprecated=True)
+async def create_new_theme_version(theme_id: str, version: ThemeVersionCreate, user: dict = Depends(get_current_user)):
+    sid = await create_theme_version(theme_id, version.name, version.description, owner_id=user["id"])
+    return {"id": sid, "name": version.name}
 
-@app.get("/themes/{theme_id}/spaces")
-async def read_theme_spaces(theme_id: str, user: dict = Depends(get_current_user)):
-    return await get_spaces_by_theme(theme_id, user_id=user["id"])
+@app.get("/themes/{theme_id}/versions")
+@app.get("/themes/{theme_id}/spaces", deprecated=True)
+async def read_theme_versions(theme_id: str, user: dict = Depends(get_current_user)):
+    return await get_theme_versions_by_theme(theme_id, user_id=user["id"])
 
-@app.get("/spaces/{space_id}")
-async def read_space(space_id: str, user: dict = Depends(get_current_user)):
-    space = await get_space(space_id, user_id=user["id"])
-    if not space:
-        raise HTTPException(status_code=404, detail="Space not found")
-    return space
+@app.get("/versions/{version_id}")
+@app.get("/spaces/{version_id}", deprecated=True)
+async def read_theme_version_endpoint(version_id: str, user: dict = Depends(get_current_user)):
+    version = await get_theme_version(version_id, user_id=user["id"])
+    if not version:
+        raise HTTPException(status_code=404, detail="Theme Version not found")
+    return version
 
-@app.patch("/spaces/{space_id}")
-async def update_space_endpoint(space_id: str, name: str, description: Optional[str] = None, user: dict = Depends(get_current_user)):
+@app.patch("/versions/{version_id}")
+@app.patch("/spaces/{version_id}", deprecated=True)
+async def update_theme_version_endpoint(version_id: str, name: str, description: Optional[str] = None, user: dict = Depends(get_current_user)):
     email = user.get("email")
-    if not await check_permission(email, space_id, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="Not authorized to edit this space")
-    await update_space(space_id, name, description)
+    if not await check_permission(email, version_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to edit this version")
+    await update_theme_version(version_id, name, description)
     return {"status": "updated"}
 
-@app.delete("/spaces/{space_id}")
-async def archive_space_endpoint(space_id: str, user: dict = Depends(get_current_user)):
+@app.delete("/versions/{version_id}")
+@app.delete("/spaces/{version_id}", deprecated=True)
+async def archive_theme_version_endpoint(version_id: str, user: dict = Depends(get_current_user)):
     email = user.get("email")
-    if not await check_permission(email, space_id, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="Not authorized to archive this space")
-    await archive_space(space_id)
+    if not await check_permission(email, version_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to archive this version")
+    await archive_theme_version(version_id)
     return {"status": "archived"}
 
 class ThreadCreate(BaseModel):
     topic: str
 
-@app.post("/spaces/{space_id}/threads")
-async def create_new_thread(space_id: str, thread: ThreadCreate, user: dict = Depends(get_current_user)):
+@app.post("/versions/{version_id}/threads")
+@app.post("/spaces/{version_id}/threads", deprecated=True)
+async def create_new_thread(version_id: str, thread: ThreadCreate, user: dict = Depends(get_current_user)):
     # Check permissions (Member access okay for creating threads? Or Admin? Intent says "Participant", so Member is likely fine.)
     # Let's enforce Membership at least.
     email = user.get("email")
     # For now, relying on space existing. Ideally check `is_member`.
     # Assuming if you can see the space, you can create a thread.
     # Refine later if strict permissions needed.
-    tid = await create_conversation_thread(space_id, thread.topic)
+    tid = await create_conversation_thread(version_id, thread.topic)
     return {"id": tid, "topic": thread.topic}
 
-@app.get("/spaces/{space_id}/threads")
-async def list_space_threads(space_id: str, user: dict = Depends(get_current_user)):
+@app.get("/versions/{version_id}/threads")
+@app.get("/spaces/{version_id}/threads", deprecated=True)
+async def list_version_threads(version_id: str, user: dict = Depends(get_current_user)):
     # Check membership?
-    return await get_threads_by_space(space_id)
-@app.get("/spaces/{space_id}/members")
-async def list_space_members(space_id: str, user: dict = Depends(get_current_user)):
-    return await get_space_users(space_id)
+    return await get_threads_by_theme_version(version_id)
 
-@app.post("/spaces/{space_id}/members")
-async def invite_space_member(space_id: str, data: MemberInvite, user: dict = Depends(get_current_user)):
+@app.get("/versions/{version_id}/members")
+@app.get("/spaces/{version_id}/members", deprecated=True)
+async def list_version_members(version_id: str, user: dict = Depends(get_current_user)):
+    return await get_theme_version_users(version_id)
+
+@app.post("/versions/{version_id}/members")
+@app.post("/spaces/{version_id}/members", deprecated=True)
+async def invite_version_member(version_id: str, data: MemberInvite, user: dict = Depends(get_current_user)):
     email = user.get("email")
-    if not await check_permission(email, space_id, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="Not authorized to invite members to this space")
-    await add_user_to_space(data.email, space_id, data.role)
+    if not await check_permission(email, version_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to invite members to this version")
+    await add_user_to_theme_version(data.email, version_id, data.role)
     return {"status": "invited"}
 
-@app.patch("/spaces/{space_id}/members/{user_id}")
-async def update_space_member(space_id: str, user_id: str, data: RoleUpdate, user: dict = Depends(get_current_user)):
+@app.patch("/versions/{version_id}/members/{user_id}")
+@app.patch("/spaces/{version_id}/members/{user_id}", deprecated=True)
+async def update_version_member(version_id: str, user_id: str, data: RoleUpdate, user: dict = Depends(get_current_user)):
     email = user.get("email")
-    if not await check_permission(email, space_id, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="Not authorized to manage members in this space")
-    await update_space_member_role(space_id, user_id, data.role)
+    if not await check_permission(email, version_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to manage members in this version")
+    await update_theme_version_member_role(version_id, user_id, data.role)
     return {"status": "role updated"}
 
-@app.delete("/spaces/{space_id}/members/{user_id}")
-async def remove_space_member_endpoint(space_id: str, user_id: str, user: dict = Depends(get_current_user)):
+@app.delete("/versions/{version_id}/members/{user_id}")
+@app.delete("/spaces/{version_id}/members/{user_id}", deprecated=True)
+async def remove_version_member_endpoint(version_id: str, user_id: str, user: dict = Depends(get_current_user)):
     email = user.get("email")
-    if not await check_permission(email, space_id, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="Not authorized to remove members from this space")
-    await delete_space_member(space_id, user_id)
+    if not await check_permission(email, version_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to remove members from this version")
+    await delete_theme_version_member(version_id, user_id)
     return {"status": "removed"}
 
 @app.get("/themes/{theme_id}/claims")
@@ -660,10 +675,10 @@ from app.db.crud import (
     create_factor_manual, update_factor_manual, delete_factor_manual,
     create_claim_manual, update_claim_manual, delete_claim_manual,
     get_factors_for_theme,
-    create_space, get_spaces_by_theme,
-    # Space Users
-    get_space_users, add_user_to_space, update_space_member_role, delete_space_member,
-    get_space, update_space, archive_space
+    create_theme_version, get_theme_versions_by_theme,
+    # ThemeVersion Users
+    get_theme_version_users, add_user_to_theme_version, update_theme_version_member_role, delete_theme_version_member,
+    get_theme_version, update_theme_version, archive_theme_version
 )
 
 class FactorManualCreate(BaseModel):

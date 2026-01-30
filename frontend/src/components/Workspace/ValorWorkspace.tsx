@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { CausaShell } from '../../perspectives/causa';
-import { api, type Claim, type Space } from '../../services/api';
+import { api, type Claim, type ThemeVersion } from '../../services/api';
 import { Maximize2, Minimize2, ArrowLeft, Settings } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -76,18 +76,18 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
     const [activeConversation, setActiveConversation] = useState<ConversationContext | null>(null);
     const [focusMode, setFocusMode] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [isSpacesOpen, setIsSpacesOpen] = useState(false);
-    const [spaces, setSpaces] = useState<Space[]>([]);
+    const [isVersionsOpen, setIsVersionsOpen] = useState(false);
+    const [versions, setVersions] = useState<ThemeVersion[]>([]);
 
     const refreshData = useCallback(async () => {
         try {
-            const [existingClaims, themeFactors, themeSpaces] = await Promise.all([
+            const [existingClaims, themeFactors, themeVersions] = await Promise.all([
                 api.getThemeClaims(themeId),
                 api.getThemeFactors(themeId),
-                api.getThemeSpaces(themeId)
+                api.getThemeVersions(themeId)
             ]);
-            setSpaces(themeSpaces);
-            console.log('WS: Refreshed Data', { claims: existingClaims.length, factors: themeFactors.length, spaces: themeSpaces.length });
+            setVersions(themeVersions);
+            console.log('WS: Refreshed Data', { claims: existingClaims.length, factors: themeFactors.length, versions: themeVersions.length });
 
         } catch (error) {
             console.error('Failed to fetch theme data:', error);
@@ -147,10 +147,10 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
                     <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setIsSpacesOpen(true)}
+                        onClick={() => setIsVersionsOpen(true)}
                         className="mr-2"
                     >
-                        Spaces ({spaces.length})
+                        Versions ({versions.length})
                     </Button>
                     <Button
                         variant="ghost"
@@ -216,32 +216,32 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
                 </DialogContent>
             </Dialog>
 
-            <Dialog open={isSpacesOpen} onOpenChange={setIsSpacesOpen}>
+            <Dialog open={isVersionsOpen} onOpenChange={setIsVersionsOpen}>
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
-                        <DialogTitle>Conversation Spaces</DialogTitle>
+                        <DialogTitle>Theme Versions</DialogTitle>
                     </DialogHeader>
                     <div className="grid gap-4 py-4">
-                        {spaces.length === 0 ? (
-                            <p className="text-muted-foreground text-center py-8">No spaces found in this theme.</p>
+                        {versions.length === 0 ? (
+                            <p className="text-muted-foreground text-center py-8">No versions found in this theme.</p>
                         ) : (
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {spaces.map(space => (
+                                {versions.map(version => (
                                     <div
-                                        key={space.id}
+                                        key={version.id}
                                         className="border rounded-lg p-4 hover:bg-muted/50 cursor-pointer transition-colors"
                                         onClick={() => {
-                                            setIsSpacesOpen(false);
-                                            navigate(`/spaces/${space.id}`);
+                                            setIsVersionsOpen(false);
+                                            navigate(`/versions/${version.id}`);
                                         }}
                                     >
-                                        <h3 className="font-semibold">{space.name}</h3>
-                                        <p className="text-sm text-muted-foreground line-clamp-2">{space.description}</p>
+                                        <h3 className="font-semibold">{version.name}</h3>
+                                        <p className="text-sm text-muted-foreground line-clamp-2">{version.description}</p>
                                     </div>
                                 ))}
                             </div>
                         )}
-                        <Button className="w-full" disabled>Create New Space (Coming Soon)</Button>
+                        <Button className="w-full" disabled>Create New Version (Coming Soon)</Button>
                     </div>
                 </DialogContent>
             </Dialog>

@@ -7,8 +7,11 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 
-export const SpaceChat: React.FC = () => {
-    const { spaceId } = useParams<{ spaceId: string }>();
+export const VersionChat: React.FC = () => {
+    // Check for versionId first, then spaceId fallback
+    const params = useParams();
+    const versionId = params.versionId || params.spaceId;
+
     const [threads, setThreads] = useState<ConversationThread[]>([]);
     const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -16,15 +19,16 @@ export const SpaceChat: React.FC = () => {
     const [newThreadTopic, setNewThreadTopic] = useState('');
 
     useEffect(() => {
-        if (spaceId) {
+        if (versionId) {
             loadThreads();
         }
-    }, [spaceId]);
+    }, [versionId]);
 
     const loadThreads = async () => {
+        if (!versionId) return;
         try {
             setIsLoading(true);
-            const data = await api.getSpaceThreads(spaceId!);
+            const data = await api.getVersionThreads(versionId);
             setThreads(data);
             if (data.length > 0 && !activeThreadId) {
                 // Auto-select first thread? Or wait for user?
@@ -40,10 +44,10 @@ export const SpaceChat: React.FC = () => {
 
     const handleCreateThread = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newThreadTopic.trim() || !spaceId) return;
+        if (!newThreadTopic.trim() || !versionId) return;
 
         try {
-            const newThread = await api.createThread(spaceId, newThreadTopic);
+            const newThread = await api.createThread(versionId, newThreadTopic);
             setThreads(prev => [newThread, ...prev]);
             setActiveThreadId(newThread.id);
             setIsCreating(false);

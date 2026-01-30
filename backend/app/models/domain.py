@@ -114,9 +114,9 @@ class Theme(BaseModel):
     status: WorkspaceStatus = WorkspaceStatus.ACTIVE
     created_at: datetime = Field(default_factory=datetime.now)
 
-class Space(BaseModel):
+class ThemeVersion(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    name: str # e.g. "Public Debate", "Expert Panel"
+    name: str # e.g. "Public Debate", "Expert Panel" - or Version Name
     description: Optional[str] = None
     theme_id: str
     status: WorkspaceStatus = WorkspaceStatus.ACTIVE
@@ -125,7 +125,7 @@ class Space(BaseModel):
 class ConversationThread(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     topic: Optional[str] = None
-    space_id: str
+    theme_version_id: str = Field(..., alias="space_id") # Aliased for backward DB compatibility until migration is complete
     status: str = "active"
     created_at: datetime = Field(default_factory=datetime.now)
 

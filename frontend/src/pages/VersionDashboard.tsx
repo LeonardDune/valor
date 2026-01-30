@@ -5,29 +5,32 @@ import { MessageSquare, Plus, MessageCircle, ArrowRight } from 'lucide-react';
 import { api, type ConversationThread } from '../services/api';
 import { Button } from '@/components/ui/button';
 
-export const SpaceDashboard: React.FC = () => {
-    const { spaceId } = useParams<{ spaceId: string }>();
+export const VersionDashboard: React.FC = () => {
+    // Check for versionId first, then spaceId fallback
+    const params = useParams();
+    const versionId = params.versionId || params.spaceId;
+
     const navigate = useNavigate();
     const [threads, setThreads] = useState<ConversationThread[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
     useEffect(() => {
-        if (spaceId) {
-            api.getSpaceThreads(spaceId)
+        if (versionId) {
+            api.getVersionThreads(versionId)
                 .then(setThreads)
                 .catch(err => console.error("Failed to load threads for dashboard", err))
                 .finally(() => setIsLoading(false));
         }
-    }, [spaceId]);
+    }, [versionId]);
 
     return (
         <div className="p-6 space-y-6">
             <header className="flex justify-between items-center">
                 <div>
-                    <h1 className="text-3xl font-bold tracking-tight">Space Dashboard</h1>
-                    <p className="text-muted-foreground">Beheer de conversaties en claims voor deze space. Space ID: {spaceId}</p>
+                    <h1 className="text-3xl font-bold tracking-tight">Version Dashboard</h1>
+                    <p className="text-muted-foreground">Beheer de conversaties en claims voor deze versie. Version ID: {versionId}</p>
                 </div>
-                <Button onClick={() => navigate(`/spaces/${spaceId}/chat`)}>
+                <Button onClick={() => navigate(`/versions/${versionId}/chat`)}>
                     <MessageSquare className="mr-2 h-4 w-4" />
                     Open Chat
                 </Button>
@@ -38,9 +41,9 @@ export const SpaceDashboard: React.FC = () => {
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                         <div className="space-y-1">
                             <CardTitle>Gesprekken</CardTitle>
-                            <CardDescription>Recente parallelle conversaties in deze space.</CardDescription>
+                            <CardDescription>Recente parallelle conversaties in deze versie.</CardDescription>
                         </div>
-                        <Button variant="outline" size="sm" onClick={() => navigate(`/spaces/${spaceId}/chat`)}>
+                        <Button variant="outline" size="sm" onClick={() => navigate(`/versions/${versionId}/chat`)}>
                             <Plus className="h-4 w-4 mr-1" /> Nieuw
                         </Button>
                     </CardHeader>
@@ -51,7 +54,7 @@ export const SpaceDashboard: React.FC = () => {
                             <div className="py-8 text-center text-muted-foreground">
                                 <MessageCircle className="h-12 w-12 mx-auto mb-2 opacity-10" />
                                 <p>Nog geen gesprekken gestart.</p>
-                                <Button variant="link" onClick={() => navigate(`/spaces/${spaceId}/chat`)}>
+                                <Button variant="link" onClick={() => navigate(`/versions/${versionId}/chat`)}>
                                     Start je eerste gesprek
                                 </Button>
                             </div>
@@ -61,7 +64,7 @@ export const SpaceDashboard: React.FC = () => {
                                     <div
                                         key={thread.id}
                                         className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 cursor-pointer transition-colors"
-                                        onClick={() => navigate(`/spaces/${spaceId}/chat`)}
+                                        onClick={() => navigate(`/versions/${versionId}/chat`)}
                                     >
                                         <div className="flex items-center gap-3">
                                             <div className="p-2 rounded-full bg-primary/10 text-primary">
@@ -78,7 +81,7 @@ export const SpaceDashboard: React.FC = () => {
                                     </div>
                                 ))}
                                 {threads.length > 5 && (
-                                    <Button variant="ghost" className="w-full text-xs mt-2" onClick={() => navigate(`/spaces/${spaceId}/chat`)}>
+                                    <Button variant="ghost" className="w-full text-xs mt-2" onClick={() => navigate(`/versions/${versionId}/chat`)}>
                                         Bekijk alle {threads.length} gesprekken
                                     </Button>
                                 )}
@@ -94,7 +97,7 @@ export const SpaceDashboard: React.FC = () => {
                     </CardHeader >
                     <CardContent>
                         <p className="text-sm text-muted-foreground">Ga naar de Claims tab om factoren te valideren en toe te voegen aan het thema.</p>
-                        <Button variant="outline" className="w-full mt-4" onClick={() => navigate(`/spaces/${spaceId}/claims`)}>
+                        <Button variant="outline" className="w-full mt-4" onClick={() => navigate(`/versions/${versionId}/claims`)}>
                             Bekijk Claims
                         </Button>
                     </CardContent>

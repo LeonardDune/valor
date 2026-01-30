@@ -15,9 +15,9 @@ import { AcceptInvitePage } from './pages/AcceptInvitePage';
 import { UpdatePasswordPage } from './pages/UpdatePasswordPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { DashboardLayout } from './views/shell/DashboardLayout';
-import { SpaceLayout } from './components/layout/SpaceLayout';
-import { SpaceDashboard } from './pages/SpaceDashboard';
-import { SpaceChat } from './pages/SpaceChat';
+import { VersionLayout } from './components/layout/VersionLayout';
+import { VersionDashboard } from './pages/VersionDashboard';
+import { VersionChat } from './pages/VersionChat';
 
 function App() {
   const { session, isLoading: authLoading } = useAuth();
@@ -122,13 +122,23 @@ function App() {
             </DashboardLayout>
           } />
 
-          {/* Space Routes */}
-          <Route path="/spaces/:spaceId" element={<SpaceLayout />}>
-            <Route index element={<SpaceDashboard />} />
+
+          {/* Version Routes (Primary) */}
+          <Route path="/versions/:versionId" element={<VersionLayout />}>
+            <Route index element={<VersionDashboard />} />
             <Route path="claims" element={<div className="p-8">Claims (Coming Soon)</div>} />
-            <Route path="chat" element={<SpaceChat />} />
+            <Route path="chat" element={<VersionChat />} />
             <Route path="members" element={<div className="p-8">Members (Coming Soon)</div>} />
-            <Route path="settings" element={<div className="p-8">Space Settings (Coming Soon)</div>} />
+            <Route path="settings" element={<div className="p-8">Version Settings (Coming Soon)</div>} />
+          </Route>
+
+          {/* Legacy Space Routes (Alias) */}
+          <Route path="/spaces/:spaceId" element={<VersionLayout />}>
+            <Route index element={<VersionDashboard />} />
+            <Route path="claims" element={<div className="p-8">Claims (Coming Soon)</div>} />
+            <Route path="chat" element={<VersionChat />} />
+            <Route path="members" element={<div className="p-8">Members (Coming Soon)</div>} />
+            <Route path="settings" element={<div className="p-8">Version Settings (Coming Soon)</div>} />
           </Route>
 
           {/* Settings - Wrapped */}

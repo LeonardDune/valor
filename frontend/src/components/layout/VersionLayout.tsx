@@ -4,59 +4,60 @@ import { DashboardHeader } from '@/components/dashboard/DashboardHeader';
 import { LayoutDashboard, MessageSquare, FileText, Settings, Users } from 'lucide-react';
 import { useParams, Outlet } from 'react-router-dom';
 
-interface SpaceLayoutProps {
+interface VersionLayoutProps {
     children?: React.ReactNode;
 }
 
-export const SpaceLayout: React.FC<SpaceLayoutProps> = ({ children }) => {
-    const { spaceId } = useParams();
+export const VersionLayout: React.FC<VersionLayoutProps> = ({ children }) => {
+    // We use 'versionId' in the route now (was spaceId)
+    // Fallback to spaceId if router hasn't been fully updated yet during dev
+    const params = useParams();
+    const versionId = params.versionId || params.spaceId;
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-    const spaceNavItems: NavItem[] = [
+    const versionNavItems: NavItem[] = [
         {
             id: 'overview',
             icon: LayoutDashboard,
             label: 'Overview',
-            path: `/spaces/${spaceId}`,
+            path: `/versions/${versionId}`,
             exact: true
         },
         {
             id: 'claims',
             icon: FileText,
             label: 'Claims',
-            path: `/spaces/${spaceId}/claims`
+            path: `/versions/${versionId}/claims`
         },
         {
             id: 'chat',
             icon: MessageSquare,
             label: 'Chat',
-            path: `/spaces/${spaceId}/chat`
+            path: `/versions/${versionId}/chat`
         },
         {
             id: 'members',
             icon: Users,
             label: 'Members',
-            path: `/spaces/${spaceId}/members`
+            path: `/versions/${versionId}/members`
         },
         {
             id: 'settings',
             icon: Settings,
             label: 'Settings',
-            path: `/spaces/${spaceId}/settings`
+            path: `/versions/${versionId}/settings`
         },
     ];
 
     return (
         <div className="h-screen flex bg-background overflow-hidden font-sans text-foreground">
-            {/* Space Context Sidebar */}
-            <Sidebar className="hidden lg:flex z-50" items={spaceNavItems} />
+            {/* Version Context Sidebar */}
+            <Sidebar className="hidden lg:flex z-50" items={versionNavItems} />
 
             {/* Main Content Area */}
             <div className="flex-1 flex flex-col overflow-hidden relative">
-                {/* We might want a specialized SpaceHeader here later */}
                 <DashboardHeader
                     onMenuClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                // Space context panel logic could be added here
                 />
 
                 <main className="flex-1 overflow-y-auto bg-muted/10 relative">

@@ -611,7 +611,7 @@ async def archive_project(project_id: str):
     OPTIONAL MATCH (p)-[:HAS_THEME]->(t:Theme)
     SET t.status = 'archived'
     WITH t
-    OPTIONAL MATCH (t)-[:HAS_SPACE]->(s:Space)
+    OPTIONAL MATCH (t)-[:HAS_VERSION]->(s:ThemeVersion)
     SET s.status = 'archived'
     """
     with driver.session() as session:
@@ -702,44 +702,44 @@ async def archive_theme(theme_id: str):
     MATCH (t:Theme {id: $id})
     SET t.status = 'archived'
     WITH t
-    OPTIONAL MATCH (t)-[:HAS_SPACE]->(s:Space)
+    OPTIONAL MATCH (t)-[:HAS_VERSION]->(s:ThemeVersion)
     SET s.status = 'archived'
     """
     with driver.session() as session:
         session.run(query, {"id": theme_id})
 
-async def create_space(theme_id: str, name: str, description: Optional[str] = None, owner_id: Optional[str] = None) -> str:
+async def create_theme_version(theme_id: str, name: str, description: Optional[str] = None, owner_id: Optional[str] = None) -> str:
     driver = get_driver()
     sid = str(uuid.uuid4())
     query = """
     MATCH (t:Theme {id: $tid})
     MATCH (u:User {id: $uid})
-    CREATE (s:Space {id: $id, name: $name, description: $desc, created_at: datetime(), status: 'active'})
-    CREATE (t)-[:HAS_SPACE]->(s)
+    CREATE (s:ThemeVersion {id: $id, name: $name, description: $desc, created_at: datetime(), status: 'active'})
+    CREATE (t)-[:HAS_VERSION]->(s)
     CREATE (u)-[:HAS_ROLE {role: 'admin'}]->(s)
     RETURN s.id as id
     """
     with driver.session() as session:
          return session.run(query, {"tid": theme_id, "id": sid, "name": name, "desc": description, "uid": owner_id}).single()["id"]
 
-async def update_space(space_id: str, name: Optional[str], description: Optional[str]):
+async def update_theme_version(version_id: str, name: Optional[str], description: Optional[str]):
     driver = get_driver()
-    query = "MATCH (s:Space {id: $id}) SET s.name = coalesce($name, s.name), s.description = coalesce($desc, s.description)"
+    query = "MATCH (s:ThemeVersion {id: $id}) SET s.name = coalesce($name, s.name), s.description = coalesce($desc, s.description)"
     with driver.session() as session:
-        session.run(query, {"id": space_id, "name": name, "desc": description})
+        session.run(query, {"id": version_id, "name": name, "desc": description})
 
-async def archive_space(space_id: str):
+async def archive_theme_version(version_id: str):
     driver = get_driver()
-    query = "MATCH (s:Space {id: $id}) SET s.status = 'archived'"
+    query = "MATCH (s:ThemeVersion {id: $id}) SET s.status = 'archived'"
     with driver.session() as session:
-        session.run(query, {"id": space_id})
+        session.run(query, {"id": version_id})
 
-async def get_spaces_by_theme(theme_id: str, user_id: str) -> List[Dict]:
+async def get_theme_versions_by_theme(theme_id: str, user_id: str) -> List[Dict]:
     driver = get_driver()
-    logger.info(f"DEBUG: get_spaces_by_theme called with theme_id={theme_id}, user_id={user_id}")
+    logger.info(f"DEBUG: get_theme_versions_by_theme called with theme_id={theme_id}, user_id={user_id}")
     query = """
     MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:Theme {id: $tid})
-    MATCH (t)-[:HAS_SPACE]->(s:Space)
+    MATCH (t)-[:HAS_VERSION]->(s:ThemeVersion)
     MATCH (u:User {id: $uid})
     
     // Simplified: Strict Explicit Membership. No inheritance.
@@ -755,15 +755,15 @@ async def get_spaces_by_theme(theme_id: str, user_id: str) -> List[Dict]:
         is_archived: (s.status = 'archived' OR t.status = 'archived' OR p.status = 'archived' OR org.status = 'archived'),
         role: r_space.role,
         created_at: toString(s.created_at)
-    } as space_data
+    } as version_data
     """
     with driver.session() as session:
-        return [r["space_data"] for r in session.run(query, {"tid": theme_id, "uid": user_id})]
+        return [r["version_data"] for r in session.run(query, {"tid": theme_id, "uid": user_id})]
 
-async def get_space(space_id: str, user_id: str) -> Optional[Dict]:
+async def get_theme_version(version_id: str, user_id: str) -> Optional[Dict]:
     driver = get_driver()
     query = """
-    MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:Theme)-[:HAS_SPACE]->(s:Space {id: $sid})
+    MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:Theme)-[:HAS_VERSION]->(s:ThemeVersion {id: $sid})
     MATCH (u:User {id: $uid})
     
     // Simplified: Strict Explicit Membership.
@@ -783,50 +783,50 @@ async def get_space(space_id: str, user_id: str) -> Optional[Dict]:
         organization_name: org.name,
         role: r_space.role, 
         created_at: toString(s.created_at)
-    } as space_data
+    } as version_data
     """
     with driver.session() as session:
-        result = session.run(query, {"sid": space_id, "uid": user_id})
+        result = session.run(query, {"sid": version_id, "uid": user_id})
         record = result.single()
-        return record["space_data"] if record else None
+        return record["version_data"] if record else None
 
-# --- Space Members ---
+# --- ThemeVersion Members ---
 
-async def get_space_users(space_id: str) -> List[Dict]:
+async def get_theme_version_users(version_id: str) -> List[Dict]:
      driver = get_driver()
-     query = "MATCH (s:Space {id: $sid})<-[r:HAS_ROLE]-(u:User) RETURN u, r.role as role"
+     query = "MATCH (s:ThemeVersion {id: $sid})<-[r:HAS_ROLE]-(u:User) RETURN u, r.role as role"
      with driver.session() as session:
-         return [{"id": rec["u"]["id"], "name": rec["u"].get("name",""), "email": rec["u"]["email"], "role": rec["role"]} for rec in session.run(query, {"sid": space_id})]
+         return [{"id": rec["u"]["id"], "name": rec["u"].get("name",""), "email": rec["u"]["email"], "role": rec["role"]} for rec in session.run(query, {"sid": version_id})]
 
-async def add_user_to_space(email: str, space_id: str, role: str):
+async def add_user_to_theme_version(email: str, version_id: str, role: str):
     await create_user(email)
     driver = get_driver()
     query = """
     MATCH (u:User {email: toLower($email)})
-    MATCH (s:Space {id: $sid})
+    MATCH (s:ThemeVersion {id: $sid})
     MERGE (u)-[r:HAS_ROLE]->(s)
     SET r.role = $role, r.updated_at = datetime()
     """
     with driver.session() as session:
-        session.run(query, {"email": email, "sid": space_id, "role": role})
+        session.run(query, {"email": email, "sid": version_id, "role": role})
 
-async def update_space_member_role(space_id: str, user_id: str, role: str):
+async def update_theme_version_member_role(version_id: str, user_id: str, role: str):
      driver = get_driver()
      query = """
-     MATCH (s:Space {id: $sid})<-[r:HAS_ROLE]-(u:User {id: $uid})
+     MATCH (s:ThemeVersion {id: $sid})<-[r:HAS_ROLE]-(u:User {id: $uid})
      SET r.role = $role, r.updated_at = datetime()
      """
      with driver.session() as session:
-         session.run(query, {"sid": space_id, "uid": user_id, "role": role})
+         session.run(query, {"sid": version_id, "uid": user_id, "role": role})
 
-async def delete_space_member(space_id: str, user_id: str):
+async def delete_theme_version_member(version_id: str, user_id: str):
      driver = get_driver()
      query = """
-     MATCH (s:Space {id: $sid})<-[r:HAS_ROLE]-(u:User {id: $uid})
+     MATCH (s:ThemeVersion {id: $sid})<-[r:HAS_ROLE]-(u:User {id: $uid})
      DELETE r
      """
      with driver.session() as session:
-         session.run(query, {"sid": space_id, "uid": user_id})
+         session.run(query, {"sid": version_id, "uid": user_id})
 
 
 async def get_project_id_by_theme(theme_id: str) -> Optional[str]:
@@ -1042,22 +1042,22 @@ async def delete_claim_manual(claim_id: str):
     with driver.session() as session:
         session.run(query, {"id": claim_id})
 
-async def create_conversation_thread(space_id: str, topic: str) -> str:
+async def create_conversation_thread(version_id: str, topic: str) -> str:
     driver = get_driver()
     tid = str(uuid.uuid4())
     query = """
-    MATCH (s:Space {id: $sid})
+    MATCH (s:ThemeVersion {id: $sid})
     CREATE (t:ConversationThread {id: $id, topic: $topic, status: 'active', created_at: datetime()})
     CREATE (s)-[:HAS_THREAD]->(t)
     RETURN t.id as id
     """
     with driver.session() as session:
-        return session.run(query, {"sid": space_id, "id": tid, "topic": topic}).single()["id"]
+        return session.run(query, {"sid": version_id, "id": tid, "topic": topic}).single()["id"]
 
-async def get_threads_by_space(space_id: str) -> List[Dict]:
+async def get_threads_by_theme_version(version_id: str) -> List[Dict]:
     driver = get_driver()
     query = """
-    MATCH (s:Space {id: $sid})-[:HAS_THREAD]->(t:ConversationThread)
+    MATCH (s:ThemeVersion {id: $sid})-[:HAS_THREAD]->(t:ConversationThread)
     RETURN {
         id: t.id,
         topic: t.topic,
@@ -1066,4 +1066,4 @@ async def get_threads_by_space(space_id: str) -> List[Dict]:
     } as thread_data
     """
     with driver.session() as session:
-        return [r["thread_data"] for r in session.run(query, {"sid": space_id})]
+        return [r["thread_data"] for r in session.run(query, {"sid": version_id})]
