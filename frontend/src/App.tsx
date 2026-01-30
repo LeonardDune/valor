@@ -15,6 +15,9 @@ import { AcceptInvitePage } from './pages/AcceptInvitePage';
 import { UpdatePasswordPage } from './pages/UpdatePasswordPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { DashboardLayout } from './views/shell/DashboardLayout';
+import { SpaceLayout } from './components/layout/SpaceLayout';
+import { SpaceDashboard } from './pages/SpaceDashboard';
+import { SpaceChat } from './pages/SpaceChat';
 
 function App() {
   const { session, isLoading: authLoading } = useAuth();
@@ -118,6 +121,15 @@ function App() {
               </div>
             </DashboardLayout>
           } />
+
+          {/* Space Routes */}
+          <Route path="/spaces/:spaceId" element={<SpaceLayout />}>
+            <Route index element={<SpaceDashboard />} />
+            <Route path="claims" element={<div className="p-8">Claims (Coming Soon)</div>} />
+            <Route path="chat" element={<SpaceChat />} />
+            <Route path="members" element={<div className="p-8">Members (Coming Soon)</div>} />
+            <Route path="settings" element={<div className="p-8">Space Settings (Coming Soon)</div>} />
+          </Route>
 
           {/* Settings - Wrapped */}
           <Route path="/settings" element={

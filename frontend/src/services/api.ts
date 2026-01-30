@@ -138,6 +138,16 @@ export interface DashboardEnvironment {
     projects: DashboardProject[];
 }
 
+export interface Space {
+    id: string;
+    name: string;
+    description: string;
+    theme_id: string;
+    role?: string;
+    status?: string;
+    created_at?: string;
+}
+
 export interface Invite {
     id: string;
     email: string;
@@ -145,6 +155,13 @@ export interface Invite {
     created_at: string;
     expires_at: string;
     code: string;
+}
+
+export interface ConversationThread {
+    id: string;
+    topic: string;
+    status: string;
+    created_at: string;
 }
 
 export const api = {
@@ -322,6 +339,62 @@ export const api = {
 
     archiveTheme: async (themeId: string) => {
         const response = await apiClient.delete(`/themes/${themeId}`);
+        return response.data;
+    },
+
+    // Spaces
+    getThemeSpaces: async (themeId: string) => {
+        const response = await apiClient.get<Space[]>(`/themes/${themeId}/spaces`);
+        return response.data;
+    },
+
+    getSpace: async (spaceId: string) => {
+        const response = await apiClient.get<Space>(`/spaces/${spaceId}`);
+        return response.data;
+    },
+
+    createSpace: async (themeId: string, name: string, description?: string) => {
+        const response = await apiClient.post(`/themes/${themeId}/spaces`, { name, description });
+        return response.data;
+    },
+
+    updateSpace: async (spaceId: string, name?: string, description?: string) => {
+        const response = await apiClient.patch(`/spaces/${spaceId}`, { name, description });
+        return response.data;
+    },
+
+    archiveSpace: async (spaceId: string) => {
+        const response = await apiClient.delete(`/spaces/${spaceId}`);
+        return response.data;
+    },
+
+    getSpaceThreads: async (spaceId: string) => {
+        const response = await apiClient.get<ConversationThread[]>(`/spaces/${spaceId}/threads`);
+        return response.data;
+    },
+
+    createThread: async (spaceId: string, topic: string) => {
+        const response = await apiClient.post<ConversationThread>(`/spaces/${spaceId}/threads`, { topic });
+        return response.data;
+    },
+
+    getSpaceMembers: async (spaceId: string) => {
+        const response = await apiClient.get<User[]>(`/spaces/${spaceId}/members`);
+        return response.data;
+    },
+
+    inviteSpaceMember: async (spaceId: string, email: string, role: string) => {
+        const response = await apiClient.post(`/spaces/${spaceId}/members`, { email, role });
+        return response.data;
+    },
+
+    updateSpaceMemberRole: async (spaceId: string, userId: string, role: string) => {
+        const response = await apiClient.patch(`/spaces/${spaceId}/members/${userId}`, { role });
+        return response.data;
+    },
+
+    removeSpaceMember: async (spaceId: string, userId: string) => {
+        const response = await apiClient.delete(`/spaces/${spaceId}/members/${userId}`);
         return response.data;
     },
 

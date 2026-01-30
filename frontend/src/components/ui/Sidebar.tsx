@@ -1,24 +1,33 @@
-import { LayoutDashboard, Layers, Eye, Building2, FolderKanban, Settings } from 'lucide-react';
+import { LayoutDashboard, Layers, Eye, Building2, FolderKanban, Settings, type LucideIcon } from 'lucide-react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-interface SidebarProps {
-    className?: string;
+export interface NavItem {
+    id: string;
+    icon: LucideIcon;
+    label: string;
+    path: string;
+    exact?: boolean; // If true, matches exact path only
 }
 
-export function Sidebar({ className }: SidebarProps) {
+interface SidebarProps {
+    className?: string;
+    items?: NavItem[];
+}
+
+const defaultNavItems: NavItem[] = [
+    { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', path: '/', exact: true },
+    { id: 'themes', icon: Layers, label: "Mijn Thema's", path: '/dashboard/themes' },
+    { id: 'perspectives', icon: Eye, label: 'Perspectieven', path: '/dashboard/perspectives' },
+    { id: 'organizations', icon: Building2, label: 'Mijn Organisaties', path: '/dashboard/organizations' },
+    { id: 'projects', icon: FolderKanban, label: 'Mijn Projecten', path: '/dashboard/projects' },
+    { id: 'settings', icon: Settings, label: 'Instellingen', path: '/settings' },
+];
+
+export function Sidebar({ className, items = defaultNavItems }: SidebarProps) {
     const navigate = useNavigate();
     const location = useLocation();
-
-    const navItems = [
-        { id: 'dashboard', icon: LayoutDashboard, label: 'Dashboard', path: '/' },
-        { id: 'themes', icon: Layers, label: "Mijn Thema's", path: '/dashboard/themes' },
-        { id: 'perspectives', icon: Eye, label: 'Perspectieven', path: '/dashboard/perspectives' },
-        { id: 'organizations', icon: Building2, label: 'Mijn Organisaties', path: '/dashboard/organizations' },
-        { id: 'projects', icon: FolderKanban, label: 'Mijn Projecten', path: '/dashboard/projects' },
-        { id: 'settings', icon: Settings, label: 'Instellingen', path: '/settings' },
-    ];
 
     const handleItemClick = (path: string) => {
         navigate(path);
@@ -36,10 +45,12 @@ export function Sidebar({ className }: SidebarProps) {
             {/* Navigation */}
             <TooltipProvider delayDuration={0}>
                 <nav className="flex flex-col gap-2 flex-1 w-full px-2">
-                    {navItems.map((item) => {
+                    {items.map((item) => {
                         const Icon = item.icon;
-                        // Simplified active check
-                        const isActive = location.pathname === item.path || (item.path !== '/dashboard' && location.pathname.startsWith(item.path));
+                        // Active check
+                        const isActive = item.exact
+                            ? location.pathname === item.path
+                            : location.pathname.startsWith(item.path);
 
                         return (
                             <Tooltip key={item.id}>

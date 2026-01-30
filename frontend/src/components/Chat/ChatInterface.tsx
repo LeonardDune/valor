@@ -6,7 +6,7 @@ import {
     MessagePrimitive,
     AssistantRuntimeProvider,
     useLocalRuntime,
-    useThreadRuntime,
+    useAssistantApi,
     type ChatModelAdapter,
     type ThreadMessage
 } from "@assistant-ui/react";
@@ -19,6 +19,7 @@ interface ChatInterfaceProps {
     topicLabel: string;
     topicId?: string;
     onClaimsUpdate: (claims: Claim[]) => void;
+    initialConversationId?: string;
 }
 
 const MarkdownTextAdapter = (props: any) => <MarkdownTextPrimitive {...props} />;
@@ -39,9 +40,10 @@ const ChatInitializer: React.FC<{
     topicLabel: string,
     topicId?: string,
     onClaimsUpdate: (claims: Claim[]) => void,
-    conversationIdRef: React.MutableRefObject<string | undefined>
+    conversationIdRef: React.RefObject<string | undefined>
 }> = ({ topicLabel, topicId, onClaimsUpdate, conversationIdRef }) => {
-    const thread = useThreadRuntime();
+    const apiHook = useAssistantApi();
+
     const hasInitializedRef = useRef<string | null>(null);
 
     useEffect(() => {
@@ -51,16 +53,15 @@ const ChatInitializer: React.FC<{
         const initChat = async () => {
             hasInitializedRef.current = initKey;
             try {
-                // For the API we prefer topicId if available
                 const apiTopic = topicId || topicLabel;
 
-                // Initial greeting request - using the friendly label
                 const response = await api.chat(
                     `Ik wil graag aan de slag met het thema "${topicLabel}". Heb je suggesties voor relevante factoren?`,
-                    undefined,
+                    conversationIdRef.current as string | undefined, // Cast if RefObject is strict
                     apiTopic
                 );
-                conversationIdRef.current = response.conversation_id;
+                // Update the conversation ID for the session/thread
+                (conversationIdRef as any).current = response.conversation_id;
 
                 if (response.extracted_claims && response.extracted_claims.length > 0) {
                     onClaimsUpdate(response.extracted_claims);
@@ -73,31 +74,30 @@ const ChatInitializer: React.FC<{
                     )).join("\n\n---\n\n");
                 }
 
-                // Append the initial greeting to the runtime
-                thread.append({
+                // Use apiHook.thread() as per deprecation notice
+                apiHook.thread().append({
                     role: "assistant",
                     content: [{ type: "text", text: replyText }]
                 });
             } catch (error) {
                 console.error("Initial chat error:", error);
-                thread.append({
+                apiHook.thread().append({
                     role: "assistant",
                     content: [{ type: "text", text: "Er is een fout opgetreden bij het verbinden met de agent." }]
                 });
             }
         };
 
-        // Only run if the thread is empty to avoid duplicates on re-renders if distinct from topic change
-        if (thread.getState().messages.length === 0) {
+        if (apiHook.thread().getState().messages.length === 0) { // Corrected check
             initChat();
         }
-    }, [topicLabel, topicId, thread, onClaimsUpdate, conversationIdRef]);
+    }, [topicLabel, topicId, apiHook, onClaimsUpdate, conversationIdRef]);
 
     return null;
 };
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ topicLabel, topicId, onClaimsUpdate }) => {
-    const conversationIdRef = useRef<string | undefined>(undefined);
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ topicLabel, topicId, onClaimsUpdate, initialConversationId }) => {
+    const conversationIdRef = useRef<string | undefined>(initialConversationId);
 
     const adapter: ChatModelAdapter = {
         run: async ({ messages }: { messages: readonly ThreadMessage[] }) => {
@@ -136,10 +136,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ topicLabel, topicId, onCl
 
     const runtime = useLocalRuntime(adapter);
 
+    // Update ref if prop changes (e.g. switching threads)
+    useEffect(() => {
+        conversationIdRef.current = initialConversationId;
+    }, [initialConversationId]);
+
     // Reset conversation ID when topic changes
     useEffect(() => {
-        conversationIdRef.current = undefined;
-    }, [topicId, topicLabel]);
+        if (!initialConversationId) {
+            conversationIdRef.current = undefined;
+        }
+    }, [topicId, topicLabel, initialConversationId]);
 
     return (
         <div className="h-full w-full bg-background border-r border-border flex flex-col items-stretch">

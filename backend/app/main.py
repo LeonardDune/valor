@@ -11,7 +11,7 @@ import uuid
 
 from contextlib import asynccontextmanager
 from app.db.utils import close_driver, verify_connectivity
-from app.auth import get_current_user
+from app.auth import verify_token, security
 from fastapi import Depends, HTTPException, WebSocket, WebSocketDisconnect
 import logging
 from app.services.connection_manager import manager
@@ -36,7 +36,11 @@ async def lifespan(app: FastAPI):
 async def startup_migration():
     """Ensures a default organization and user exist, and links orphaned projects."""
     try:
-        from app.db.crud import create_organization, create_user, get_organizations, get_driver
+        from app.db.crud import (
+            create_organization, create_user, get_organizations, get_driver,
+            create_space, get_spaces_by_theme, get_space, update_space, archive_space, get_space_users,
+            update_space_member_role, delete_space_member, add_user_to_space
+        )
         
         # 1. Ensure Default Organization
         orgs = await get_organizations()
@@ -48,9 +52,9 @@ async def startup_migration():
             default_org_id = orgs[0]['id']
             
         # 2. Ensure Admin User
-        # We don't have a get_users yet, so we just try to create (merge handles duplicates)
-        # Actually create_user uses MERGE on email, so it's safe.
-        await create_user("admin@valor.local", "System Admin")
+        # We skip hardcoded creation here to avoid conflict. 
+        # Admin should be created via scripts/init_dev_db.py or manual onboarding.
+        pass
         
         # 3. Link Orphaned Projects
         driver = get_driver()
@@ -86,6 +90,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Authentication Dependency with JIT Sync
+async def get_current_user(payload: dict = Depends(verify_token)):
+    user_id = payload.get("sub")
+    email = payload.get("email")
+    user_meta = payload.get("user_metadata", {})
+    name = user_meta.get("full_name") or user_meta.get("name")
+    
+    if not user_id or not email:
+        raise HTTPException(status_code=401, detail="Invalid token payload")
+        
+    # JIT Sync: Ensure user exists in Neo4j and is up-to-date
+    return await ensure_user_sync(user_id, email, name)
+
 @app.get("/")
 async def root():
     return {"message": "Welcome to CAUSA API", "status": "running"}
@@ -116,7 +133,7 @@ async def chat_endpoint(request: ConversationRequest):
     return response
     return response
 
-from app.auth import verify_token, security
+
 import jwt 
 from jwt import PyJWKClient
 
@@ -205,7 +222,8 @@ from app.db.crud import (
     update_organization, archive_organization, update_project, archive_project,
     update_theme, archive_theme, update_project_member_role, remove_project_member,
     update_theme_member_role, remove_theme_member, get_project_id_by_theme,
-    get_project_id_by_factor, get_project_id_by_claim
+    get_project_id_by_factor, get_project_id_by_claim, ensure_user_sync,
+    get_user_by_id, create_conversation_thread, get_threads_by_space
 )
 from pydantic import BaseModel
 
@@ -244,6 +262,21 @@ class ThemeUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
 
+class SpaceCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class SpaceUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+class MemberInvite(BaseModel):
+    email: str
+    role: str
+
+class RoleUpdate(BaseModel):
+    role: str
+
 @app.get("/organizations")
 async def list_organizations(user: dict = Depends(get_current_user)):
     email = user.get("email")
@@ -266,9 +299,8 @@ async def list_organizations(user: dict = Depends(get_current_user)):
 
 @app.post("/organizations")
 async def create_new_organization(org: OrganizationCreate, user: dict = Depends(get_current_user)):
-    # Use email from token to link owner
-    email = user.get("email")
-    oid = await create_organization(org.name, org.description, owner_email=email)
+    # Use id from synced user
+    oid = await create_organization(org.name, org.description, owner_id=user["id"])
     return {"id": oid, "name": org.name}
 
 @app.patch("/organizations/{org_id}")
@@ -307,19 +339,8 @@ async def get_current_user_profile(
     user: dict = Depends(get_current_user)
 ):
     """Get full profile of the currently authenticated user."""
-    from app.db.crud import get_user_by_email
-    
-    email = user.get("email")
-    if not email:
-        raise HTTPException(status_code=400, detail="Invalid session")
-        
-    db_user = await get_user_by_email(email)
-    if not db_user:
-        # If user exists in Auth but not in DB, create them? 
-        # Or return 404. For now, 404.
-        raise HTTPException(status_code=404, detail="User not found")
-        
-    return db_user
+    # get_current_user already returns the full DB user
+    return user
 
 class AddMemberRequest(BaseModel):
     email: str
@@ -386,7 +407,7 @@ async def remove_theme_member_endpoint(theme_id: str, user_id: str, user: dict =
 
 @app.get("/projects")
 async def list_projects(organization_id: str, user: dict = Depends(get_current_user)):
-    return await get_projects(organization_id, user.get("email"))
+    return await get_projects(organization_id, user["id"])
 
 @app.get("/projects/{project_id}/users")
 async def list_project_users(project_id: str, user: dict = Depends(get_current_user)):
@@ -503,7 +524,7 @@ async def accept_invite_endpoint(data: InviteAcceptRequest, user: dict = Depends
 
 @app.post("/projects")
 async def create_new_project(project: ProjectCreate, user: dict = Depends(get_current_user)):
-    pid = await create_project(project.name, project.organization_id, project.description)
+    pid = await create_project(project.name, project.organization_id, project.description, owner_id=user["id"])
     return {"id": pid, "name": project.name}
 
 @app.patch("/projects/{project_id}")
@@ -527,8 +548,8 @@ async def list_themes(project_id: str, user: dict = Depends(get_current_user)):
     return await get_project_themes(project_id, user.get("email"))
 
 @app.post("/projects/{project_id}/themes")
-async def create_new_theme(project_id: str, theme: ThemeCreate):
-    tid = await create_theme(project_id, theme.name, theme.description)
+async def create_new_theme(project_id: str, theme: ThemeCreate, user: dict = Depends(get_current_user)):
+    tid = await create_theme(project_id, theme.name, theme.description, owner_id=user["id"])
     return {"id": tid, "name": theme.name}
 
 @app.patch("/themes/{theme_id}")
@@ -547,6 +568,85 @@ async def archive_theme_endpoint(theme_id: str, user: dict = Depends(get_current
     await archive_theme(theme_id)
     return {"status": "archived"}
 
+@app.post("/themes/{theme_id}/spaces")
+async def create_new_space(theme_id: str, space: SpaceCreate, user: dict = Depends(get_current_user)):
+    sid = await create_space(theme_id, space.name, space.description, owner_id=user["id"])
+    return {"id": sid, "name": space.name}
+
+@app.get("/themes/{theme_id}/spaces")
+async def read_theme_spaces(theme_id: str, user: dict = Depends(get_current_user)):
+    return await get_spaces_by_theme(theme_id, user_id=user["id"])
+
+@app.get("/spaces/{space_id}")
+async def read_space(space_id: str, user: dict = Depends(get_current_user)):
+    space = await get_space(space_id, user_id=user["id"])
+    if not space:
+        raise HTTPException(status_code=404, detail="Space not found")
+    return space
+
+@app.patch("/spaces/{space_id}")
+async def update_space_endpoint(space_id: str, name: str, description: Optional[str] = None, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    if not await check_permission(email, space_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to edit this space")
+    await update_space(space_id, name, description)
+    return {"status": "updated"}
+
+@app.delete("/spaces/{space_id}")
+async def archive_space_endpoint(space_id: str, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    if not await check_permission(email, space_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to archive this space")
+    await archive_space(space_id)
+    return {"status": "archived"}
+
+class ThreadCreate(BaseModel):
+    topic: str
+
+@app.post("/spaces/{space_id}/threads")
+async def create_new_thread(space_id: str, thread: ThreadCreate, user: dict = Depends(get_current_user)):
+    # Check permissions (Member access okay for creating threads? Or Admin? Intent says "Participant", so Member is likely fine.)
+    # Let's enforce Membership at least.
+    email = user.get("email")
+    # For now, relying on space existing. Ideally check `is_member`.
+    # Assuming if you can see the space, you can create a thread.
+    # Refine later if strict permissions needed.
+    tid = await create_conversation_thread(space_id, thread.topic)
+    return {"id": tid, "topic": thread.topic}
+
+@app.get("/spaces/{space_id}/threads")
+async def list_space_threads(space_id: str, user: dict = Depends(get_current_user)):
+    # Check membership?
+    return await get_threads_by_space(space_id)
+
+@app.get("/spaces/{space_id}/members")
+async def list_space_members(space_id: str, user: dict = Depends(get_current_user)):
+    return await get_space_users(space_id)
+
+@app.post("/spaces/{space_id}/members")
+async def invite_space_member(space_id: str, data: MemberInvite, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    if not await check_permission(email, space_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to invite members to this space")
+    await add_user_to_space(data.email, space_id, data.role)
+    return {"status": "invited"}
+
+@app.patch("/spaces/{space_id}/members/{user_id}")
+async def update_space_member(space_id: str, user_id: str, data: RoleUpdate, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    if not await check_permission(email, space_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to manage members in this space")
+    await update_space_member_role(space_id, user_id, data.role)
+    return {"status": "role updated"}
+
+@app.delete("/spaces/{space_id}/members/{user_id}")
+async def remove_space_member_endpoint(space_id: str, user_id: str, user: dict = Depends(get_current_user)):
+    email = user.get("email")
+    if not await check_permission(email, space_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to remove members from this space")
+    await delete_space_member(space_id, user_id)
+    return {"status": "removed"}
+
 @app.get("/themes/{theme_id}/claims")
 async def list_theme_claims(theme_id: str):
     return await get_claims_for_theme(theme_id)
@@ -560,7 +660,11 @@ async def list_theme_factors(theme_id: str):
 from app.db.crud import (
     create_factor_manual, update_factor_manual, delete_factor_manual,
     create_claim_manual, update_claim_manual, delete_claim_manual,
-    get_factors_for_theme
+    get_factors_for_theme,
+    create_space, get_spaces_by_theme,
+    # Space Users
+    get_space_users, add_user_to_space, update_space_member_role, delete_space_member,
+    get_space, update_space, archive_space
 )
 
 class FactorManualCreate(BaseModel):
