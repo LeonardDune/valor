@@ -377,7 +377,6 @@ export const api = {
         const response = await apiClient.post<ConversationThread>(`/spaces/${spaceId}/threads`, { topic });
         return response.data;
     },
-
     getSpaceMembers: async (spaceId: string) => {
         const response = await apiClient.get<User[]>(`/spaces/${spaceId}/members`);
         return response.data;

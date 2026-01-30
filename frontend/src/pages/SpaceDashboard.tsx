@@ -91,15 +91,15 @@ export const SpaceDashboard: React.FC = () => {
                     <CardHeader>
                         <CardTitle>Claims Overview</CardTitle>
                         <CardDescription>Status van geëxtraheerde factoren.</CardDescription>
-                    </CardHeader>
+                    </CardHeader >
                     <CardContent>
                         <p className="text-sm text-muted-foreground">Ga naar de Claims tab om factoren te valideren en toe te voegen aan het thema.</p>
                         <Button variant="outline" className="w-full mt-4" onClick={() => navigate(`/spaces/${spaceId}/claims`)}>
                             Bekijk Claims
                         </Button>
                     </CardContent>
-                </Card>
-            </div>
-        </div>
+                </Card >
+            </div >
+        </div >
     );
 };

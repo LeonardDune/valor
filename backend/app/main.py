@@ -618,7 +618,6 @@ async def create_new_thread(space_id: str, thread: ThreadCreate, user: dict = De
 async def list_space_threads(space_id: str, user: dict = Depends(get_current_user)):
     # Check membership?
     return await get_threads_by_space(space_id)
-
 @app.get("/spaces/{space_id}/members")
 async def list_space_members(space_id: str, user: dict = Depends(get_current_user)):
     return await get_space_users(space_id)

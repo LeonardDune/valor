@@ -283,19 +283,19 @@ async def update_proposal_status(proposal_id: str, status: LifecycleStatus) -> b
 
 # --- Organization / User Core ---
 
-async def create_organization(name: str, description: Optional[str] = None, owner_email: Optional[str] = None) -> str:
+async def create_organization(name: str, description: Optional[str] = None, owner_id: Optional[str] = None) -> str:
     driver = get_driver()
     org_id = str(uuid.uuid4())
     
-    # Logic: Create Org. If owner_email provided, make them Admin.
+    # Logic: Create Org. If owner_id provided, make them Admin.
     query = """
     CREATE (o:Organization {id: $id, name: $name, description: $desc, created_at: datetime(), status: 'active'})
     WITH o
     """
     
-    if owner_email:
+    if owner_id:
         query += """
-        MATCH (u:User {email: toLower($email)})
+        MATCH (u:User {id: $uid})
         MERGE (u)-[:HAS_ROLE {role: 'admin', updated_at: datetime()}]->(o)
         """
         
@@ -303,7 +303,7 @@ async def create_organization(name: str, description: Optional[str] = None, owne
 
     try:
         with driver.session() as session:
-            result = session.run(query, {"id": org_id, "name": name, "desc": description, "email": owner_email})
+            result = session.run(query, {"id": org_id, "name": name, "desc": description, "uid": owner_id})
             record = result.single()
             return record["id"]
     except Exception as e:
@@ -342,9 +342,9 @@ async def get_user_organizations(email: str) -> List[Dict]:
     except Exception as e:
         return []
 
-async def create_user(email: str, name: Optional[str] = None) -> str:
+async def create_user(email: str, name: Optional[str] = None, user_id: Optional[str] = None) -> str:
     driver = get_driver()
-    uid = str(uuid.uuid4())
+    uid = user_id if user_id else str(uuid.uuid4())
     query = """
     MERGE (u:User {email: toLower($email)})
     ON CREATE SET u.id = $id, u.name = $name, u.created_at = datetime()
@@ -358,6 +358,62 @@ async def create_user(email: str, name: Optional[str] = None) -> str:
     except Exception as e:
         logger.error(f"Error creating user: {e}")
         raise e
+
+async def get_user_by_id(user_id: str) -> Optional[Dict]:
+    driver = get_driver()
+    query = "MATCH (u:User {id: $uid}) RETURN u"
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"uid": user_id})
+            record = result.single()
+            return dict(record["u"]) if record else None
+    except Exception as e:
+        logger.error(f"Error getting user by id: {e}")
+        return None
+
+async def ensure_user_sync(user_id: str, email: str, name: Optional[str] = None) -> Dict:
+    """
+    Ensures the user exists in Neo4j with the correct Supabase ID (sub).
+    Propagates migration if user exists by email but has a different/legacy ID.
+    """
+    driver = get_driver()
+    
+    # 1. Try to find by ID (Happy Path)
+    user = await get_user_by_id(user_id)
+    if user:
+        # Update metadata if needed (e.g. email change in Supabase)
+        if user.get("email") != email or (name and user.get("name") != name):
+            query = "MATCH (u:User {id: $uid}) SET u.email = $email, u.name = coalesce($name, u.name) RETURN u"
+            with driver.session() as session:
+                session.run(query, {"uid": user_id, "email": email, "name": name})
+        return user
+
+    # 2. Not found by ID -> Check for Legacy User by Email (Migration Path)
+    legacy_user = await get_user_by_email(email)
+    if legacy_user:
+        logger.info(f"Migrating user {email} from legacy ID {legacy_user['id']} to Supabase ID {user_id}")
+        query = """
+        MATCH (u:User {email: toLower($email)})
+        SET u.id = $uid, u.updated_at = datetime(), u.migration_status = 'migrated_to_supabase_id'
+        RETURN u
+        """
+        with driver.session() as session:
+            result = session.run(query, {"email": email, "uid": user_id})
+            record = result.single()
+            return dict(record["u"])
+
+    # 3. New User (Registration Path)
+    logger.info(f"Creating new user {email} with Supabase ID {user_id}")
+    query = """
+    MERGE (u:User {id: $uid})
+    ON CREATE SET u.email = toLower($email), u.name = $name, u.created_at = datetime()
+    ON MATCH SET u.email = toLower($email), u.name = coalesce($name, u.name)
+    RETURN u
+    """
+    with driver.session() as session:
+        result = session.run(query, {"uid": user_id, "email": email, "name": name})
+        record = result.single()
+        return dict(record["u"])
 
 async def get_user_by_email(email: str) -> Optional[Dict]:
     driver = get_driver()
@@ -469,11 +525,11 @@ async def remove_theme_member(theme_id: str, user_id: str):
      
 # --- Projects / Themes Structure ---
 
-async def get_projects(organization_id: str, user_email: str) -> List[Dict]:
+async def get_projects(organization_id: str, user_id: str) -> List[Dict]:
     driver = get_driver()
     query = """
     MATCH (org:Organization {id: $oid})
-    MATCH (u:User {email: toLower($email)})
+    MATCH (u:User {id: $uid})
     
     // Determine user role in Organization
     OPTIONAL MATCH (u)-[r_org:HAS_ROLE]->(org)
@@ -512,19 +568,32 @@ async def get_projects(organization_id: str, user_email: str) -> List[Dict]:
     } as project_data
     """
     with driver.session() as session:
-        return [r["project_data"] for r in session.run(query, {"oid": organization_id, "email": user_email})]
+        return [r["project_data"] for r in session.run(query, {"oid": organization_id, "uid": user_id})]
 
-async def create_project(name: str, organization_id: str, description: Optional[str] = None) -> str:
+async def create_project(name: str, organization_id: str, description: Optional[str] = None, owner_id: Optional[str] = None) -> str:
     driver = get_driver()
     pid = str(uuid.uuid4())
     query = """
     MATCH (o:Organization {id: $oid})
-    CREATE (p:Project {id: $id, name: $name, description: $desc, created_at: datetime(), status: 'active'})
-    CREATE (o)-[:OWNS]->(p)
-    RETURN p.id as id
     """
+    
+    if owner_id:
+        query += """
+        MATCH (u:User {id: $uid})
+        CREATE (p:Project {id: $id, name: $name, description: $desc, created_at: datetime(), status: 'active'})
+        CREATE (o)-[:OWNS]->(p)
+        CREATE (u)-[:HAS_ROLE {role: 'admin'}]->(p)
+        """
+    else:
+        query += """
+        CREATE (p:Project {id: $id, name: $name, description: $desc, created_at: datetime(), status: 'active'})
+        CREATE (o)-[:OWNS]->(p)
+        """
+
+    query += " RETURN p.id as id"
+
     with driver.session() as session:
-        return session.run(query, {"oid": organization_id, "id": pid, "name": name, "desc": description}).single()["id"]
+        return session.run(query, {"oid": organization_id, "id": pid, "name": name, "desc": description, "uid": owner_id}).single()["id"]
 
 async def update_project(project_id: str, name: Optional[str], description: Optional[str]):
     driver = get_driver()
@@ -534,7 +603,17 @@ async def update_project(project_id: str, name: Optional[str], description: Opti
 
 async def archive_project(project_id: str):
     driver = get_driver()
-    query = "MATCH (p:Project {id: $id}) SET p.status = 'archived'"
+    # Cascade: Project -> Themes -> Spaces
+    query = """
+    MATCH (p:Project {id: $id})
+    SET p.status = 'archived'
+    WITH p
+    OPTIONAL MATCH (p)-[:HAS_THEME]->(t:Theme)
+    SET t.status = 'archived'
+    WITH t
+    OPTIONAL MATCH (t)-[:HAS_SPACE]->(s:Space)
+    SET s.status = 'archived'
+    """
     with driver.session() as session:
         session.run(query, {"id": project_id})
 
@@ -596,17 +675,19 @@ async def get_project_themes(project_id: str, user_email: str) -> List[Dict]:
     with driver.session() as session:
         return [r["theme_data"] for r in session.run(query, {"pid": project_id, "email": user_email})]
 
-async def create_theme(project_id: str, name: str, description: Optional[str] = None) -> str:
+async def create_theme(project_id: str, name: str, description: Optional[str] = None, owner_id: Optional[str] = None) -> str:
     driver = get_driver()
     tid = str(uuid.uuid4())
     query = """
     MATCH (p:Project {id: $pid})
+    MATCH (u:User {id: $uid}) // Ensure user exists
     CREATE (t:Theme {id: $id, name: $name, description: $desc, created_at: datetime(), status: 'active'})
     CREATE (p)-[:HAS_THEME]->(t)
+    CREATE (u)-[:HAS_ROLE {role: 'admin'}]->(t)
     RETURN t.id as id
     """
     with driver.session() as session:
-         return session.run(query, {"pid": project_id, "id": tid, "name": name, "desc": description}).single()["id"]
+         return session.run(query, {"pid": project_id, "id": tid, "name": name, "desc": description, "uid": owner_id}).single()["id"]
 
 async def update_theme(theme_id: str, name: Optional[str], description: Optional[str]):
     driver = get_driver()
@@ -616,9 +697,137 @@ async def update_theme(theme_id: str, name: Optional[str], description: Optional
 
 async def archive_theme(theme_id: str):
     driver = get_driver()
-    query = "MATCH (t:Theme {id: $id}) SET t.status = 'archived'"
+    # Cascade: Theme -> Spaces
+    query = """
+    MATCH (t:Theme {id: $id})
+    SET t.status = 'archived'
+    WITH t
+    OPTIONAL MATCH (t)-[:HAS_SPACE]->(s:Space)
+    SET s.status = 'archived'
+    """
     with driver.session() as session:
         session.run(query, {"id": theme_id})
+
+async def create_space(theme_id: str, name: str, description: Optional[str] = None, owner_id: Optional[str] = None) -> str:
+    driver = get_driver()
+    sid = str(uuid.uuid4())
+    query = """
+    MATCH (t:Theme {id: $tid})
+    MATCH (u:User {id: $uid})
+    CREATE (s:Space {id: $id, name: $name, description: $desc, created_at: datetime(), status: 'active'})
+    CREATE (t)-[:HAS_SPACE]->(s)
+    CREATE (u)-[:HAS_ROLE {role: 'admin'}]->(s)
+    RETURN s.id as id
+    """
+    with driver.session() as session:
+         return session.run(query, {"tid": theme_id, "id": sid, "name": name, "desc": description, "uid": owner_id}).single()["id"]
+
+async def update_space(space_id: str, name: Optional[str], description: Optional[str]):
+    driver = get_driver()
+    query = "MATCH (s:Space {id: $id}) SET s.name = coalesce($name, s.name), s.description = coalesce($desc, s.description)"
+    with driver.session() as session:
+        session.run(query, {"id": space_id, "name": name, "desc": description})
+
+async def archive_space(space_id: str):
+    driver = get_driver()
+    query = "MATCH (s:Space {id: $id}) SET s.status = 'archived'"
+    with driver.session() as session:
+        session.run(query, {"id": space_id})
+
+async def get_spaces_by_theme(theme_id: str, user_id: str) -> List[Dict]:
+    driver = get_driver()
+    logger.info(f"DEBUG: get_spaces_by_theme called with theme_id={theme_id}, user_id={user_id}")
+    query = """
+    MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:Theme {id: $tid})
+    MATCH (t)-[:HAS_SPACE]->(s:Space)
+    MATCH (u:User {id: $uid})
+    
+    // Simplified: Strict Explicit Membership. No inheritance.
+    // User must have a direct HAS_ROLE relationship with the Space.
+    
+    MATCH (u)-[r_space:HAS_ROLE]->(s)
+         
+    RETURN {
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        status: s.status,
+        is_archived: (s.status = 'archived' OR t.status = 'archived' OR p.status = 'archived' OR org.status = 'archived'),
+        role: r_space.role,
+        created_at: toString(s.created_at)
+    } as space_data
+    """
+    with driver.session() as session:
+        return [r["space_data"] for r in session.run(query, {"tid": theme_id, "uid": user_id})]
+
+async def get_space(space_id: str, user_id: str) -> Optional[Dict]:
+    driver = get_driver()
+    query = """
+    MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:Theme)-[:HAS_SPACE]->(s:Space {id: $sid})
+    MATCH (u:User {id: $uid})
+    
+    // Simplified: Strict Explicit Membership.
+    MATCH (u)-[r_space:HAS_ROLE]->(s)
+    
+    RETURN {
+        id: s.id,
+        name: s.name,
+        description: s.description,
+        status: s.status,
+        is_archived: (s.status = 'archived' OR t.status = 'archived' OR p.status = 'archived' OR org.status = 'archived'),
+        theme_id: t.id,
+        theme_name: t.name,
+        project_id: p.id,
+        project_name: p.name,
+        organization_id: org.id,
+        organization_name: org.name,
+        role: r_space.role, 
+        created_at: toString(s.created_at)
+    } as space_data
+    """
+    with driver.session() as session:
+        result = session.run(query, {"sid": space_id, "uid": user_id})
+        record = result.single()
+        return record["space_data"] if record else None
+
+# --- Space Members ---
+
+async def get_space_users(space_id: str) -> List[Dict]:
+     driver = get_driver()
+     query = "MATCH (s:Space {id: $sid})<-[r:HAS_ROLE]-(u:User) RETURN u, r.role as role"
+     with driver.session() as session:
+         return [{"id": rec["u"]["id"], "name": rec["u"].get("name",""), "email": rec["u"]["email"], "role": rec["role"]} for rec in session.run(query, {"sid": space_id})]
+
+async def add_user_to_space(email: str, space_id: str, role: str):
+    await create_user(email)
+    driver = get_driver()
+    query = """
+    MATCH (u:User {email: toLower($email)})
+    MATCH (s:Space {id: $sid})
+    MERGE (u)-[r:HAS_ROLE]->(s)
+    SET r.role = $role, r.updated_at = datetime()
+    """
+    with driver.session() as session:
+        session.run(query, {"email": email, "sid": space_id, "role": role})
+
+async def update_space_member_role(space_id: str, user_id: str, role: str):
+     driver = get_driver()
+     query = """
+     MATCH (s:Space {id: $sid})<-[r:HAS_ROLE]-(u:User {id: $uid})
+     SET r.role = $role, r.updated_at = datetime()
+     """
+     with driver.session() as session:
+         session.run(query, {"sid": space_id, "uid": user_id, "role": role})
+
+async def delete_space_member(space_id: str, user_id: str):
+     driver = get_driver()
+     query = """
+     MATCH (s:Space {id: $sid})<-[r:HAS_ROLE]-(u:User {id: $uid})
+     DELETE r
+     """
+     with driver.session() as session:
+         session.run(query, {"sid": space_id, "uid": user_id})
+
 
 async def get_project_id_by_theme(theme_id: str) -> Optional[str]:
     driver = get_driver()
@@ -832,3 +1041,29 @@ async def delete_claim_manual(claim_id: str):
     query = "MATCH (c:Claim {id: $id}) DETACH DELETE c"
     with driver.session() as session:
         session.run(query, {"id": claim_id})
+
+async def create_conversation_thread(space_id: str, topic: str) -> str:
+    driver = get_driver()
+    tid = str(uuid.uuid4())
+    query = """
+    MATCH (s:Space {id: $sid})
+    CREATE (t:ConversationThread {id: $id, topic: $topic, status: 'active', created_at: datetime()})
+    CREATE (s)-[:HAS_THREAD]->(t)
+    RETURN t.id as id
+    """
+    with driver.session() as session:
+        return session.run(query, {"sid": space_id, "id": tid, "topic": topic}).single()["id"]
+
+async def get_threads_by_space(space_id: str) -> List[Dict]:
+    driver = get_driver()
+    query = """
+    MATCH (s:Space {id: $sid})-[:HAS_THREAD]->(t:ConversationThread)
+    RETURN {
+        id: t.id,
+        topic: t.topic,
+        status: t.status,
+        created_at: toString(t.created_at)
+    } as thread_data
+    """
+    with driver.session() as session:
+        return [r["thread_data"] for r in session.run(query, {"sid": space_id})]
