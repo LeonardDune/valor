@@ -31,6 +31,7 @@ export const useCausaData = (themeId: string): CausaData => {
 
             setFactors(factorsData);
             setClaims(claimsData);
+
             setNodes(mapFactors(factorsData));
             setLinks(mapClaims(claimsData));
             setError(null);

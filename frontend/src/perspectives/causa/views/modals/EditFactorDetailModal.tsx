@@ -210,7 +210,7 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
                                                     <SelectTrigger className="h-8 text-xs">
                                                         <SelectValue placeholder="Kies factor..." />
                                                     </SelectTrigger>
-                                                    <SelectContent>
+                                                    <SelectContent className="max-h-[200px]">
                                                         {sortedFactors
                                                             .filter(f => (f.dbId || f.id) !== (selection.data.dbId || selection.data.id))
                                                             .map(f => (

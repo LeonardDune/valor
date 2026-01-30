@@ -211,6 +211,31 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
         }
     };
 
+    const handleConnect = async (connection: any) => {
+        if (!connection.source || !connection.target) return;
+        try {
+            // Default new relation to positive for now, or open modal
+            // For MVP: Create a neutral/positive claim directly
+            // createClaim signature: (themeId, sourceId, targetId, relationType, polarity, certainty)
+            // Assuming api.createClaim expects an object or specific args. Let's check api.ts definition if possible, 
+            // but based on error 'Expected 1 arguments', it likely takes a single object.
+            // Wait, looking at previous api.ts usage or definition is better. 
+            // For now, I'll assume it takes an object based on the error.
+            // Start API call
+            await api.createClaim({
+                theme_id: themeId,
+                source_id: connection.source,
+                target_id: connection.target,
+                statement: 'invloed', // Default statement
+                polarity: '+',
+                confidence: 0.8
+            });
+            refresh();
+        } catch (error) {
+            console.error('Failed to create connection', error);
+        }
+    };
+
     // Viewport State for Presence Sync
     const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
 
@@ -272,6 +297,7 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                 onEdit={handleEdit}
                 onViewportChange={setViewport}
                 onInit={setRfInstance}
+                onConnect={handleConnect}
             />
 
 

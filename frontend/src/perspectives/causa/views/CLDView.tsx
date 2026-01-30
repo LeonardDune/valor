@@ -1,9 +1,11 @@
-import { type FunctionComponent, useEffect, useState } from 'react';
+import { useState, useEffect, type FunctionComponent } from 'react';
 import ReactFlow, {
+    Background,
+    // Controls as ViewControls, // Removed to avoid conflict
     useNodesState,
     useEdgesState,
-    Background,
-    MarkerType,
+    type Connection,
+    MarkerType
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 
@@ -32,6 +34,7 @@ interface CLDViewProps {
     onEdit?: (selection: { type: 'node' | 'link'; data: any }) => void;
     onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void;
     onInit?: (instance: any) => void;
+    onConnect?: (connection: Connection) => void;
 }
 
 
@@ -55,7 +58,8 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     onOpenConversation,
     onEdit,
     onViewportChange,
-    onInit
+    onInit,
+    onConnect
 }) => {
     // React Flow State
     const [rfInstance, setRfInstance] = useState<any>(null);
@@ -424,20 +428,25 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                         onViewportChange(viewport);
                     }
                 }}
+                onConnect={(params) => {
+                    if (onConnect) onConnect(params);
+                }}
             >
                 <Background />
                 <ViewControls />
             </ReactFlow>
 
-            {contextMenu && (
-                <CanvasContextMenu
-                    position={{ x: contextMenu.x, y: contextMenu.y }}
-                    contextObject={{ id: contextMenu.nodeId, type: contextMenu.type, label: contextMenu.label }}
-                    onDismiss={() => setContextMenu(null)}
-                    onOpenObjectConversation={handleOpenObjectConversation}
-                    onEdit={(obj) => onEdit && onEdit({ type: obj.type as any, data: contextMenu.data || obj })}
-                />
-            )}
-        </div>
+            {
+                contextMenu && (
+                    <CanvasContextMenu
+                        position={{ x: contextMenu.x, y: contextMenu.y }}
+                        contextObject={{ id: contextMenu.nodeId, type: contextMenu.type, label: contextMenu.label }}
+                        onDismiss={() => setContextMenu(null)}
+                        onOpenObjectConversation={handleOpenObjectConversation}
+                        onEdit={(obj) => onEdit && onEdit({ type: obj.type as any, data: contextMenu.data || obj })}
+                    />
+                )
+            }
+        </div >
     );
 };

@@ -899,7 +899,7 @@ async def get_claims_for_theme(theme_id: str) -> List[Claim]:
     
     // Path 1: Conversation-based
     OPTIONAL MATCH (th)<-[:BELONGS_TO]-(t:ConversationThread)-[:GENERATED]->(c_path1:Claim)
-    MATCH (s1:Factor)-[:CLAIMS]->(c_path1)-[:TO]->(t_node1:Factor)
+    OPTIONAL MATCH (s1:Factor)-[:CLAIMS]->(c_path1)-[:TO]->(t_node1:Factor)
     OPTIONAL MATCH (th)-[rs1:HAS_FACTOR]->(s1)
     OPTIONAL MATCH (th)-[rt1:HAS_FACTOR]->(t_node1)
     WITH th, collect({
@@ -910,7 +910,7 @@ async def get_claims_for_theme(theme_id: str) -> List[Claim]:
     
     // Path 2: Direct Factor connections (covers manual claims)
     OPTIONAL MATCH (th)-[:HAS_FACTOR]->(s2:Factor)-[:CLAIMS]->(c_path2:Claim)-[:TO]->(t_node2:Factor)
-    WHERE (th)-[:HAS_FACTOR]->(t_node2)
+    // WHERE (th)-[:HAS_FACTOR]->(t_node2) removed to be more lenient and fix visibility issues
     OPTIONAL MATCH (th)-[rs2:HAS_FACTOR]->(s2)
     OPTIONAL MATCH (th)-[rt2:HAS_FACTOR]->(t_node2)
     WITH claims_list1, collect({
