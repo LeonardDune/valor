@@ -582,6 +582,23 @@ async def create_new_theme_version(theme_id: str, version: ThemeVersionCreate, u
 async def read_theme_versions(theme_id: str, user: dict = Depends(get_current_user)):
     return await get_theme_versions_by_theme(theme_id, user_id=user["id"])
 
+@app.get("/themes/{theme_id}/active-version")
+async def read_theme_active_version(theme_id: str, user: dict = Depends(get_current_user)):
+    """
+    Get the specific version of the theme that is currently active (valid_to is NULL).
+    This represents the current state of the theme.
+    """
+    # Import locally or ensure it's imported at top
+    from app.db.crud import get_theme_active_version
+    version = await get_theme_active_version(theme_id, user_id=user["id"])
+    if not version:
+        # Should we return 404 or just null?
+        # If the theme exists but has no active version (rare), maybe 404.
+        # But if user has no access, it also returns None.
+        # Let's say 404 for now.
+        raise HTTPException(status_code=404, detail="Active Theme Version not found or access denied")
+    return version
+
 @app.get("/versions/{version_id}")
 @app.get("/spaces/{version_id}", deprecated=True)
 async def read_theme_version_endpoint(version_id: str, user: dict = Depends(get_current_user)):
@@ -709,9 +726,9 @@ class ClaimUpdate(BaseModel):
     target_id: Optional[str] = None
 
 @app.post("/factors")
-async def create_factor(factor: FactorManualCreate):
-    logger.info(f"Creating factor: {factor}")
-    fid = await create_factor_manual(factor.name, factor.description, factor.type or "systeemelement", factor.theme_id)
+async def create_factor(factor: FactorManualCreate, user: dict = Depends(get_current_user)):
+    logger.info(f"Creating factor: {factor} by {user['id']}")
+    fid = await create_factor_manual(factor.name, factor.description, factor.type or "systeemelement", factor.theme_id, author_id=user["id"])
     
     # Broadcast Update
     if factor.theme_id:
@@ -749,13 +766,14 @@ async def delete_factor_route(factor_id: str):
     return {"status": "deleted"}
 
 @app.post("/claims_manual")
-async def create_claim(claim: ClaimManualCreate):
-    logger.info(f"Creating claim: {claim}")
+async def create_claim(claim: ClaimManualCreate, user: dict = Depends(get_current_user)):
+    logger.info(f"Creating claim: {claim} by {user['id']}")
     cid = await create_claim_manual(
         claim.theme_id, 
         claim.source_id, 
         claim.target_id, 
         claim.statement, 
+        user["id"],
         claim.polarity, 
         claim.confidence
     )
