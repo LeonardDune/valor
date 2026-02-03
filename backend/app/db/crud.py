@@ -760,6 +760,7 @@ async def create_theme(project_id: str, name: str, description: Optional[str] = 
         valid_to: NULL
     })
     CREATE (t)-[:HAS_VERSION]->(v)
+    CREATE (t)-[:HAS_ACTIVE_VERSION]->(v)
     
     RETURN t.id as id
     """
@@ -896,7 +897,18 @@ async def get_theme_active_version(theme_id: str, user_id: str) -> Optional[Dict
     MATCH (u:User {id: $uid})
     
     // Simplified: Strict Explicit Membership.
-    MATCH (u)-[r_space:HAS_ROLE]->(s)
+    // Check Permissions (Hierarchical)
+    // 1. Direct Version Role
+    OPTIONAL MATCH (u)-[r_ver:HAS_ROLE]->(s)
+    // 2. Theme Role
+    OPTIONAL MATCH (u)-[r_theme:HAS_ROLE]->(t)
+    // 3. Project Role
+    OPTIONAL MATCH (u)-[r_proj:HAS_ROLE]->(p)
+    // 4. Org Role
+    OPTIONAL MATCH (u)-[r_org:HAS_ROLE]->(org)
+    
+    // Ensure at least one access path or platform admin
+    WHERE r_ver IS NOT NULL OR r_theme IS NOT NULL OR r_proj IS NOT NULL OR r_org IS NOT NULL OR u.is_platform_admin = true
     
     RETURN {
         id: s.id,
@@ -905,12 +917,13 @@ async def get_theme_active_version(theme_id: str, user_id: str) -> Optional[Dict
         status: s.status,
         is_archived: (s.status = 'archived' OR t.status = 'archived' OR p.status = 'archived' OR org.status = 'archived'),
         theme_id: t.id,
-        theme_name: t.name,
+        theme_name: s.name,
         project_id: p.id,
         project_name: p.name,
         organization_id: org.id,
         organization_name: org.name,
-        role: r_space.role, 
+        // Calculate highest effective role
+        role: coalesce(r_ver.role, r_theme.role, r_proj.role, r_org.role, CASE WHEN u.is_platform_admin THEN 'admin' ELSE 'member' END), 
         created_at: toString(s.created_at),
         valid_from: toString(s.valid_from),
         valid_to: toString(s.valid_to)

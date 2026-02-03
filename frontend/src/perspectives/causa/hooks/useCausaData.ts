@@ -13,7 +13,7 @@ interface CausaData {
     refresh: () => Promise<void>;
 }
 
-export const useCausaData = (themeId: string): CausaData => {
+export const useCausaData = (themeId: string, versionId?: string): CausaData => {
     const [nodes, setNodes] = useState<CausalNode[]>([]);
     const [links, setLinks] = useState<CausalLink[]>([]);
     const [factors, setFactors] = useState<Factor[]>([]);
@@ -24,10 +24,20 @@ export const useCausaData = (themeId: string): CausaData => {
     const refresh = useCallback(async () => {
         try {
             setLoading(true);
-            const [claimsData, factorsData] = await Promise.all([
-                api.getThemeClaims(themeId),
-                api.getThemeFactors(themeId)
-            ]);
+            let claimsData: Claim[];
+            let factorsData: Factor[];
+
+            if (versionId) {
+                [claimsData, factorsData] = await Promise.all([
+                    api.getThemeVersionClaims(versionId),
+                    api.getThemeVersionFactors(versionId)
+                ]);
+            } else {
+                [claimsData, factorsData] = await Promise.all([
+                    api.getThemeClaims(themeId),
+                    api.getThemeFactors(themeId)
+                ]);
+            }
 
             setFactors(factorsData);
             setClaims(claimsData);
@@ -41,14 +51,14 @@ export const useCausaData = (themeId: string): CausaData => {
         } finally {
             setLoading(false);
         }
-    }, [themeId]);
+    }, [themeId, versionId]);
 
     // Initial Load
     useEffect(() => {
         if (themeId) {
             refresh();
         }
-    }, [themeId, refresh]);
+    }, [themeId, versionId, refresh]);
 
     return { nodes, links, factors, claims, loading, error, refresh };
 };

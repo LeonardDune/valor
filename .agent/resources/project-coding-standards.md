@@ -23,8 +23,30 @@
     * **Tailwind:** Use utility classes.
     * **Semantic Tokens:** NEVER use arbitrary hex/rgb values. Use `bg-destructive`, `text-muted-foreground`, `border-input` (mapped in `src/index.css`).
     * **Z-Index:** Strictly follow the global scale (`--z-canvas` -> `--z-modal`).
+* **No Substitutions**: If a Shadcn/Radix component (like `DropdownMenu`) is missing from `components/ui`, **INSTALL IT**.
+    *   Check `components.json` and `package.json`.
+    *   Install primitive: `npm install @radix-ui/react-dropdown-menu`.
+    *   Create component: `components/ui/dropdown-menu.tsx` (following Shadcn pattern).
+    *   **NEVER** use a "similar" component (e.g., `Popover`) as a patchy workaround.
 
 ## 3. Directory Structure
 * **UI Components:** `src/components/ui/` (Shadcn/Radix only).
 * **Feature Components:** `src/components/<feature-name>/`.
 * **Global CSS:** `src/index.css` contains the design tokens.
+
+
+## 4. API Architecture
+*   **Centralized Service**: All backend communication MUST go through `src/services/api.ts`.
+    *   **Prohibited**: `fetch('/api/...')` inside React components.
+    *   **Required**: `await api.getDashboardEnvironments()` or `await api.createProposal(...)`.
+    *   *Rationale*: Centralized error handling, type safety, and automatic Auth header injection.
+
+## 5. Localization
+*   **Dutch Only**: All user-facing text, labels, and buttons MUST be in **Dutch**.
+    *   *Wrong*: "Open Workspace", "Invite Member".
+    *   *Right*: "Werkruimte Openen", "Lid Uitnodigen".
+
+## 6. Identity & Context
+*   **Real IDs**: Never use placeholders like `'placeholder-user-id'`.
+    *   Use `useAuth()` hook to retrieve the current session/user.
+    *   If ID is missing, handle the error/loading state explicitly.

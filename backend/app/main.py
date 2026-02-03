@@ -686,6 +686,16 @@ async def list_theme_claims(theme_id: str):
 async def list_theme_factors(theme_id: str):
     return await get_factors_for_theme(theme_id)
 
+@app.get("/versions/{version_id}/claims")
+async def list_version_claims(version_id: str):
+    from app.db.crud import get_claims_for_version
+    return await get_claims_for_version(version_id)
+
+@app.get("/versions/{version_id}/factors")
+async def list_version_factors(version_id: str):
+    from app.db.crud import get_factors_for_version
+    return await get_factors_for_version(version_id)
+
 # Manual Editing Endpoints
 
 from app.db.crud import (
