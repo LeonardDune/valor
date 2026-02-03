@@ -146,10 +146,11 @@ export interface ThemeVersion {
     role?: string;
     status?: string;
     created_at?: string;
+    valid_from?: string;
+    valid_to?: string;
 }
 
-// Alias for backward compatibility during refactor
-export type Space = ThemeVersion;
+
 
 export interface Invite {
     id: string;
@@ -345,59 +346,40 @@ export const api = {
         return response.data;
     },
 
-    // Theme Versions (formerly Spaces)
+    // Theme Versions
     getThemeVersions: async (themeId: string) => {
         const response = await apiClient.get<ThemeVersion[]>(`/themes/${themeId}/versions`);
         return response.data;
     },
-    // Alias
-    getThemeSpaces: async (themeId: string) => {
-        return api.getThemeVersions(themeId);
+
+    getThemeActiveVersion: async (themeId: string) => {
+        const response = await apiClient.get<ThemeVersion>(`/themes/${themeId}/active-version`);
+        return response.data;
     },
 
     getThemeVersion: async (versionId: string) => {
         const response = await apiClient.get<ThemeVersion>(`/versions/${versionId}`);
         return response.data;
     },
-    // Alias
-    getSpace: async (spaceId: string) => {
-        return api.getThemeVersion(spaceId);
-    },
 
     createThemeVersion: async (themeId: string, name: string, description?: string) => {
         const response = await apiClient.post(`/themes/${themeId}/versions`, { name, description });
         return response.data;
-    },
-    // Alias
-    createSpace: async (themeId: string, name: string, description?: string) => {
-        return api.createThemeVersion(themeId, name, description);
     },
 
     updateThemeVersion: async (versionId: string, name?: string, description?: string) => {
         const response = await apiClient.patch(`/versions/${versionId}`, { name, description });
         return response.data;
     },
-    // Alias
-    updateSpace: async (spaceId: string, name?: string, description?: string) => {
-        return api.updateThemeVersion(spaceId, name, description);
-    },
 
     archiveThemeVersion: async (versionId: string) => {
         const response = await apiClient.delete(`/versions/${versionId}`);
         return response.data;
     },
-    // Alias
-    archiveSpace: async (spaceId: string) => {
-        return api.archiveThemeVersion(spaceId);
-    },
 
     getVersionThreads: async (versionId: string) => {
         const response = await apiClient.get<ConversationThread[]>(`/versions/${versionId}/threads`);
         return response.data;
-    },
-    // Alias
-    getSpaceThreads: async (spaceId: string) => {
-        return api.getVersionThreads(spaceId);
     },
 
     createThread: async (versionId: string, topic: string) => {
@@ -409,36 +391,20 @@ export const api = {
         const response = await apiClient.get<User[]>(`/versions/${versionId}/members`);
         return response.data;
     },
-    // Alias
-    getSpaceMembers: async (spaceId: string) => {
-        return api.getVersionMembers(spaceId);
-    },
 
     inviteVersionMember: async (versionId: string, email: string, role: string) => {
         const response = await apiClient.post(`/versions/${versionId}/members`, { email, role });
         return response.data;
-    },
-    // Alias
-    inviteSpaceMember: async (spaceId: string, email: string, role: string) => {
-        return api.inviteVersionMember(spaceId, email, role);
     },
 
     updateVersionMemberRole: async (versionId: string, userId: string, role: string) => {
         const response = await apiClient.patch(`/versions/${versionId}/members/${userId}`, { role });
         return response.data;
     },
-    // Alias
-    updateSpaceMemberRole: async (spaceId: string, userId: string, role: string) => {
-        return api.updateVersionMemberRole(spaceId, userId, role);
-    },
 
     removeVersionMember: async (versionId: string, userId: string) => {
         const response = await apiClient.delete(`/versions/${versionId}/members/${userId}`);
         return response.data;
-    },
-    // Alias
-    removeSpaceMember: async (spaceId: string, userId: string) => {
-        return api.removeVersionMember(spaceId, userId);
     },
 
     getThemeClaims: async (themeId: string) => {
@@ -446,8 +412,18 @@ export const api = {
         return response.data;
     },
 
+    getThemeVersionClaims: async (versionId: string) => {
+        const response = await apiClient.get<Claim[]>(`/versions/${versionId}/claims`);
+        return response.data;
+    },
+
     getThemeFactors: async (themeId: string) => {
         const response = await apiClient.get<Factor[]>(`/themes/${themeId}/factors`);
+        return response.data;
+    },
+
+    getThemeVersionFactors: async (versionId: string) => {
+        const response = await apiClient.get<Factor[]>(`/versions/${versionId}/factors`);
         return response.data;
     },
 

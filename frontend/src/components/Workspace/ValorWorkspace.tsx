@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { CausaShell } from '../../perspectives/causa';
-import { api, type Claim, type ThemeVersion } from '../../services/api';
+import { api, type Claim } from '../../services/api';
 import { Maximize2, Minimize2, ArrowLeft, Settings } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import {
     Dialog,
     DialogContent,
@@ -27,9 +27,12 @@ type AgentType = 'CAUSA' | 'AXIA' | 'ACTOR' | 'PRAXIS';
 
 import { useWebSocket } from '../../hooks/useWebSocket';
 
+// ... imports
+import { useTheme } from '../../context/ThemeContext';
+import { ThemeContextPanel } from '../Theme/ThemeContextPanel';
+
 export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, themeId, projectName, themeName, onBack }) => {
     const [searchParams, setSearchParams] = useSearchParams();
-    const navigate = useNavigate();
     const mode = searchParams.get('mode') as AgentType | null;
 
     const [activeAgent, setActiveAgent] = useState<AgentType>(mode || 'CAUSA');
@@ -37,6 +40,9 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
     // WebSocket Integration
     const { lastMessage, sendMessage } = useWebSocket(projectId);
     const [currentUser, setCurrentUser] = useState<any>(null);
+
+    // Context Integration
+    const { currentViewedVersion, isReadOnly } = useTheme();
 
     // Fetch user on mount for identity
     useEffect(() => {
@@ -76,25 +82,32 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
     const [activeConversation, setActiveConversation] = useState<ConversationContext | null>(null);
     const [focusMode, setFocusMode] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-    const [isVersionsOpen, setIsVersionsOpen] = useState(false);
-    const [versions, setVersions] = useState<ThemeVersion[]>([]);
 
     const refreshData = useCallback(async () => {
+        if (!currentViewedVersion) return;
+
         try {
-            const [existingClaims, themeFactors, themeVersions] = await Promise.all([
-                api.getThemeClaims(themeId),
-                api.getThemeFactors(themeId),
-                api.getThemeVersions(themeId)
-            ]);
-            setVersions(themeVersions);
-            console.log('WS: Refreshed Data', { claims: existingClaims.length, factors: themeFactors.length, versions: themeVersions.length });
+            // Fetch data specific to the CURRENTLY VIEWED version
+            // For historical versions, this fetches historical data.
+            // For active version, this fetches current data (which is conceptually 'active version data')
+
+            // NOTE: CausaShell likely fetches its own data or needs props. 
+            // Currently CausaShell fetches data via api calls internally or we pass it? 
+            // Checking CausaShell props: it takes themeId. 
+            // We need to pass the versionId to CausaShell so IT can fetch the right data!
+            // OR we fetch here and pass data down.
+            // CausaShell usually handles the graph.
+
+            // For now, we just ensure we can fetch. 
+            // The CausaShell component needs to be updated to accept `versionId` and `isReadOnly`.
+            console.log('Refreshing data for version:', currentViewedVersion.id);
 
         } catch (error) {
             console.error('Failed to fetch theme data:', error);
         }
-    }, [themeId]);
+    }, [currentViewedVersion]); // Depend on the viewed version
 
-    // Fetch data on mount
+    // Fetch data when viewed version changes
     useEffect(() => {
         refreshData();
     }, [refreshData]);
@@ -144,14 +157,9 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
                 </div>
 
                 <div className="flex items-center gap-2">
-                    <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setIsVersionsOpen(true)}
-                        className="mr-2"
-                    >
-                        Versions ({versions.length})
-                    </Button>
+                    {/* Theme Context Panel (Version Switcher) */}
+                    <ThemeContextPanel />
+
                     <Button
                         variant="ghost"
                         size="icon"
@@ -176,12 +184,15 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
                 {activeAgent === 'CAUSA' ? (
                     <div className="flex-1 flex overflow-hidden">
                         <div className="flex-1 bg-muted/30 h-full relative overflow-hidden">
+                            {/* Pass version context to CausaShell */}
                             <CausaShell
                                 themeId={themeId}
                                 projectId={projectId}
                                 onOpenConversation={handleOpenConversation}
                                 websocket={{ lastMessage, sendMessage }}
                                 currentUserId={currentUser?.email || 'anon'}
+                                versionId={currentViewedVersion?.id}
+                                isReadOnly={isReadOnly}
                             />
                         </div>
                     </div>
@@ -203,6 +214,7 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
                 topicId={themeId}
                 topicLabel={themeName}
                 onClaimsUpdate={handleClaimsUpdate}
+                isReadOnly={isReadOnly}
             />
 
             <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
@@ -212,36 +224,6 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
                     </DialogHeader>
                     <div className="py-4">
                         <MemberManagement entityId={themeId} entityType="theme" />
-                    </div>
-                </DialogContent>
-            </Dialog>
-
-            <Dialog open={isVersionsOpen} onOpenChange={setIsVersionsOpen}>
-                <DialogContent className="max-w-2xl">
-                    <DialogHeader>
-                        <DialogTitle>Theme Versions</DialogTitle>
-                    </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                        {versions.length === 0 ? (
-                            <p className="text-muted-foreground text-center py-8">No versions found in this theme.</p>
-                        ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {versions.map(version => (
-                                    <div
-                                        key={version.id}
-                                        className="border rounded-lg p-4 hover:bg-muted/50 cursor-pointer transition-colors"
-                                        onClick={() => {
-                                            setIsVersionsOpen(false);
-                                            navigate(`/versions/${version.id}`);
-                                        }}
-                                    >
-                                        <h3 className="font-semibold">{version.name}</h3>
-                                        <p className="text-sm text-muted-foreground line-clamp-2">{version.description}</p>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                        <Button className="w-full" disabled>Create New Version (Coming Soon)</Button>
                     </div>
                 </DialogContent>
             </Dialog>

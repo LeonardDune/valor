@@ -9,10 +9,7 @@ interface VersionLayoutProps {
 }
 
 export const VersionLayout: React.FC<VersionLayoutProps> = ({ children }) => {
-    // We use 'versionId' in the route now (was spaceId)
-    // Fallback to spaceId if router hasn't been fully updated yet during dev
-    const params = useParams();
-    const versionId = params.versionId || params.spaceId;
+    const { versionId } = useParams();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     const versionNavItems: NavItem[] = [

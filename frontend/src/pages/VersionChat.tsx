@@ -9,8 +9,7 @@ import { Input } from "@/components/ui/input";
 
 export const VersionChat: React.FC = () => {
     // Check for versionId first, then spaceId fallback
-    const params = useParams();
-    const versionId = params.versionId || params.spaceId;
+    const { versionId } = useParams();
 
     const [threads, setThreads] = useState<ConversationThread[]>([]);
     const [activeThreadId, setActiveThreadId] = useState<string | null>(null);

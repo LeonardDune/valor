@@ -14,6 +14,7 @@ interface ConversationPaneProps {
     topicLabel: string;
     onClaimsUpdate: (claims: Claim[]) => void;
     className?: string;
+    isReadOnly?: boolean;
 }
 
 export const ConversationPane: React.FC<ConversationPaneProps> = ({
@@ -23,7 +24,8 @@ export const ConversationPane: React.FC<ConversationPaneProps> = ({
     topicId,
     topicLabel,
     onClaimsUpdate,
-    className
+    className,
+    isReadOnly = false
 }) => {
     if (!isOpen) return null;
 
@@ -58,6 +60,7 @@ export const ConversationPane: React.FC<ConversationPaneProps> = ({
                     topicLabel={chatTopicLabel}
                     topicId={topicId}
                     onClaimsUpdate={onClaimsUpdate}
+                    isReadOnly={isReadOnly}
                 />
             </div>
         </div>

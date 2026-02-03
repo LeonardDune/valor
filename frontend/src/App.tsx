@@ -18,6 +18,7 @@ import { DashboardLayout } from './views/shell/DashboardLayout';
 import { VersionLayout } from './components/layout/VersionLayout';
 import { VersionDashboard } from './pages/VersionDashboard';
 import { VersionChat } from './pages/VersionChat';
+import { ThemeProvider } from './context/ThemeContext';
 
 function App() {
   const { session, isLoading: authLoading } = useAuth();
@@ -132,14 +133,7 @@ function App() {
             <Route path="settings" element={<div className="p-8">Version Settings (Coming Soon)</div>} />
           </Route>
 
-          {/* Legacy Space Routes (Alias) */}
-          <Route path="/spaces/:spaceId" element={<VersionLayout />}>
-            <Route index element={<VersionDashboard />} />
-            <Route path="claims" element={<div className="p-8">Claims (Coming Soon)</div>} />
-            <Route path="chat" element={<VersionChat />} />
-            <Route path="members" element={<div className="p-8">Members (Coming Soon)</div>} />
-            <Route path="settings" element={<div className="p-8">Version Settings (Coming Soon)</div>} />
-          </Route>
+
 
           {/* Settings - Wrapped */}
           <Route path="/settings" element={
@@ -203,14 +197,21 @@ const WorkspaceWrapper = () => {
     return <div className="flex items-center justify-center h-screen">Thema niet gevonden of geen toegang.</div>;
   }
 
+  // Import locally to avoid circular dependencies if any, or just ensure top-level import
+  // But wait, I can't import inside component. 
+  // I will add the import to the top of the file in a separate step or assume I added it. 
+  // Actually, I should add the import first.
+
   return (
-    <ValorWorkspace
-      projectId={found.project.id}
-      projectName={found.project.name}
-      themeId={found.theme.id}
-      themeName={found.theme.name}
-      onBack={() => navigate(-1)} // Or navigate to project view
-    />
+    <ThemeProvider themeId={found.theme.id}>
+      <ValorWorkspace
+        projectId={found.project.id}
+        projectName={found.project.name}
+        themeId={found.theme.id}
+        themeName={found.theme.name}
+        onBack={() => navigate(-1)} // Or navigate to project view
+      />
+    </ThemeProvider>
   );
 }
 

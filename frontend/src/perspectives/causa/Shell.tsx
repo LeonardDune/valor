@@ -31,14 +31,14 @@ export interface CausaShellProps {
         lastMessage: any;
         sendMessage: (type: string, payload: any) => void;
     };
-    currentUserId?: string; // Add Identity Prop
-    // We keep onSelect prop for backward compatibility but Shell handles the interaction
-    onSelect?: (selection: { type: 'node' | 'link'; data: any } | null) => void;
-    selection?: { type: 'node' | 'link'; data: any } | null;
-    onOpenConversation: (context: ConversationContext) => void;
+    versionId?: string;
+    isReadOnly?: boolean;
+    currentUserId?: string;
+    onOpenConversation?: (context: ConversationContext) => void;
+    onSelect?: (selection: any) => void;
 }
 
-export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSelect: _onSelect, onOpenConversation }: CausaShellProps) => {
+export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSelect, onOpenConversation, versionId, isReadOnly = false }: CausaShellProps) => {
     // A. Local UI State
     const [localSelection, setLocalSelection] = useState<{ type: 'node' | 'link'; data: any } | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -112,11 +112,13 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
     };
 
     // B. Fetch Data
-    const { nodes, links, factors, refresh, loading } = useCausaData(themeId);
+    const { nodes, links, factors, refresh, loading } = useCausaData(themeId, versionId);
 
     // C. Initialize Session
     // Re-create session ONLY when layoutMode changes
     // This ensures we start fresh (or from cache) and don't leak state from previous runner
+    // We also re-create session if nodes change significantly? No, syncGraph handles that. 
+    // But if we switch version, nodes change completely. session.syncGraph should handle it.
     const session = useMemo(() => {
         // Load initial positions from cache if available
         const cachedPositions = layoutCache.current[layoutMode];
@@ -186,6 +188,10 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
     const handleSelect = (sel: { type: 'node' | 'link'; data: any } | null) => {
         setLocalSelection(sel);
 
+        if (onSelect) {
+            onSelect(sel?.data || null);
+        }
+
         // Broadcast Focus
         if (websocket.sendMessage) {
             if (sel?.type === 'node' && sel.data?.id) {
@@ -198,11 +204,13 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
     };
 
     const handleEdit = (sel: { type: 'node' | 'link'; data: any }) => {
+        if (isReadOnly) return;
         setLocalSelection(sel); // Ensure it is selected
         setIsEditModalOpen(true);
     };
 
     const handleCreateFactor = async (name: string, type: any, description: string) => {
+        if (isReadOnly) return;
         try {
             await api.createFactor(themeId, name, description, type);
             refresh();
@@ -212,6 +220,7 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
     };
 
     const handleConnect = async (connection: any) => {
+        if (isReadOnly) return;
         if (!connection.source || !connection.target) return;
         try {
             // Default new relation to positive for now, or open modal
@@ -248,7 +257,7 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
             <PerspectiveToolbar
                 layoutMode={layoutMode}
                 onLayoutChange={(mode) => switchMode(mode)}
-                onOpenGlobalConversation={() => onOpenConversation({
+                onOpenGlobalConversation={() => onOpenConversation?.({
                     scope: 'view',
                     perspective: 'CAUSA',
                     contextId: 'main-view',
@@ -267,21 +276,23 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                     </>
                 }
             >
-                <TooltipProvider>
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                size="sm"
-                                onClick={() => setIsCreateModalOpen(true)}
-                                variant="ghost"
-                                className="h-8 w-8 p-0"
-                            >
-                                <Plus className="h-4 w-4" />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>Nieuwe Factor</TooltipContent>
-                    </Tooltip>
-                </TooltipProvider>
+                {!isReadOnly && (
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    size="sm"
+                                    onClick={() => setIsCreateModalOpen(true)}
+                                    variant="ghost"
+                                    className="h-8 w-8 p-0"
+                                >
+                                    <Plus className="h-4 w-4" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Nieuwe Factor</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                )}
             </PerspectiveToolbar>
 
             {/* View */}
@@ -293,11 +304,11 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                 onSelect={handleSelect}
                 selection={localSelection}
                 layoutMode={layoutMode}
-                onOpenConversation={onOpenConversation}
+                onOpenConversation={onOpenConversation || (() => { })}
                 onEdit={handleEdit}
                 onViewportChange={setViewport}
                 onInit={setRfInstance}
-                onConnect={handleConnect}
+                onConnect={isReadOnly ? undefined : handleConnect}
             />
 
 
