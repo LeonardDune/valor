@@ -93,8 +93,13 @@ async def get_user_environments(user_email: str) -> List[Dict]:
     // Aggregate Themes into Projects
     WITH org, user_role, proj, proj_role, collect(DISTINCT CASE WHEN theme IS NOT NULL THEN {
         id: theme.id,
-        name: theme.name,
-        description: theme.description,
+        // FETCH FROM ACTIVE VERSION
+        // We know 'av' is available if we matched it, but we need to match it first.
+        // Wait, I need to match it upstream or inside the WITH.
+        // It's cleaner to do an OPTIONAL MATCH before the aggregation.
+        // Let's modify the query structure slightly.
+        name: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v) | v.name ]), 
+        description: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v) | v.description ]),
         role: theme_role,
         status: theme.status,
         type: "THEME"
@@ -207,8 +212,8 @@ async def get_user_themes(user_email: str) -> List[Dict]:
 
     RETURN {
         id: theme.id,
-        name: theme.name,
-        description: theme.description,
+        name: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v) | v.name ]),
+        description: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v) | v.description ]),
         project_name: proj.name,
         organization_name: org.name,
         role: effective_role,

@@ -22,31 +22,74 @@ class LifecycleStatus(str, Enum):
     REJECTED = "rejected"
     DEPRECATED = "deprecated"
 
-class FactorBase(BaseModel):
-    name: str
-    description: Optional[str] = None
-    type: FactorType = FactorType.ELEMENT
-    status: LifecycleStatus = LifecycleStatus.ACCEPTED
+# --- Base Models (Identity) ---
+class ThemeBase(BaseModel):
+    id: str = Field(description="Unique Identifier of the Theme (Identity)")
+    created_at: datetime
+    created_by: str = Field(description="User ID of the Creator (Immutable)")
 
-class Factor(FactorBase):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+class FactorBase(BaseModel):
+    id: str = Field(description="Unique Identifier of the Factor (Identity)")
+    created_at: datetime
+    created_by: str = Field(description="User ID of the Creator (Immutable)")
 
 class ClaimBase(BaseModel):
+    id: str = Field(description="Unique Identifier of the Claim (Identity)")
+    created_at: datetime
+    created_by: str = Field(description="User ID of the Creator (Immutable)")
+
+# --- Version Models (State) ---
+
+class ThemeVersion(BaseModel):
+    id: str
+    base_id: str = Field(description="Reference to ThemeBase")
+    name: str
+    description: str
+    status: str = "active" # active, closed
+    created_at: datetime
+    valid_from: datetime
+    valid_to: Optional[datetime] = None
+
+class FactorVersion(BaseModel):
+    id: str
+    base_id: str = Field(description="Reference to FactorBase")
+    name: str
+    type: str = "systeemelement"
+    description: Optional[str] = None
+    version_id: str = Field(description="Belongs to ThemeVersion")
+    # Derived from? Optional logic
+
+class ClaimVersion(BaseModel):
+    id: str
+    base_id: str = Field(description="Reference to ClaimBase")
     statement: str
-    confidence: float = Field(default=0.0, ge=0.0, le=100.0)
-    source_node: str # Name of the cause factor
-    source_id: Optional[str] = None # UUID of the cause factor
-    source_type: Optional[FactorType] = None
-    target_node: str # Name of the effect factor
-    target_id: Optional[str] = None # UUID of the effect factor
-    target_type: Optional[FactorType] = None
-    relationship_type: str = "CAUSES" # CAUSES, MENTIONS
-    polarity: str = "+" # +, -, or ?
-    status: LifecycleStatus = LifecycleStatus.ACCEPTED
+    polarity: str
+    confidence: float
+    # Note: connect to FactorVersions in graph
+    source_version_id: str
+    target_version_id: str
+
+# --- API Data Models (Legacy Compatibility / Frontend View) ---
+
+class Factor(FactorBase): 
+    # Use Base ID as 'id' for stable reference
+    name: str 
+    type: str
+    description: Optional[str]
+    version_id: str # The ID of the specific version being viewed
 
 class Claim(ClaimBase):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    created_at: datetime = Field(default_factory=datetime.now)
+    statement: str
+    polarity: str
+    confidence: float
+    source_id: str # Base ID of source
+    target_id: str # Base ID of target
+    version_id: str
+
+class Theme(ThemeBase):
+    name: str
+    description: str
+    current_version_id: str
 
 class ChatMessage(BaseModel):
     role: str # user, agent
@@ -106,21 +149,15 @@ class Project(BaseModel):
     status: WorkspaceStatus = WorkspaceStatus.ACTIVE
     created_at: datetime = Field(default_factory=datetime.now)
 
-class Theme(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    name: str # The central topic
-    description: Optional[str] = None
-    project_id: str
-    status: WorkspaceStatus = WorkspaceStatus.ACTIVE
-    created_at: datetime = Field(default_factory=datetime.now)
+# Consolidating into the definitions above (Lines 26-70)
+# We remove these duplicates to avoid confusion.
+# The 'Theme' and 'ThemeVersion' usage should rely on the classes defined earlier or updated below.
 
-class ThemeVersion(BaseModel):
+class Decision(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    name: str # e.g. "Public Debate", "Expert Panel" - or Version Name
-    description: Optional[str] = None
-    theme_id: str
-    status: WorkspaceStatus = WorkspaceStatus.ACTIVE
-    created_at: datetime = Field(default_factory=datetime.now)
+    description: str
+    timestamp: datetime = Field(default_factory=datetime.now)
+    author_id: Optional[str] = None
 
 class ConversationThread(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))

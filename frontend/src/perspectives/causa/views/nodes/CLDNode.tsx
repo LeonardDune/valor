@@ -1,9 +1,10 @@
 import type { FunctionComponent } from 'react';
 import { memo } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
-import { Wrench, Cloud, Cpu, Target, HelpCircle, type LucideProps } from 'lucide-react';
+import { Wrench, Cloud, Cpu, Target, HelpCircle, MessageSquare, type LucideProps } from 'lucide-react';
 
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 // Use strict Lucide types
 const iconMap: Record<string, FunctionComponent<LucideProps>> = {
@@ -46,7 +47,7 @@ const roleStyles: Record<string, { color: string, badge: string, icon: string }>
 const CARD_WIDTH = '140px';
 const CARD_HEIGHT = '100px';
 
-const CLDNode: FunctionComponent<NodeProps> = ({ data, selected }) => {
+const CLDNode: FunctionComponent<NodeProps> = ({ id, data, selected }) => {
     // Robust access to type from data.description? (Actually stored in 'type' field from mapper)
     // The mapper puts 'system' or 'factor' in type. BUT we need the SUBTYPE (middel, extern, etc).
     // The previous analysis showed FactorNode uses `data.type`. 
@@ -100,10 +101,32 @@ const CLDNode: FunctionComponent<NodeProps> = ({ data, selected }) => {
             <Handle id="source-bottom" type="source" position={Position.Bottom} className="w-2 h-2 !bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
 
             {/* Header / Tag */}
-            <div className="pt-2 px-2 flex justify-center">
-                <Badge variant="outline" className={`text-[10px] px-2 py-0 h-5 border shadow-none ${styles.badge}`}>
-                    {role.charAt(0).toUpperCase() + role.slice(1)}
-                </Badge>
+            <div className="pt-2 px-2 flex justify-between items-start">
+                <div /> {/* Spacer for centering if needed, or just absolute positioning */}
+                <div className="flex justify-center flex-1">
+                    <Badge variant="outline" className={`text-[10px] px-2 py-0 h-5 border shadow-none ${styles.badge}`}>
+                        {role.charAt(0).toUpperCase() + role.slice(1)}
+                    </Badge>
+                </div>
+
+                {/* Thread Indicator */}
+                {data.threadCount !== undefined && (
+                    <div
+                        className={cn(
+                            "flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium transition-colors cursor-pointer hover:bg-muted absolute top-1.5 right-1.5",
+                            data.threadCount > 0 ? "text-primary bg-primary/10" : "text-muted-foreground opacity-0 group-hover:opacity-100"
+                        )}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            // Prefer version_id to attach thread to the specific version, fallback to base id (identity)
+                            data.onOpenThread?.(data.version_id || id, data.label, { x: e.clientX, y: e.clientY });
+                        }}
+
+                    >
+                        <MessageSquare className="w-3 h-3" />
+                        {data.threadCount > 0 && <span>{data.threadCount}</span>}
+                    </div>
+                )}
             </div>
 
             {/* Body / Title */}

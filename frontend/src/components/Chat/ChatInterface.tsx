@@ -20,6 +20,7 @@ interface ChatInterfaceProps {
     topicId?: string;
     onClaimsUpdate: (claims: Claim[]) => void;
     initialConversationId?: string;
+    isReadOnly?: boolean;
 }
 
 const MarkdownTextAdapter = (props: any) => <MarkdownTextPrimitive {...props} />;
@@ -96,7 +97,8 @@ const ChatInitializer: React.FC<{
     return null;
 };
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ topicLabel, topicId, onClaimsUpdate, initialConversationId }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ topicLabel, topicId, onClaimsUpdate, initialConversationId, isReadOnly = false }) => {
+    // ... (logic remains same)
     const conversationIdRef = useRef<string | undefined>(initialConversationId);
 
     const adapter: ChatModelAdapter = {
@@ -168,21 +170,27 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ topicLabel, topicId, onCl
                         <ThreadPrimitive.Messages components={{ Message: MyMessage }} />
                     </ThreadPrimitive.Viewport>
 
-                    <ComposerPrimitive.Root className="p-4 border-t border-border bg-background flex items-end gap-2">
-                        <ComposerPrimitive.Input asChild>
-                            <Textarea
-                                placeholder="Stel een vraag..."
-                                className="min-h-[2.5rem] max-h-[10rem] resize-none"
-                                rows={1}
-                            />
-                        </ComposerPrimitive.Input>
-                        <ComposerPrimitive.Send asChild>
-                            <Button size="icon">
-                                <Send className="h-4 w-4" />
-                                <span className="sr-only">Verzenden</span>
-                            </Button>
-                        </ComposerPrimitive.Send>
-                    </ComposerPrimitive.Root>
+                    {isReadOnly ? (
+                        <div className="p-4 border-t border-border bg-muted/30 text-center text-sm text-muted-foreground italic">
+                            Read Only Mode - Historical Version
+                        </div>
+                    ) : (
+                        <ComposerPrimitive.Root className="p-4 border-t border-border bg-background flex items-end gap-2">
+                            <ComposerPrimitive.Input asChild>
+                                <Textarea
+                                    placeholder="Stel een vraag..."
+                                    className="min-h-[2.5rem] max-h-[10rem] resize-none"
+                                    rows={1}
+                                />
+                            </ComposerPrimitive.Input>
+                            <ComposerPrimitive.Send asChild>
+                                <Button size="icon">
+                                    <Send className="h-4 w-4" />
+                                    <span className="sr-only">Verzenden</span>
+                                </Button>
+                            </ComposerPrimitive.Send>
+                        </ComposerPrimitive.Root>
+                    )}
                 </ThreadPrimitive.Root>
             </AssistantRuntimeProvider>
         </div>
