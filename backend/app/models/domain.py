@@ -162,9 +162,18 @@ class Decision(BaseModel):
 class ConversationThread(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     topic: Optional[str] = None
-    theme_version_id: str = Field(..., alias="space_id") # Aliased for backward DB compatibility until migration is complete
+    target_id: str = Field(..., description="Polymorphic reference to ThemeVersion, FactorVersion, etc.")
     status: str = "active"
     created_at: datetime = Field(default_factory=datetime.now)
+
+class ConversationMessage(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    content: str
+    created_at: datetime = Field(default_factory=datetime.now)
+    user_id: str
+
+class ThreadMessageCreate(BaseModel):
+    content: str
 
 class Proposal(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
