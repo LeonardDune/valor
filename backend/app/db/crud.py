@@ -1175,7 +1175,9 @@ async def create_factor_manual(name: str, description: Optional[str], type: str,
         description: $desc,
         type: $type,
         version_id: tv.id,
-        created_at: datetime()
+        created_at: datetime(),
+        valid_from: datetime(),
+        valid_to: NULL
     })
     CREATE (fb)-[:HAS_VERSION]->(fv) // Base -> Version
     CREATE (tv)-[:HAS_FACTOR]->(fv)
@@ -1250,7 +1252,9 @@ async def create_claim_manual(theme_id: str, source_id: str, target_id: str, sta
         confidence: $conf,
         source_version_id: fv_source.id,
         target_version_id: fv_target.id,
-        created_at: datetime()
+        created_at: datetime(),
+        valid_from: datetime(),
+        valid_to: NULL
     })
     CREATE (cb)-[:HAS_VERSION]->(cv) // Base -> Version
     
@@ -1340,10 +1344,13 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
         type: old_f.type,
         description: old_f.description,
         version_id: new_v.id,
-        created_at: datetime()
+        created_at: datetime(),
+        valid_from: datetime(),
+        valid_to: NULL
     })
     CREATE (new_v)-[:HAS_FACTOR]->(new_f)
     CREATE (new_f)-[:DERIVED_FROM]->(old_f) // Lineage
+    SET old_f.valid_to = datetime() // Close validity of old factor
     
     // Link to existing FactorBase
     WITH new_v, old_v, old_f, new_f
@@ -1376,12 +1383,15 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
         polarity: old_c.polarity,
         source_version_id: new_f_source.id,
         target_version_id: new_f_target.id,
-        created_at: datetime()
+        created_at: datetime(),
+        valid_from: datetime(),
+        valid_to: NULL
     })
     
     CREATE (new_f_source)-[:CLAIMS]->(new_c)
     CREATE (new_c)-[:TO]->(new_f_target)
     CREATE (new_c)-[:DERIVED_FROM]->(old_c) // Lineage
+    SET old_c.valid_to = datetime() // Close validity of old claim
     
     // Link to existing ClaimBase
     WITH new_c, old_c, new_v
