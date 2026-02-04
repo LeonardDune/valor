@@ -9,6 +9,8 @@ export interface CausalNode {
     type: 'factor' | 'system';
     role?: string; // e.g. 'middel', 'extern', 'criterium'
     description?: string;
+    threadCount?: number;
+    version_id?: string;
     // Future: status, confidence, evidence
 }
 
@@ -21,4 +23,5 @@ export interface CausalLink {
     status?: 'proposed' | 'validated' | 'rejected';
     certainty?: number; // 0.0 - 1.0
     statement?: string;
+    version_id?: string;
 }

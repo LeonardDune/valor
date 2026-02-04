@@ -18,6 +18,8 @@ import CLDEdge from './edges/CLDEdge';
 import { CanvasContextMenu } from '@/components/shell/CanvasContextMenu';
 import { ViewControls } from '@/components/shell/ViewControls';
 import type { ConversationContext } from '@/types/conversation';
+import { api } from '@/services/api';
+import { FloatingThreadPanel } from '@/components/Chat/FloatingThreadPanel';
 
 // Correct path if types are in parent/parent
 import type { CausalNode, CausalLink } from '../types';
@@ -70,6 +72,37 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
 
 
 
+    // Thread State
+    const [threadStats, setThreadStats] = useState<Record<string, number>>({});
+    const [floatingThread, setFloatingThread] = useState<{ targetId: string; label: string; position?: { x: number; y: number } } | null>(null);
+
+    const fetchThreadStats = async () => {
+        if (causalNodes.length === 0 && causalLinks.length === 0) return;
+        try {
+            // Combine version_ids from both nodes and links
+            const nodeIds = causalNodes.map(n => n.version_id).filter(id => !!id);
+            const linkIds = causalLinks.map(l => l.version_id).filter(id => !!id);
+            const ids = [...nodeIds, ...linkIds] as string[];
+
+            if (ids.length === 0) return;
+
+            const stats = await api.getThreadStats(ids);
+            setThreadStats(stats);
+        } catch (e) {
+            console.error("Failed to fetch thread stats", e);
+        }
+    };
+
+    // Fetch thread stats on load and when structure changes
+    useEffect(() => {
+        fetchThreadStats();
+    }, [causalNodes, causalLinks]);
+
+    const handleOpenThread = (targetId: string, label: string, position?: { x: number; y: number }) => {
+        console.log("Opening thread panel for targetId:", targetId, "label:", label);
+        setFloatingThread({ targetId, label, position });
+    };
+
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; nodeId: string; type: string; label?: string; data?: any } | null>(null);
 
@@ -93,7 +126,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
             y: event.clientY,
             nodeId: edge.id,
             type: 'link',
-            label: 'Relatie', // Static label for edges for now
+            label: edge.data?.statement || 'Relatie', // Use statement from data
             data: { id: edge.id, source: edge.source, target: edge.target, ...edge.data } // Pass full data for editing
         });
     };
@@ -125,7 +158,15 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                     id: cn.id,
                     type: 'cldNode',
                     position,
-                    data: { label: cn.label, type: cn.type, role: cn.role, description: cn.description }
+                    data: {
+                        label: cn.label,
+                        type: cn.type,
+                        role: cn.role,
+                        description: cn.description,
+                        threadCount: (cn.version_id && threadStats[cn.version_id]) || 0,
+                        version_id: cn.version_id,
+                        onOpenThread: handleOpenThread
+                    }
                 };
             });
 
@@ -233,7 +274,10 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                         certainty: cl.certainty,
                         statement: cl.statement, // Include statement/claim text
                         source: cl.source, // redundancy for data access
-                        target: cl.target  // redundancy for data access
+                        target: cl.target, // redundancy for data access
+                        threadCount: (cl.version_id && threadStats[cl.version_id]) || 0,
+                        version_id: cl.version_id,
+                        onOpenThread: handleOpenThread
                     }
                 };
             });
@@ -245,7 +289,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
             runner.updateData(session.getNodes(), session.getLinks());
         }
 
-    }, [causalNodes, causalLinks, session, setNodes, setEdges, layoutMode, runner]);
+    }, [causalNodes, causalLinks, session, setNodes, setEdges, layoutMode, runner, threadStats]);
 
 
     // Fit View on Layout Mode Change
@@ -440,13 +484,27 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                 contextMenu && (
                     <CanvasContextMenu
                         position={{ x: contextMenu.x, y: contextMenu.y }}
-                        contextObject={{ id: contextMenu.nodeId, type: contextMenu.type, label: contextMenu.label }}
+                        contextObject={{ id: contextMenu.nodeId, type: contextMenu.type, label: contextMenu.label, version_id: contextMenu.data?.version_id }}
                         onDismiss={() => setContextMenu(null)}
                         onOpenObjectConversation={handleOpenObjectConversation}
+                        onOpenThread={(obj) => handleOpenThread(obj.version_id || obj.id, obj.label || 'Discussie', { x: contextMenu.x, y: contextMenu.y })}
                         onEdit={(obj) => onEdit && onEdit({ type: obj.type as any, data: contextMenu.data || obj })}
                     />
                 )
             }
+
+            {floatingThread && (
+                <FloatingThreadPanel
+                    targetId={floatingThread.targetId}
+                    targetLabel={floatingThread.label}
+                    position={floatingThread.position}
+                    onClose={() => {
+                        setFloatingThread(null);
+                        fetchThreadStats(); // Refresh stats when closing
+                    }}
+                    onThreadCreated={fetchThreadStats} // Refresh stats immediately when a thread is created
+                />
+            )}
         </div >
     );
 };

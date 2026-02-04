@@ -10,7 +10,8 @@ export const mapFactorToNode = (factor: Factor): CausalNode => {
         label: factor.name,
         type: factor.type === 'systeemelement' ? 'system' : 'factor',
         role: factor.type,
-        description: factor.description
+        description: factor.description,
+        version_id: factor.version_id
     };
 };
 
@@ -31,7 +32,8 @@ export const mapClaimToLink = (claim: Claim): CausalLink => {
         // Using US-CAUSA-05 default logic for now until backend supports it
         status: 'validated',
         certainty: claim.confidence || 1.0,
-        statement: claim.statement
+        statement: claim.statement,
+        version_id: claim.version_id
     };
 };
 

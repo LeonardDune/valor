@@ -13,13 +13,24 @@ export const useWebSocket = (projectId: string | null) => {
     const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
     const socketRef = useRef<WebSocket | null>(null);
     const reconnectTimeoutRef = useRef<any>(null);
+    const isMounted = useRef(true);
+    const retryCountRef = useRef(0);
+    const MAX_RETRIES = 5;
 
     const connect = useCallback(async () => {
         if (!projectId) return;
 
-        // cleanup previous
+        // Cleanup existing socket and timeout
+        if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+        }
+
         if (socketRef.current) {
+            // Unbind handler to prevent reconnect loop during intentional close
+            socketRef.current.onclose = null;
             socketRef.current.close();
+            socketRef.current = null;
         }
 
         // Get Token
@@ -35,10 +46,12 @@ export const useWebSocket = (projectId: string | null) => {
 
         ws.onopen = () => {
             console.log('WebSocket Connected');
-            setIsConnected(true);
+            retryCountRef.current = 0; // Reset retries on successful connection
+            if (isMounted.current) setIsConnected(true);
         };
 
         ws.onmessage = (event) => {
+            if (!isMounted.current) return;
             try {
                 const data = JSON.parse(event.data);
                 setLastMessage(data);
@@ -49,25 +62,42 @@ export const useWebSocket = (projectId: string | null) => {
 
         ws.onclose = () => {
             console.log('WebSocket Disconnected');
-            setIsConnected(false);
-            // Reconnect logic with jitter
-            const timeout = 1000 + Math.random() * 2000;
-            reconnectTimeoutRef.current = setTimeout(() => {
-                if (projectId) connect();
-            }, timeout);
+            if (isMounted.current) setIsConnected(false);
+
+            // Only reconnect if mounted and the close wasn't intentional
+            if (isMounted.current) {
+                if (retryCountRef.current < MAX_RETRIES) {
+                    retryCountRef.current += 1;
+                    // Exponential backoff: 1s, 2s, 4s, 8s, 16s... up to 30s
+                    const jitter = Math.random() * 1000;
+                    const backoff = Math.min(1000 * Math.pow(2, retryCountRef.current) + jitter, 30000);
+
+                    console.log(`Scheduling reconnect attempt ${retryCountRef.current}/${MAX_RETRIES} in ${Math.round(backoff)}ms`);
+
+                    reconnectTimeoutRef.current = setTimeout(() => {
+                        connect();
+                    }, backoff);
+                } else {
+                    console.error('WebSocket Max Retries Exceeded. Stopping reconnection attempts.');
+                }
+            }
         };
 
         ws.onerror = (error) => {
             console.error('WebSocket Error:', error);
+            // Closing here will trigger onclose, which handles reconnect
             ws.close();
         };
 
     }, [projectId]);
 
     useEffect(() => {
+        isMounted.current = true;
         connect();
         return () => {
+            isMounted.current = false;
             if (socketRef.current) {
+                socketRef.current.onclose = null; // Prevent reconnect
                 socketRef.current.close();
             }
             if (reconnectTimeoutRef.current) {

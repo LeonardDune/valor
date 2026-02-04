@@ -1,17 +1,21 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from typing import Optional
+from typing import Optional, List, Dict, Any
 import os
 from dotenv import load_dotenv
-from app.models.domain import ConversationRequest, ConversationResponse
+from app.models.domain import ConversationRequest, ConversationResponse, ThreadMessageCreate
 from app.routers import proposals, dashboard
 from app.agent.core import process_user_message
-from app.db.crud import save_claims, set_conversation_topic
+from app.db.crud import (
+    save_claims, set_conversation_topic, create_conversation_thread, 
+    get_threads_by_target, get_thread_counts, create_thread_message, get_thread_messages,
+    ensure_user_sync
+)
 import uuid
 
 from contextlib import asynccontextmanager
 from app.db.utils import close_driver, verify_connectivity
-from app.auth import verify_token, security
+from app.auth import verify_token, security, get_current_user
 from fastapi import Depends, HTTPException, WebSocket, WebSocketDisconnect
 import logging
 from app.services.connection_manager import manager
@@ -223,8 +227,8 @@ from app.db.crud import (
     update_organization, archive_organization, update_project, archive_project,
     update_theme, archive_theme, update_project_member_role, remove_project_member,
     update_theme_member_role, remove_theme_member, get_project_id_by_theme,
-    get_project_id_by_factor, get_project_id_by_claim, ensure_user_sync,
-    get_user_by_id, create_conversation_thread, get_threads_by_theme_version,
+    get_project_id_by_factor, get_project_id_by_claim, update_claim_manual, delete_claim_manual, ensure_user_sync,
+    get_user_by_id, create_conversation_thread, get_threads_by_target, get_thread_counts, create_thread_message, get_thread_messages,
     get_theme_versions_by_theme, create_theme_version, get_theme_version, update_theme_version, archive_theme_version,
     get_theme_version_users, add_user_to_theme_version, update_theme_version_member_role, delete_theme_version_member
 )
@@ -627,6 +631,41 @@ async def archive_theme_version_endpoint(version_id: str, user: dict = Depends(g
 
 class ThreadCreate(BaseModel):
     topic: str
+    target_id: Optional[str] = None # Polymorphic target (ThemeVersion, FactorVersion, etc.)
+
+@app.post("/threads")
+async def create_thread_generic(thread: ThreadCreate, user: dict = Depends(get_current_user)):
+    target_id = thread.target_id
+    if not target_id:
+        raise HTTPException(status_code=400, detail="target_id is required for generic thread creation")
+    # Determine permissions based on target type? 
+    # For now, we assume if you can reference the ID, you can discuss usage.
+    # Refine this with specific permission checks per type if needed.
+    tid = await create_conversation_thread(target_id, thread.topic)
+    return {"id": tid, "topic": thread.topic, "target_id": target_id}
+
+@app.get("/threads")
+async def list_threads_generic(target_id: str, user: dict = Depends(get_current_user)):
+    # target_id passed as query param
+    return await get_threads_by_target(target_id)
+
+@app.post("/threads/stats")
+async def get_thread_stats(target_ids: List[str], user: dict = Depends(get_current_user)):
+    return await get_thread_counts(target_ids)
+
+@app.post("/threads/{thread_id}/messages")
+async def add_thread_message(thread_id: str, message: ThreadMessageCreate, user: dict = Depends(get_current_user)):
+    user_id = user.get("id")
+    if not user_id:
+        logger.error(f"User from dependency missing ID field: {user}")
+        raise HTTPException(status_code=500, detail="User identity error")
+        
+    logger.info(f"Adding message to thread {thread_id} for user {user_id}")
+    return await create_thread_message(thread_id, user_id, message.content)
+
+@app.get("/threads/{thread_id}/messages")
+async def list_thread_messages(thread_id: str, user: dict = Depends(get_current_user)):
+    return await get_thread_messages(thread_id)
 
 @app.post("/versions/{version_id}/threads")
 @app.post("/spaces/{version_id}/threads", deprecated=True)
@@ -644,7 +683,7 @@ async def create_new_thread(version_id: str, thread: ThreadCreate, user: dict = 
 @app.get("/spaces/{version_id}/threads", deprecated=True)
 async def list_version_threads(version_id: str, user: dict = Depends(get_current_user)):
     # Check membership?
-    return await get_threads_by_theme_version(version_id)
+    return await get_threads_by_target(version_id)
 
 @app.get("/versions/{version_id}/members")
 @app.get("/spaces/{version_id}/members", deprecated=True)

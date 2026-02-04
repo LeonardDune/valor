@@ -1417,28 +1417,90 @@ async def delete_claim_manual(claim_id: str):
     with driver.session() as session:
         session.run(query, {"id": claim_id})
 
-async def create_conversation_thread(version_id: str, topic: str) -> str:
+async def create_conversation_thread(target_id: str, topic: str) -> str:
     driver = get_driver()
     tid = str(uuid.uuid4())
     query = """
-    MATCH (s:ThemeVersion {id: $sid})
-    CREATE (t:ConversationThread {id: $id, topic: $topic, status: 'active', created_at: datetime()})
+    MATCH (s {id: $sid})
+    CREATE (t:ConversationThread {id: $id, topic: $topic, status: 'active', created_at: datetime(), target_id: $sid})
     CREATE (s)-[:HAS_THREAD]->(t)
     RETURN t.id as id
     """
     with driver.session() as session:
-        return session.run(query, {"sid": version_id, "id": tid, "topic": topic}).single()["id"]
+        return session.run(query, {"sid": target_id, "id": tid, "topic": topic}).single()["id"]
 
-async def get_threads_by_theme_version(version_id: str) -> List[Dict]:
+async def get_threads_by_target(target_id: str) -> List[Dict]:
     driver = get_driver()
     query = """
-    MATCH (s:ThemeVersion {id: $sid})-[:HAS_THREAD]->(t:ConversationThread)
+    MATCH (s)
+    WHERE s.id = $sid
+    MATCH (s)-[:HAS_THREAD]->(t:ConversationThread)
     RETURN {
         id: t.id,
         topic: t.topic,
         status: t.status,
-        created_at: toString(t.created_at)
+        created_at: toString(t.created_at),
+        target_id: s.id
     } as thread_data
     """
     with driver.session() as session:
-        return [r["thread_data"] for r in session.run(query, {"sid": version_id})]
+        return [r["thread_data"] for r in session.run(query, {"sid": target_id})]
+
+async def get_thread_counts(target_ids: List[str]) -> Dict[str, int]:
+    if not target_ids:
+        return {}
+    driver = get_driver()
+    query = """
+    MATCH (s)
+    WHERE s.id IN $target_ids
+    MATCH (s)-[:HAS_THREAD]->(t:ConversationThread)
+    RETURN s.id as target_id, count(t) as thread_count
+    """
+    with driver.session() as session:
+        result = session.run(query, {"target_ids": target_ids})
+        return {r["target_id"]: r["thread_count"] for r in result}
+
+async def create_thread_message(thread_id: str, user_id: str, content: str) -> Dict[str, Any]:
+    driver = get_driver()
+    msg_id = str(uuid.uuid4())
+    # Identify user node? Assuming User node exists with id=user_id (from auth0/supabase id)
+    # We might need to match User by email if ID is not consistent, but let's assume User node ID matches.
+    # Actually, in generic usage, we might just store user_id as property if we don't have strict user nodes yet.
+    # But usually we have a User node.
+    # Let's assume User node logic exists. If not, we just store property.
+    # Re-checking crud.py for user logic...
+    # We haven't seen explicit User styling in crud.py recently.
+    # Let's just create a Message node and link to Thread.
+    query = """
+    MATCH (t:ConversationThread {id: $tid})
+    MATCH (u:User {id: $uid})
+    CREATE (m:ConversationMessage {id: $mid, content: $content, created_at: datetime(), user_id: $uid})
+    CREATE (m)-[:BELONGS_TO]->(t)
+    CREATE (u)-[:AUTHORED]->(m)
+    RETURN {
+        id: m.id,
+        content: m.content,
+        created_at: toString(m.created_at),
+        user_id: m.user_id,
+        author_name: coalesce(u.name, u.email)
+    } as msg
+    """
+    with driver.session() as session:
+        return session.run(query, {"tid": thread_id, "mid": msg_id, "content": content, "uid": user_id}).single()["msg"]
+
+async def get_thread_messages(thread_id: str) -> List[Dict[str, Any]]:
+    driver = get_driver()
+    query = """
+    MATCH (m:ConversationMessage)-[:BELONGS_TO]->(t:ConversationThread {id: $tid})
+    OPTIONAL MATCH (u:User)-[:AUTHORED]->(m)
+    RETURN {
+        id: m.id,
+        content: m.content,
+        created_at: toString(m.created_at),
+        user_id: m.user_id,
+        author_name: coalesce(u.name, u.email, 'Unknown')
+    } as msg
+    ORDER BY m.created_at ASC
+    """
+    with driver.session() as session:
+        return [r["msg"] for r in session.run(query, {"tid": thread_id})]

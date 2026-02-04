@@ -146,9 +146,13 @@ function App() {
             ) : <Navigate to="/" />
           } />
 
+
           <Route path="/invite" element={<AcceptInvitePage onSuccess={handleInviteSuccess} />} />
           <Route path="/update-password" element={<UpdatePasswordPage />} />
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+
+          {/* Catch-all for authenticated users: Redirect to dashboard */}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
     </div>

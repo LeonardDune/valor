@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { supabase } from '../lib/supabase';
+import type { Thread, ConversationMessage } from '../types/conversation';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -46,6 +47,7 @@ export interface Claim {
     relationship_type: string;
     polarity: string;
     created_at?: string;
+    version_id?: string;
 }
 
 export interface AgentResponse {
@@ -67,6 +69,7 @@ export interface Factor {
     name: string;
     description: string;
     type: FactorType;
+    version_id?: string;
 }
 
 export interface Organization {
@@ -382,10 +385,7 @@ export const api = {
         return response.data;
     },
 
-    createThread: async (versionId: string, topic: string) => {
-        const response = await apiClient.post<ConversationThread>(`/versions/${versionId}/threads`, { topic });
-        return response.data;
-    },
+
 
     getVersionMembers: async (versionId: string) => {
         const response = await apiClient.get<User[]>(`/versions/${versionId}/members`);
@@ -501,6 +501,36 @@ export const api = {
         const response = await apiClient.get<Proposal[]>('/proposals/', {
             params: { status, author }
         });
+        return response.data;
+    },
+
+    // Threads
+    getThreads: async (targetId: string): Promise<Thread[]> => {
+        const response = await apiClient.get<Thread[]>('/threads', { params: { target_id: targetId } });
+        return response.data;
+    },
+
+    createThread: async (targetId: string, topic: string): Promise<ConversationThread> => {
+        const response = await apiClient.post('/threads', { target_id: targetId, topic });
+        return {
+            ...response.data,
+            status: 'open',
+            created_at: new Date().toISOString()
+        } as ConversationThread;
+    },
+
+    getThreadStats: async (targetIds: string[]): Promise<Record<string, number>> => {
+        const response = await apiClient.post<Record<string, number>>('/threads/stats', targetIds);
+        return response.data;
+    },
+
+    createThreadMessage: async (threadId: string, content: string): Promise<ConversationMessage> => {
+        const response = await apiClient.post<ConversationMessage>(`/threads/${threadId}/messages`, { content });
+        return response.data;
+    },
+
+    getThreadMessages: async (threadId: string): Promise<ConversationMessage[]> => {
+        const response = await apiClient.get<ConversationMessage[]>(`/threads/${threadId}/messages`);
         return response.data;
     }
 };
