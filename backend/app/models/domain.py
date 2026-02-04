@@ -57,6 +57,8 @@ class FactorVersion(BaseModel):
     type: str = "systeemelement"
     description: Optional[str] = None
     version_id: str = Field(description="Belongs to ThemeVersion")
+    valid_from: datetime
+    valid_to: Optional[datetime] = None
     # Derived from? Optional logic
 
 class ClaimVersion(BaseModel):
@@ -68,6 +70,8 @@ class ClaimVersion(BaseModel):
     # Note: connect to FactorVersions in graph
     source_version_id: str
     target_version_id: str
+    valid_from: datetime
+    valid_to: Optional[datetime] = None
 
 # --- API Data Models (Legacy Compatibility / Frontend View) ---
 

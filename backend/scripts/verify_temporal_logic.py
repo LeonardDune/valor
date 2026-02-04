@@ -52,6 +52,18 @@ async def verify_temporal_logic():
         print(f"   V1 FactorVersion Count: {c} (Expected 2)")
         assert c == 2
 
+        # Verify Factor Temporal Attributes (V1)
+        check_temp = """
+        MATCH (t:ThemeBase {id: $tid})-[:HAS_VERSION]->(v:ThemeVersion {status: 'active'})
+        MATCH (v)-[:HAS_FACTOR]->(fv:FactorVersion)
+        RETURN fv.valid_from as vf, fv.valid_to as vt
+        """
+        temp_res = session.run(check_temp, {"tid": theme_id}).data()
+        for rec in temp_res:
+             assert rec['vf'] is not None
+             assert rec['vt'] is None
+        print("   V1 FactorVersion Temporal Attributes Verified (valid_from IS SET, valid_to IS NULL)")
+
     # 3. Decision Time: Snapshot V1 -> Start V2
     print("3. Creating Decision (Snapshotting V1, Starting V2)...")
     new_version_id = await create_decision(theme_id, "Baseline Established", user_id)
@@ -124,6 +136,25 @@ async def verify_temporal_logic():
         """, {"cid": c1_id}).single()
         print(f"   Claim 1 Version Linked Count: {r['count']} (Expected 2)")
         assert r['count'] == 2
+        
+        # Verify Temporal Attributes Logic (Snapshot Effect)
+        # Old Version (V1) Factors should have valid_to SET
+        r = session.run("""
+            MATCH (v1:ThemeVersion)-[:HAS_FACTOR]->(fv1:FactorVersion {base_id: $fid})
+            WHERE v1.valid_to IS NOT NULL
+            RETURN fv1.valid_to as vt
+        """, {"fid": f1_id}).single()
+        print(f"   Old Factor (V1, A) valid_to: {r['vt']}")
+        assert r['vt'] is not None
+
+        # New Version (V2) Factors should have valid_from SET, valid_to NULL
+        r = session.run("""
+            MATCH (v2:ThemeVersion {id: $vid})-[:HAS_FACTOR]->(fv2:FactorVersion {base_id: $fid})
+            RETURN fv2.valid_from as vf, fv2.valid_to as vt
+        """, {"vid": new_version_id, "fid": f1_id}).single()
+        print(f"   New Factor (V2, A) valid_from: {r['vf']}, valid_to: {r['vt']}")
+        assert r['vf'] is not None
+        assert r['vt'] is None
 
     print("🎉 BASE/VERSION REFACTOR VERIFIED SUCCESSFULLY.")
 
