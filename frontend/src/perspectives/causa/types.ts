@@ -10,6 +10,7 @@ export interface CausalNode {
     role?: string; // e.g. 'middel', 'extern', 'criterium'
     description?: string;
     // Future: status, confidence, evidence
+    version_id?: string;
 }
 
 export interface CausalLink {
@@ -21,4 +22,6 @@ export interface CausalLink {
     status?: 'proposed' | 'validated' | 'rejected';
     certainty?: number; // 0.0 - 1.0
     statement?: string;
+    version_id?: string;
+    threadCount?: number;
 }

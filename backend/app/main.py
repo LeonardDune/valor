@@ -4,9 +4,14 @@ from typing import Optional
 import os
 from dotenv import load_dotenv
 from app.models.domain import ConversationRequest, ConversationResponse
-from app.routers import proposals, dashboard
+from app.routers import proposals, dashboard, threads
 from app.agent.core import process_user_message
-from app.db.crud import save_claims, set_conversation_topic
+from app.db.crud import (
+    save_claims, set_conversation_topic,
+    create_factor_manual, update_factor_manual, delete_factor_manual, get_project_id_by_factor,
+    create_claim_manual, update_claim_manual, delete_claim_manual, get_project_id_by_claim,
+    get_project_id_by_theme
+)
 import uuid
 
 from contextlib import asynccontextmanager
@@ -110,6 +115,7 @@ async def root():
 
 app.include_router(proposals.router)
 app.include_router(dashboard.router)
+app.include_router(threads.router)
 
 @app.get("/health")
 async def health_check():
@@ -224,7 +230,7 @@ from app.db.crud import (
     update_theme, archive_theme, update_project_member_role, remove_project_member,
     update_theme_member_role, remove_theme_member, get_project_id_by_theme,
     get_project_id_by_factor, get_project_id_by_claim, ensure_user_sync,
-    get_user_by_id, create_conversation_thread, get_threads_by_theme_version,
+    get_user_by_id, create_conversation_thread, get_threads_by_target,
     get_theme_versions_by_theme, create_theme_version, get_theme_version, update_theme_version, archive_theme_version,
     get_theme_version_users, add_user_to_theme_version, update_theme_version_member_role, delete_theme_version_member
 )
@@ -644,7 +650,7 @@ async def create_new_thread(version_id: str, thread: ThreadCreate, user: dict = 
 @app.get("/spaces/{version_id}/threads", deprecated=True)
 async def list_version_threads(version_id: str, user: dict = Depends(get_current_user)):
     # Check membership?
-    return await get_threads_by_theme_version(version_id)
+    return await get_threads_by_target(version_id)
 
 @app.get("/versions/{version_id}/members")
 @app.get("/spaces/{version_id}/members", deprecated=True)

@@ -49,6 +49,7 @@ class ThemeVersion(BaseModel):
     created_at: datetime
     valid_from: datetime
     valid_to: Optional[datetime] = None
+    derived_from_id: Optional[str] = None
 
 class FactorVersion(BaseModel):
     id: str
@@ -183,3 +184,10 @@ class Conflict(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     detection_date: datetime = Field(default_factory=datetime.now)
     status: str = "open" # open, resolved, ignored
+
+class ThreadCreate(BaseModel):
+    topic: str
+    target_id: Optional[str] = None # Optional for legacy version threads, required for generic
+
+class ThreadMessageCreate(BaseModel):
+    content: str

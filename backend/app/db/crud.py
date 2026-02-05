@@ -830,10 +830,12 @@ async def get_theme_versions_by_theme(theme_id: str, user_id: str) -> List[Dict]
     MATCH (t)-[:HAS_VERSION]->(s:ThemeVersion)
     MATCH (u:User {id: $uid})
     
-    // Simplified: Strict Explicit Membership. No inheritance.
-    // User must have a direct HAS_ROLE relationship with the Space.
+    // Check for explicit membership on the Theme Base (t)
+    // We assume if you have access to the Theme, you can see its history.
+    MATCH (u)-[r_space:HAS_ROLE]->(t)
+         
     
-    MATCH (u)-[r_space:HAS_ROLE]->(s)
+    OPTIONAL MATCH (s)-[:DERIVED_FROM]->(parent:ThemeVersion)
          
     RETURN {
         id: s.id,
@@ -842,10 +844,10 @@ async def get_theme_versions_by_theme(theme_id: str, user_id: str) -> List[Dict]
         status: s.status,
         is_archived: (s.status = 'archived' OR t.status = 'archived' OR p.status = 'archived' OR org.status = 'archived'),
         role: r_space.role,
-        role: r_space.role,
         created_at: toString(s.created_at),
         valid_from: toString(s.valid_from),
-        valid_to: toString(s.valid_to)
+        valid_to: toString(s.valid_to),
+        derived_from_id: parent.id
     } as version_data
     """
     with driver.session() as session:
@@ -988,7 +990,8 @@ async def get_project_id_by_theme(theme_id: str) -> Optional[str]:
 async def get_project_id_by_factor(factor_id: str) -> Optional[str]:
     driver = get_driver()
     query = """
-    MATCH (p:Project)-[:HAS_THEME]->(t:Theme)-[:HAS_FACTOR]->(f:Factor {id: $fid})
+    MATCH (p:Project)-[:HAS_THEME]->(t)-[:HAS_FACTOR]->(f)
+    WHERE f.id = $fid
     RETURN p.id as pid
     """
     try:
@@ -1002,23 +1005,19 @@ async def get_project_id_by_factor(factor_id: str) -> Optional[str]:
 
 async def get_project_id_by_claim(claim_id: str) -> Optional[str]:
     driver = get_driver()
-    # Claim linked to Factor linked to Theme linked to Project
-    # Or Claim linked to Theme directly (via GENERATED)?
-    # Manual claims might not be directly linked to theme except via factors?
-    # Actually create_claim_manual links factors to Theme.
-    # Let's traverse via Source Factor -> Theme -> Project
     query = """
-    MATCH (p:Project)-[:HAS_THEME]->(t:Theme)-[:HAS_FACTOR]->(f:Factor)-[:CLAIMS]->(c:Claim {id: $cid})
+    MATCH (p:Project)-[:HAS_THEME]->(t)-[:HAS_VERSION]->(tv)-[:HAS_FACTOR]->(fv)-[:CLAIMS]->(cv)<-[:HAS_VERSION]-(cb:ClaimBase {id: $id})
     RETURN p.id as pid
     """
     try:
         with driver.session() as session:
-            result = session.run(query, {"cid": claim_id})
+            result = session.run(query, {"id": claim_id})
             record = result.single()
             return record["pid"] if record else None
     except Exception as e:
         logger.error(f"Error resolving project for claim {claim_id}: {e}")
         return None
+
         
 async def update_organization(org_id: str, name: Optional[str], description: Optional[str]):
     driver = get_driver()
@@ -1198,18 +1197,46 @@ async def create_factor_manual(name: str, description: Optional[str], type: str,
 
 async def update_factor_manual(factor_id: str, name: Optional[str], description: Optional[str], type: Optional[str], theme_id: Optional[str]):
     driver = get_driver()
+    
+    if not theme_id:
+        # Fallback/Legacy Attempt: Update by ID directly if it's a legacy Factor node
+        query = """
+        MATCH (f:Factor {id: $id})
+        SET f.name = coalesce($name, f.name), 
+            f.description = coalesce($desc, f.description),
+            f.type = coalesce($type, f.type)
+        """
+        with driver.session() as session:
+            session.run(query, {"id": factor_id, "name": name, "desc": description, "type": type})
+        return
+
+    # Versioned Update
     query = """
-    MATCH (f:Factor {id: $id})
-    SET f.name = coalesce($name, f.name), 
-        f.description = coalesce($desc, f.description),
-        f.type = coalesce($type, f.type)
+    MATCH (t:Theme {id: $tid})
+    MATCH (t)-[:HAS_VERSION]->(tv:ThemeVersion)
+    WHERE tv.status = 'active' AND tv.valid_to IS NULL
+    
+    MATCH (fb:FactorBase {id: $fid})
+    MATCH (tv)-[:HAS_FACTOR]->(fv:FactorVersion)
+    WHERE fv.base_id = fb.id
+    
+    SET fv.name = coalesce($name, fv.name), 
+        fv.description = coalesce($desc, fv.description),
+        fv.type = coalesce($type, fv.type)
     """
     with driver.session() as session:
-        session.run(query, {"id": factor_id, "name": name, "desc": description, "type": type})
+        session.run(query, {"fid": factor_id, "tid": theme_id, "name": name, "desc": description, "type": type})
 
 async def delete_factor_manual(factor_id: str):
     driver = get_driver()
-    query = "MATCH (f:Factor {id: $id}) DETACH DELETE f"
+    # Delete the FactorVersion from the ACTIVE ThemeVersion(s) associated with this Base ID.
+    query = """
+    MATCH (fb:FactorBase {id: $id})
+    MATCH (fb)-[:HAS_VERSION]->(fv:FactorVersion)
+    MATCH (tv:ThemeVersion)-[:HAS_FACTOR]->(fv)
+    WHERE tv.status = 'active' AND tv.valid_to IS NULL
+    DETACH DELETE fv
+    """
     with driver.session() as session:
         session.run(query, {"id": factor_id})
 
@@ -1282,6 +1309,17 @@ async def create_claim_manual(theme_id: str, source_id: str, target_id: str, sta
              raise ValueError("Could not create claim. Ensure Theme and Factors exist and are active in the current version.")
         return record["id"]
 
+async def delete_claim_manual(claim_id: str):
+    driver = get_driver()
+    query = """
+    MATCH (cb:ClaimBase {id: $id})
+    MATCH (cb)-[:HAS_VERSION]->(cv:ClaimVersion)
+    WHERE cv.valid_to IS NULL
+    DETACH DELETE cv
+    """
+    with driver.session() as session:
+        session.run(query, {"id": claim_id})
+
 async def create_decision(theme_id: str, description: str, author_id: str) -> str:
     """
     Finalizes the current ThemeVersion and creates a new one by Deep Copying all data.
@@ -1296,27 +1334,34 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
     did = str(uuid.uuid4())
     new_version_id = str(uuid.uuid4())
     
-    query = """
-    MATCH (t:ThemeBase {id: $tid})
+    # 1. Create Decision & Version Transition
+    # Returns the old version ID to facilitate copying
+    q_create_ver = """
+    MATCH (t:Theme:ThemeBase {id: $tid})
     MATCH (u:User {id: $uid})
     
-    // 1. Find Current Active Version
+    // Find Current Active Version
     MATCH (t)-[:HAS_VERSION]->(old_v:ThemeVersion)
     WHERE old_v.status = 'active' AND old_v.valid_to IS NULL
     
-    // 2. Create Decision
+    // Create Decision
     CREATE (d:Decision {
         id: $did, 
         description: $desc, 
         timestamp: datetime()
     })
     CREATE (u)-[:CREATED]->(d)
-    MERGE (old_v)-[:DECIDED_BY]->(d) // Link old version to decision
+    MERGE (old_v)-[:DECIDED_BY]->(d)
     
-    // 3. Close Old Version
+    // Close Old Version
     SET old_v.valid_to = datetime()
+    SET old_v.status = 'historical'
     
-    // 4. Create New Version
+    // Remove old active relationship
+    MATCH (t)-[r_active:HAS_ACTIVE_VERSION]->(old_v)
+    DELETE r_active
+    
+    // Create New Version
     CREATE (new_v:ThemeVersion {
         id: $new_vid,
         base_id: t.id,
@@ -1328,15 +1373,24 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
         valid_to: NULL
     })
     CREATE (t)-[:HAS_VERSION]->(new_v)
-    CREATE (d)-[:RESULTED_IN]->(new_v) // Decision leads to new version
-    CREATE (new_v)-[:DERIVED_FROM]->(old_v) // Lineage
+    CREATE (t)-[:HAS_ACTIVE_VERSION]->(new_v)
+    CREATE (d)-[:RESULTED_IN]->(new_v)
+    CREATE (new_v)-[:DERIVED_FROM]->(old_v)
     
-    // 5. DEEP COPY: Factors
-    // Find all factors belonging to the old version
-    WITH t, old_v, new_v
+    // Copy Role (Fixes access control)
+    // Assuming User needs access to new version too, if we used direct roles.
+    // But we switched to ThemeBase roles, so this is less critical, but good for consistency/auditing?
+    // Let's rely on ThemeBase role for now.
+    
+    RETURN new_v.id as new_id, old_v.id as old_id
+    """
+
+    # 2. Copy Factors
+    q_copy_factors = """
+    MATCH (old_v:ThemeVersion {id: $old_id})
+    MATCH (new_v:ThemeVersion {id: $new_id})
     MATCH (old_v)-[:HAS_FACTOR]->(old_f:FactorVersion)
     
-    // Create new FactorVersion nodes
     CREATE (new_f:FactorVersion {
         id: randomUUID(),
         base_id: old_f.base_id,
@@ -1349,32 +1403,31 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
         valid_to: NULL
     })
     CREATE (new_v)-[:HAS_FACTOR]->(new_f)
-    CREATE (new_f)-[:DERIVED_FROM]->(old_f) // Lineage
-    SET old_f.valid_to = datetime() // Close validity of old factor
+    CREATE (new_f)-[:DERIVED_FROM]->(old_f)
+    SET old_f.valid_to = datetime()
     
-    // Link to existing FactorBase
-    WITH new_v, old_v, old_f, new_f
+    // Link to Base
+    WITH new_f, old_f
     MATCH (fb:FactorBase {id: old_f.base_id})
     MERGE (fb)-[:HAS_VERSION]->(new_f)
+    """
+
+    # 3. Copy Claims
+    q_copy_claims = """
+    MATCH (new_v:ThemeVersion {id: $new_id})
+    // Resolve old claims via lineage of factors
+    // Find new factors in new version
+    MATCH (new_v)-[:HAS_FACTOR]->(new_f_source:FactorVersion)
+    MATCH (new_f_source)-[:DERIVED_FROM]->(old_f_source:FactorVersion)
     
-    // 6. DEEP COPY: Claims
-    // We need to reconstruct the claims between the NEW factors.
-    
-    // Map old factors to new factors
-    WITH new_v, old_v, collect({old: old_f, new: new_f}) as factor_map
-    
-    // Iterate over the map to find claims originating from old factors
-    UNWIND factor_map as source_map
-    WITH new_v, old_v, factor_map, source_map.old as old_f_source, source_map.new as new_f_source
+    // Traverse to old claim
     MATCH (old_f_source)-[:CLAIMS]->(old_c:ClaimVersion)-[:TO]->(old_f_target:FactorVersion)
-    WHERE (old_v)-[:HAS_FACTOR]->(old_f_target) // Ensure target is in OLD version (sanity check)
     
-    // Find the new target node in our map
-    WITH new_v, new_f_source, old_c, old_f_target, factor_map,
-         head([item in factor_map WHERE item.old = old_f_target | item.new]) as new_f_target
-    WHERE new_f_target IS NOT NULL
+    // Resolve new target factor
+    MATCH (new_f_target:FactorVersion)-[:DERIVED_FROM]->(old_f_target)
+    WHERE (new_v)-[:HAS_FACTOR]->(new_f_target)
     
-    // Create New ClaimVersion
+    // Create new claim
     CREATE (new_c:ClaimVersion {
         id: randomUUID(),
         base_id: old_c.base_id,
@@ -1390,65 +1443,139 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
     
     CREATE (new_f_source)-[:CLAIMS]->(new_c)
     CREATE (new_c)-[:TO]->(new_f_target)
-    CREATE (new_c)-[:DERIVED_FROM]->(old_c) // Lineage
-    SET old_c.valid_to = datetime() // Close validity of old claim
+    CREATE (new_c)-[:DERIVED_FROM]->(old_c)
+    SET old_c.valid_to = datetime()
     
-    // Link to existing ClaimBase
-    WITH new_c, old_c, new_v
+    // Link to Base
+    WITH new_c, old_c
     MATCH (cb:ClaimBase {id: old_c.base_id})
     MERGE (cb)-[:HAS_VERSION]->(new_c)
-    
-    RETURN new_v.id as id
     """
-    
+
     with driver.session() as session:
-        return session.run(query, {
+        # Step 1: Create Version
+        result = session.run(q_create_ver, {
             "tid": theme_id, 
             "did": did, 
             "desc": description, 
             "uid": author_id,
             "new_vid": new_version_id
-        }).single()["id"]
+        }).single()
+        
+        if not result:
+            raise ValueError(f"Failed to create decision. Check if theme {theme_id} exists and has an active version.")
+            
+        old_version_id = result["old_id"]
+        
+        # Step 2: Copy Factors (Empty if no factors)
+        session.run(q_copy_factors, {"old_id": old_version_id, "new_id": new_version_id})
+        
+        # Step 3: Copy Claims (Empty if no claims)
+        session.run(q_copy_claims, {"new_id": new_version_id})
+        
+        return new_version_id
 
 async def update_claim_manual(claim_id: str, statement: Optional[str], polarity: Optional[str], confidence: Optional[float], source_id: Optional[str], target_id: Optional[str]):
     driver = get_driver()
     query = """
-    MATCH (c:Claim {id: $id})
-    SET c.statement = coalesce($stmt, c.statement),
-        c.polarity = coalesce($pol, c.polarity),
-        c.confidence = coalesce($conf, c.confidence)
+    MATCH (cb:ClaimBase {id: $id})
+    MATCH (cb)-[:HAS_VERSION]->(cv:ClaimVersion)
+    WHERE cv.valid_to IS NULL
+    SET cv.statement = coalesce($stmt, cv.statement),
+        cv.polarity = coalesce($pol, cv.polarity),
+        cv.confidence = coalesce($conf, cv.confidence)
     """
     with driver.session() as session:
         session.run(query, {"id": claim_id, "stmt": statement, "pol": polarity, "conf": confidence})
 
-async def delete_claim_manual(claim_id: str):
-    driver = get_driver()
-    query = "MATCH (c:Claim {id: $id}) DETACH DELETE c"
-    with driver.session() as session:
-        session.run(query, {"id": claim_id})
 
-async def create_conversation_thread(version_id: str, topic: str) -> str:
+
+# --- Conversation Threads (Restored) ---
+
+async def create_conversation_thread(target_id: str, topic: str) -> str:
     driver = get_driver()
     tid = str(uuid.uuid4())
+    # Generic link: any node 's' with id=target_id
+    # CRITICAL FIX: Ensure we are targeting a Version node if possible, or support generic attachment.
+    # The frontend is expected to pass the Version ID (ThemeVersion, FactorVersion, etc.)
+    # If the user passes a Base ID, it might legally attach to the Base, but usually we want context.
+    # We will trust the ID passed, but add logging if it looks like a Base ID attached.
     query = """
-    MATCH (s:ThemeVersion {id: $sid})
-    CREATE (t:ConversationThread {id: $id, topic: $topic, status: 'active', created_at: datetime()})
+    MATCH (s {id: $sid})
+    CREATE (t:ConversationThread {id: $id, topic: $topic, status: 'active', created_at: datetime(), target_id: $sid})
     CREATE (s)-[:HAS_THREAD]->(t)
     RETURN t.id as id
     """
     with driver.session() as session:
-        return session.run(query, {"sid": version_id, "id": tid, "topic": topic}).single()["id"]
+        return session.run(query, {"sid": target_id, "id": tid, "topic": topic}).single()["id"]
 
-async def get_threads_by_theme_version(version_id: str) -> List[Dict]:
+async def get_threads_by_target(target_id: str) -> List[Dict]:
     driver = get_driver()
     query = """
-    MATCH (s:ThemeVersion {id: $sid})-[:HAS_THREAD]->(t:ConversationThread)
+    MATCH (s)
+    WHERE s.id = $sid
+    MATCH (s)-[:HAS_THREAD]->(t:ConversationThread)
+    OPTIONAL MATCH (t)<-[:BELONGS_TO]-(m:ConversationMessage)
+    WITH t, s, count(m) as msg_count
     RETURN {
         id: t.id,
         topic: t.topic,
         status: t.status,
-        created_at: toString(t.created_at)
+        created_at: toString(t.created_at),
+        target_id: s.id,
+        message_count: msg_count
     } as thread_data
     """
     with driver.session() as session:
-        return [r["thread_data"] for r in session.run(query, {"sid": version_id})]
+        return [r["thread_data"] for r in session.run(query, {"sid": target_id})]
+
+async def get_thread_counts(target_ids: List[str]) -> Dict[str, int]:
+    if not target_ids:
+        return {}
+    driver = get_driver()
+    query = """
+    MATCH (s)
+    WHERE s.id IN $target_ids
+    MATCH (s)-[:HAS_THREAD]->(t:ConversationThread)
+    RETURN s.id as target_id, count(t) as thread_count
+    """
+    with driver.session() as session:
+        result = session.run(query, {"target_ids": target_ids})
+        return {r["target_id"]: r["thread_count"] for r in result}
+
+async def create_thread_message(thread_id: str, user_id: str, content: str) -> Dict[str, Any]:
+    driver = get_driver()
+    msg_id = str(uuid.uuid4())
+    query = """
+    MATCH (t:ConversationThread {id: $tid})
+    MATCH (u:User {id: $uid})
+    CREATE (m:ConversationMessage {id: $mid, content: $content, created_at: datetime(), user_id: $uid})
+    CREATE (m)-[:BELONGS_TO]->(t)
+    CREATE (u)-[:AUTHORED]->(m)
+    RETURN {
+        id: m.id,
+        content: m.content,
+        created_at: toString(m.created_at),
+        user_id: m.user_id,
+        author_name: coalesce(u.name, u.email)
+    } as msg
+    """
+    with driver.session() as session:
+        return session.run(query, {"tid": thread_id, "mid": msg_id, "content": content, "uid": user_id}).single()["msg"]
+
+async def get_thread_messages(thread_id: str) -> List[Dict[str, Any]]:
+    driver = get_driver()
+    query = """
+    MATCH (m:ConversationMessage)-[:BELONGS_TO]->(t:ConversationThread {id: $tid})
+    OPTIONAL MATCH (u:User)-[:AUTHORED]->(m)
+    RETURN {
+        id: m.id,
+        content: m.content,
+        created_at: toString(m.created_at),
+        user_id: m.user_id,
+        author_name: coalesce(u.name, u.email, 'Unknown')
+    } as msg
+    ORDER BY m.created_at ASC
+    """
+    with driver.session() as session:
+        return [r["msg"] for r in session.run(query, {"tid": thread_id})]

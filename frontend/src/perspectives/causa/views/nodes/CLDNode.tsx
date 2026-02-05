@@ -1,9 +1,10 @@
-import type { FunctionComponent } from 'react';
-import { memo } from 'react';
+import { memo, type FunctionComponent, type MouseEvent } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
-import { Wrench, Cloud, Cpu, Target, HelpCircle, type LucideProps } from 'lucide-react';
+import { Wrench, Cloud, Cpu, Target, HelpCircle, MessageSquare, type LucideProps } from 'lucide-react';
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 // Use strict Lucide types
 const iconMap: Record<string, FunctionComponent<LucideProps>> = {
@@ -46,25 +47,9 @@ const roleStyles: Record<string, { color: string, badge: string, icon: string }>
 const CARD_WIDTH = '140px';
 const CARD_HEIGHT = '100px';
 
-const CLDNode: FunctionComponent<NodeProps> = ({ data, selected }) => {
-    // Robust access to type from data.description? (Actually stored in 'type' field from mapper)
-    // The mapper puts 'system' or 'factor' in type. BUT we need the SUBTYPE (middel, extern, etc).
-    // The previous analysis showed FactorNode uses `data.type`. 
-    // BUT my mapper currently puts 'system' vs 'factor' in `node.type`.
-    // Wait, let's check mappers.ts again.
-    // mappers.ts: type: factor.type === 'systeemelement' ? 'system' : 'factor'
-    // WRONG. It loses the distinction between 'middel', 'criterium', etc.
-    // I need to fix mappers.ts to pass the ORIGINAL type in data.subtype or similar.
-
-    // For now, I will use `data.type` if it matches, otherwise fallback.
-    // But `CLDView` passes `data: { label: cn.label, type: cn.type, description: cn.description }`.
-    // And `cn.type` is restricted to 'factor' | 'system' by `CausalNode` interface.
-
-    // ACTION: I must first update `CausalNode` interface and `mapper` to carry the 'role' (middel/extern...).
-
-    // Interim Implementation (will refine after data fix):
+const CLDNode: FunctionComponent<NodeProps> = ({ id, data, selected }) => {
     const role = (data.role || 'systeemelement').toLowerCase() as keyof typeof iconMap;
-    // Note: I will update mapper to pass `role`. 
+    const isReadOnly = data.isReadOnly || false;
 
     const Icon = iconMap[role] || iconMap.unknown;
     const styles = roleStyles[role] || roleStyles.unknown;
@@ -84,26 +69,47 @@ const CLDNode: FunctionComponent<NodeProps> = ({ data, selected }) => {
         >
             {/* Connection Handles - 8 handles for bidirectional connections on all sides */}
             {/* Left */}
-            <Handle id="target-left" type="target" position={Position.Left} className="w-2 h-2 !bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <Handle id="source-left" type="source" position={Position.Left} className="w-2 h-2 !bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            {/* Left */}
+            <Handle id="target-left" type="target" position={Position.Left} isConnectable={!isReadOnly} className={cn("w-2 h-2 !bg-slate-400 transition-opacity", !isReadOnly ? "opacity-0 group-hover:opacity-100" : "opacity-0")} />
+            <Handle id="source-left" type="source" position={Position.Left} isConnectable={!isReadOnly} className={cn("w-2 h-2 !bg-slate-400 transition-opacity", !isReadOnly ? "opacity-0 group-hover:opacity-100" : "opacity-0")} />
 
             {/* Right */}
-            <Handle id="target-right" type="target" position={Position.Right} className="w-2 h-2 !bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <Handle id="source-right" type="source" position={Position.Right} className="w-2 h-2 !bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <Handle id="target-right" type="target" position={Position.Right} isConnectable={!isReadOnly} className={cn("w-2 h-2 !bg-slate-400 transition-opacity", !isReadOnly ? "opacity-0 group-hover:opacity-100" : "opacity-0")} />
+            <Handle id="source-right" type="source" position={Position.Right} isConnectable={!isReadOnly} className={cn("w-2 h-2 !bg-slate-400 transition-opacity", !isReadOnly ? "opacity-0 group-hover:opacity-100" : "opacity-0")} />
 
             {/* Top */}
-            <Handle id="target-top" type="target" position={Position.Top} className="w-2 h-2 !bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <Handle id="source-top" type="source" position={Position.Top} className="w-2 h-2 !bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <Handle id="target-top" type="target" position={Position.Top} isConnectable={!isReadOnly} className={cn("w-2 h-2 !bg-slate-400 transition-opacity", !isReadOnly ? "opacity-0 group-hover:opacity-100" : "opacity-0")} />
+            <Handle id="source-top" type="source" position={Position.Top} isConnectable={!isReadOnly} className={cn("w-2 h-2 !bg-slate-400 transition-opacity", !isReadOnly ? "opacity-0 group-hover:opacity-100" : "opacity-0")} />
 
             {/* Bottom */}
-            <Handle id="target-bottom" type="target" position={Position.Bottom} className="w-2 h-2 !bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <Handle id="source-bottom" type="source" position={Position.Bottom} className="w-2 h-2 !bg-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <Handle id="target-bottom" type="target" position={Position.Bottom} isConnectable={!isReadOnly} className={cn("w-2 h-2 !bg-slate-400 transition-opacity", !isReadOnly ? "opacity-0 group-hover:opacity-100" : "opacity-0")} />
+            <Handle id="source-bottom" type="source" position={Position.Bottom} isConnectable={!isReadOnly} className={cn("w-2 h-2 !bg-slate-400 transition-opacity", !isReadOnly ? "opacity-0 group-hover:opacity-100" : "opacity-0")} />
 
             {/* Header / Tag */}
-            <div className="pt-2 px-2 flex justify-center">
+            <div className="relative flex justify-center pt-2 px-2">
                 <Badge variant="outline" className={`text-[10px] px-2 py-0 h-5 border shadow-none ${styles.badge}`}>
                     {role.charAt(0).toUpperCase() + role.slice(1)}
                 </Badge>
+
+                {/* Thread Indicator */}
+                {data.threadCount !== undefined && (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                            "absolute right-1 top-1 h-6 gap-1 px-1.5 rounded-full text-[10px] font-medium transition-colors hover:bg-muted",
+                            data.threadCount > 0 ? "text-primary bg-primary/10" : "text-muted-foreground opacity-0 group-hover:opacity-100"
+                        )}
+                        onClick={(e: MouseEvent) => {
+                            e.stopPropagation();
+                            // Prefer version_id to attach thread to the specific version, fallback to base id (identity)
+                            data.onOpenThread?.(data.version_id || id, data.label, { x: e.clientX, y: e.clientY });
+                        }}
+                    >
+                        <MessageSquare className="w-3 h-3" />
+                        {data.threadCount > 0 && <span>{data.threadCount}</span>}
+                    </Button>
+                )}
             </div>
 
             {/* Body / Title */}

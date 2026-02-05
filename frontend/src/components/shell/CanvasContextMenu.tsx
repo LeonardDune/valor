@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { MessageSquareText, X } from 'lucide-react';
+import { MessageSquareText, MessageSquare, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
@@ -41,6 +41,11 @@ interface CanvasContextMenuProps {
     onOpenObjectConversation: (object: ContextObject) => void;
 
     /**
+     * Handler to open the human-to-human discussion thread
+     */
+    onOpenThread?: (object: ContextObject) => void;
+
+    /**
      * Handler to edit the object
      */
     onEdit?: (object: ContextObject) => void;
@@ -58,6 +63,7 @@ export const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
     contextObject,
     onDismiss,
     onOpenObjectConversation,
+    onOpenThread,
     onEdit,
     additionalActions = [],
     className
@@ -83,6 +89,9 @@ export const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
         };
     }, [onDismiss]);
 
+    // Check ReadOnly state from contextObject.data (populated by CLDView onNodeContextMenu)
+    const isReadOnly = contextObject.data?.isReadOnly || contextObject.isReadOnly || false;
+
     // Adjust position to fetch viewport boundaries if needed (simple implementation for now)
     const style = {
         top: position.y,
@@ -107,7 +116,7 @@ export const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
                 <button
                     onClick={onDismiss}
                     className="text-muted-foreground hover:text-foreground"
-                    aria-label="Close menu"
+                    aria-label="Sluiten"
                 >
                     <X className="h-3 w-3" />
                 </button>
@@ -125,23 +134,41 @@ export const CanvasContextMenu: React.FC<CanvasContextMenuProps> = ({
                     }}
                 >
                     <span className="h-4 w-4 flex items-center justify-center">✎</span>
-                    <span>Bewerken</span>
+                    <span>{isReadOnly ? 'Details bekijken' : 'Bewerken'}</span>
                 </Button>
             )}
 
-            {/* Primary Action: Conversation */}
-            <Button
-                variant="ghost"
-                size="sm"
-                className="justify-start gap-2 h-8 px-2 w-full text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/20"
-                onClick={() => {
-                    onOpenObjectConversation(contextObject);
-                    onDismiss();
-                }}
-            >
-                <MessageSquareText className="h-4 w-4" />
-                <span>Open Conversation</span>
-            </Button>
+            {/* Primary Action: AI Conversation - Hide in ReadOnly */}
+            {!isReadOnly && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="justify-start gap-2 h-8 px-2 w-full text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-900/20"
+                    onClick={() => {
+                        onOpenObjectConversation(contextObject);
+                        onDismiss();
+                    }}
+                >
+                    <MessageSquareText className="h-4 w-4" />
+                    <span>AI Chat openen</span>
+                </Button>
+            )}
+
+            {/* Human Thread Action - Always allow viewing discussions */}
+            {onOpenThread && (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="justify-start gap-2 h-8 px-2 w-full text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                    onClick={() => {
+                        onOpenThread(contextObject);
+                        onDismiss();
+                    }}
+                >
+                    <MessageSquare className="h-4 w-4" />
+                    <span>Discussie openen</span>
+                </Button>
+            )}
 
             {/* Additional Actions */}
             {additionalActions.map((action) => (
