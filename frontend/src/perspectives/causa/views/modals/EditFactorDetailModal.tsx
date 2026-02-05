@@ -22,6 +22,7 @@ interface EditFactorDetailModalProps {
     onRefresh: () => void;
     factors: any[];
     themeId: string;
+    readOnly?: boolean;
 }
 
 export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
@@ -30,7 +31,8 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
     onOpenChange,
     onRefresh,
     factors: _factors,
-    themeId
+    themeId,
+    readOnly = false
 }) => {
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
@@ -170,7 +172,9 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             {isNode ? <Type size={16} className="text-blue-500" /> : <LinkIcon size={16} className="text-indigo-500" />}
-                            {isNode ? 'Factor Bewerken' : 'Verbinding Bewerken'}
+                            {isNode
+                                ? (readOnly ? 'Factor Details' : 'Factor Bewerken')
+                                : (readOnly ? 'Verbinding Details' : 'Verbinding Bewerken')}
                         </DialogTitle>
                     </DialogHeader>
 
@@ -179,11 +183,11 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
                             <>
                                 <div className="grid gap-2">
                                     <Label htmlFor="name">Naam</Label>
-                                    <Input id="name" value={name} onChange={e => setName(e.target.value)} />
+                                    <Input id="name" value={name} onChange={e => setName(e.target.value)} disabled={readOnly} />
                                 </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="role">Rol (TU Delft)</Label>
-                                    <Select value={type} onValueChange={(val) => setType(val as FactorType)}>
+                                    <Select value={type} onValueChange={(val) => setType(val as FactorType)} disabled={readOnly}>
                                         <SelectTrigger>
                                             <SelectValue placeholder="Selecteer rol" />
                                         </SelectTrigger>
@@ -197,10 +201,10 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
                                 </div>
                                 <div className="grid gap-2">
                                     <Label htmlFor="description">Beschrijving</Label>
-                                    <Textarea id="description" value={description} onChange={e => setDescription(e.target.value)} />
+                                    <Textarea id="description" value={description} onChange={e => setDescription(e.target.value)} disabled={readOnly} />
                                 </div>
 
-                                {(_factors.length > 1 && selection.data) && (
+                                {(!readOnly && _factors.length > 1 && selection.data) && (
                                     <div className="border-t pt-4 mt-2">
                                         <Label className="mb-2 block text-blue-500">Nieuwe Verbinding</Label>
                                         <div className="space-y-3 bg-slate-50 p-3 rounded-md">
@@ -277,12 +281,12 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
 
                                 <div className="grid gap-2">
                                     <Label htmlFor="statement">Claim</Label>
-                                    <Textarea id="statement" value={statement} onChange={e => setStatement(e.target.value)} />
+                                    <Textarea id="statement" value={statement} onChange={e => setStatement(e.target.value)} disabled={readOnly} />
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="grid gap-2">
                                         <Label>Polariteit</Label>
-                                        <Select value={polarity} onValueChange={setPolarity}>
+                                        <Select value={polarity} onValueChange={setPolarity} disabled={readOnly}>
                                             <SelectTrigger>
                                                 <SelectValue />
                                             </SelectTrigger>
@@ -299,6 +303,7 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
                                             type="number" step="0.1" min="0" max="1"
                                             value={confidence}
                                             onChange={e => setConfidence(parseFloat(e.target.value))}
+                                            disabled={readOnly}
                                         />
                                     </div>
                                 </div>
@@ -307,17 +312,27 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
                     </div>
 
                     <DialogFooter className="flex justify-between sm:justify-between">
-                        <Button variant="destructive" size="sm" onClick={() => setIsDeleteDialogOpen(true)} disabled={isSaving}>
-                            <Trash2 size={14} className="mr-2" /> Verwijderen
-                        </Button>
-                        <div className="flex gap-2">
-                            <DialogClose asChild>
-                                <Button variant="outline" size="sm">Annuleren</Button>
-                            </DialogClose>
-                            <Button size="sm" onClick={handleSave} disabled={isSaving}>
-                                <Save size={14} className="mr-2" /> {isSaving ? 'Opslaan...' : 'Opslaan'}
-                            </Button>
-                        </div>
+                        {readOnly ? (
+                            <div className="flex justify-end w-full">
+                                <Button variant="secondary" onClick={() => onOpenChange(false)}>
+                                    Sluiten
+                                </Button>
+                            </div>
+                        ) : (
+                            <>
+                                <Button variant="destructive" size="sm" onClick={() => setIsDeleteDialogOpen(true)} disabled={isSaving}>
+                                    <Trash2 size={14} className="mr-2" /> Verwijderen
+                                </Button>
+                                <div className="flex gap-2">
+                                    <DialogClose asChild>
+                                        <Button variant="outline" size="sm">Annuleren</Button>
+                                    </DialogClose>
+                                    <Button size="sm" onClick={handleSave} disabled={isSaving}>
+                                        <Save size={14} className="mr-2" /> {isSaving ? 'Opslaan...' : 'Opslaan'}
+                                    </Button>
+                                </div>
+                            </>
+                        )}
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

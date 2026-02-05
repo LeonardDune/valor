@@ -46,6 +46,7 @@ export interface Claim {
     relationship_type: string;
     polarity: string;
     created_at?: string;
+    version_id?: string;
 }
 
 export interface AgentResponse {
@@ -67,6 +68,7 @@ export interface Factor {
     name: string;
     description: string;
     type: FactorType;
+    version_id?: string;
 }
 
 export interface Organization {
@@ -148,6 +150,7 @@ export interface ThemeVersion {
     created_at?: string;
     valid_from?: string;
     valid_to?: string;
+    derived_from_id?: string;
 }
 
 
@@ -164,8 +167,10 @@ export interface Invite {
 export interface ConversationThread {
     id: string;
     topic: string;
-    status: string;
+    status: 'open' | 'closed' | 'archived' | 'active';
     created_at: string;
+    target_id?: string;
+    message_count?: number;
 }
 
 export const api = {
@@ -382,7 +387,7 @@ export const api = {
         return response.data;
     },
 
-    createThread: async (versionId: string, topic: string) => {
+    createVersionThread: async (versionId: string, topic: string) => {
         const response = await apiClient.post<ConversationThread>(`/versions/${versionId}/threads`, { topic });
         return response.data;
     },
@@ -502,8 +507,46 @@ export const api = {
             params: { status, author }
         });
         return response.data;
+    },
+
+    // Threads
+    getThreads: async (targetId: string): Promise<ConversationThread[]> => {
+        const response = await apiClient.get<ConversationThread[]>('/threads', { params: { target_id: targetId } });
+        return response.data;
+    },
+
+    createThread: async (targetId: string, topic: string): Promise<ConversationThread> => {
+        const response = await apiClient.post('/threads', { target_id: targetId, topic });
+        return {
+            ...response.data,
+            status: 'open',
+            created_at: new Date().toISOString()
+        } as ConversationThread;
+    },
+
+    getThreadStats: async (targetIds: string[]): Promise<Record<string, number>> => {
+        const response = await apiClient.post<Record<string, number>>('/threads/stats', targetIds);
+        return response.data;
+    },
+
+    createThreadMessage: async (threadId: string, content: string): Promise<ConversationMessage> => {
+        const response = await apiClient.post<ConversationMessage>(`/threads/${threadId}/messages`, { content });
+        return response.data;
+    },
+
+    getThreadMessages: async (threadId: string): Promise<ConversationMessage[]> => {
+        const response = await apiClient.get<ConversationMessage[]>(`/threads/${threadId}/messages`);
+        return response.data;
     }
 };
+
+export interface ConversationMessage {
+    id: string;
+    thread_id: string;
+    content: string;
+    role: 'user' | 'assistant';
+    created_at: string;
+}
 
 export type LifecycleStatus = 'draft' | 'proposed' | 'accepted' | 'rejected' | 'deprecated';
 

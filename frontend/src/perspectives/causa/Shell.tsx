@@ -204,7 +204,7 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
     };
 
     const handleEdit = (sel: { type: 'node' | 'link'; data: any }) => {
-        if (isReadOnly) return;
+        // Allow opening modal even in read-only mode (modal itself handles read-only state)
         setLocalSelection(sel); // Ensure it is selected
         setIsEditModalOpen(true);
     };
@@ -309,6 +309,7 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                 onViewportChange={setViewport}
                 onInit={setRfInstance}
                 onConnect={isReadOnly ? undefined : handleConnect}
+                isReadOnly={isReadOnly}
             />
 
 
@@ -327,6 +328,7 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                 themeId={themeId}
                 factors={factors}
                 onRefresh={refresh}
+                readOnly={isReadOnly}
             />
             {/* Presence Overlay */}
             <div className="absolute inset-0 pointer-events-none z-50">

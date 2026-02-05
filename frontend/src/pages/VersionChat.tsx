@@ -46,7 +46,7 @@ export const VersionChat: React.FC = () => {
         if (!newThreadTopic.trim() || !versionId) return;
 
         try {
-            const newThread = await api.createThread(versionId, newThreadTopic);
+            const newThread = await api.createVersionThread(versionId, newThreadTopic);
             setThreads(prev => [newThread, ...prev]);
             setActiveThreadId(newThread.id);
             setIsCreating(false);
