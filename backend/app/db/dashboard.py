@@ -5,7 +5,7 @@ from app.models.domain import Role, LifecycleStatus
 
 logger = logging.getLogger(__name__)
 
-async def get_user_environments(user_email: str) -> List[Dict]:
+async def get_user_environments(user_id: str) -> List[Dict]:
     """
     Recursively fetches the environment hierarchy for a user.
     Organization -> Projects -> Themes
@@ -21,7 +21,7 @@ async def get_user_environments(user_email: str) -> List[Dict]:
     # but for now we stick to explicit MEMBER_OF relationships or ADMIN roles on parents.
     
     query = """
-    MATCH (u:User {email: toLower($email)})
+    MATCH (u:User {id: $uid})
     
     // 1. Find Organizations via multiple paths
     // Path A: Direct Organization Membership
@@ -129,7 +129,7 @@ async def get_user_environments(user_email: str) -> List[Dict]:
     
     try:
         with driver.session() as session:
-            result = session.run(query, {"email": user_email})
+            result = session.run(query, {"uid": user_id})
             record = result.single()
             if record and record["environments"]:
                 return record["environments"]
@@ -138,7 +138,7 @@ async def get_user_environments(user_email: str) -> List[Dict]:
         logger.error(f"Failed to fetch user environments: {e}")
         return []
 
-async def get_user_themes(user_email: str) -> List[Dict]:
+async def get_user_themes(user_id: str) -> List[Dict]:
     """
     Returns a flat list of themes the user has access to.
     Access can be via:
@@ -150,7 +150,7 @@ async def get_user_themes(user_email: str) -> List[Dict]:
     driver = get_driver()
     
     query = """
-    MATCH (u:User {email: toLower($email)})
+    MATCH (u:User {id: $uid})
     
     // 1. Find all accessible Themes via recursive permissions
     // This looks for any path from User -> ... -> Theme where a role exists
@@ -229,7 +229,7 @@ async def get_user_themes(user_email: str) -> List[Dict]:
     
     try:
         with driver.session() as session:
-            result = session.run(query, {"email": user_email})
+            result = session.run(query, {"uid": user_id})
             themes = [record["theme_data"] for record in result]
             return themes
     except Exception as e:

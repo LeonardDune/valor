@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from datetime import datetime
 import uuid
 
@@ -124,6 +124,7 @@ class WorkspaceStatus(str, Enum):
 
 class Role(str, Enum):
     ADMIN = "admin"
+    MODERATOR = "moderator"
     MEMBER = "member"
     VIEWER = "viewer"
 
@@ -191,3 +192,12 @@ class ThreadCreate(BaseModel):
 
 class ThreadMessageCreate(BaseModel):
     content: str
+
+
+class VotingSession(BaseModel):
+    id: str
+    theme_version_id: str
+    status: str = "active"
+    config: Dict[str, Any]
+    created_by: str
+    created_at: datetime

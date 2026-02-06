@@ -189,31 +189,7 @@ async def create_proposal(title: str, author_id: str, description: Optional[str]
     proposal_id = str(uuid.uuid4())
     
     query = """
-    MATCH (u:User {id: $author_id}) # Expecting internal ID, or match by email if author_id is email?
-    # Usually author_id is passed as internal ID from get_current_user logic if available, 
-    # but currently our user/auth system uses email often. 
-    # Let's assume author_id is ID. If fails, we might need to MATCH by email?
-    # In main.py create_proposal uses request.author_id.
-    
-    CREATE (p:Proposal {
-        id: $id,
-        title: $title,
-        description: $description,
-        type: $type,
-        target_id: $target_id,
-        status: 'proposed',
-        created_at: datetime()
-    })
-    CREATE (u)-[:CREATED]->(p)
-    RETURN p.id as id
-    """
-    # Fallback if author_id is actually an email (common in this codebase transitions)
-    # logic: try match by id, if not found try match by email? 
-    # Cypher: MATCH (u:User) WHERE u.id = $aid OR u.email = $aid
-    
-    query = """
-    MATCH (u:User) WHERE u.id = $author_id OR u.email = $author_id
-    WITH u LIMIT 1
+    MATCH (u:User {id: $author_id})
     CREATE (p:Proposal {
         id: $id,
         title: $title,
@@ -260,7 +236,7 @@ async def get_proposals(status: Optional[str] = None, author_id: Optional[str] =
         params["status"] = status
         
     if author_id:
-        where_clauses.append("(u.id = $author_id OR u.email = $author_id)")
+        where_clauses.append("u.id = $author_id")
         params["author_id"] = author_id
 
     if where_clauses:
@@ -381,18 +357,18 @@ async def get_organizations() -> List[Dict]:
         logger.error(f"Error listing orgs: {e}")
         return []
 
-async def get_user_organizations(email: str) -> List[Dict]:
+async def get_user_organizations(user_id: str) -> List[Dict]:
     """Returns orgs for a specific user."""
     driver = get_driver()
     query = """
-    MATCH (u:User {email: toLower($email)})
+    MATCH (u:User {id: $uid})
     MATCH (u)-[:HAS_ROLE]->(o:Organization)
     WHERE o.status IS NULL OR o.status <> 'archived'
     RETURN o
     """
     try:
         with driver.session() as session:
-            result = session.run(query, {"email": email})
+            result = session.run(query, {"uid": user_id})
             return [dict(record["o"]) for record in result]
     except Exception as e:
         return []
@@ -672,11 +648,11 @@ async def archive_project(project_id: str):
     with driver.session() as session:
         session.run(query, {"id": project_id})
 
-async def get_project_themes(project_id: str, user_email: str) -> List[Dict]:
+async def get_project_themes(project_id: str, user_id: str) -> List[Dict]:
     driver = get_driver()
     query = """
     MATCH (org:Organization)-[:OWNS]->(p:Project {id: $pid})
-    MATCH (u:User {email: toLower($email)})
+    MATCH (u:User {id: $uid})
     
     // Determine hierarchy roles
     OPTIONAL MATCH (u)-[r_org:HAS_ROLE]->(org)
@@ -718,6 +694,7 @@ async def get_project_themes(project_id: str, user_email: str) -> List[Dict]:
         description: t.description,
         project_name: p.name,
         organization_name: org.name,
+        organization_id: org.id,
         role: effective_role,
         status: t.status,
         is_archived: (t.status = 'archived' OR p.status = 'archived' OR org.status = 'archived'),
@@ -728,7 +705,7 @@ async def get_project_themes(project_id: str, user_email: str) -> List[Dict]:
     } as theme_data
     """
     with driver.session() as session:
-        return [r["theme_data"] for r in session.run(query, {"pid": project_id, "email": user_email})]
+        return [r["theme_data"] for r in session.run(query, {"pid": project_id, "uid": user_id})]
 
 async def create_theme(project_id: str, name: str, description: Optional[str] = None, owner_id: Optional[str] = None) -> str:
     driver = get_driver()

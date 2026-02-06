@@ -23,6 +23,11 @@ import { EditFactorDetailModal } from './views/modals/EditFactorDetailModal';
 import { api } from '../../services/api';
 import type { ConversationContext } from '@/types/conversation';
 import { PresenceLayer } from '@/components/graph/PresenceLayer';
+import { VotingConfigModal } from '@/components/voting/VotingConfigModal';
+import { sessionService } from '@/services/sessions';
+import type { VotingSessionConfig } from '@/types/session';
+import { Target } from 'lucide-react';
+import { useTheme } from '../../context/ThemeContext';
 
 export interface CausaShellProps {
     themeId: string;
@@ -47,6 +52,12 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
     const containerRef = useRef<HTMLDivElement>(null);
     const { exportAsPng, exportAsPdf, exportAsSvg, isExporting } = useDomExport(containerRef);
     const [rfInstance, setRfInstance] = useState<any>(null);
+    const [isVotingModalOpen, setIsVotingModalOpen] = useState(false);
+    const [isStartingSession, setIsStartingSession] = useState(false);
+    const { activeVersion } = useTheme();
+
+    // Moderator Check: Use role from activeThemeVersion (sourced from Neo4j)
+    const isModerator = activeVersion?.role === 'moderator' || activeVersion?.role === 'admin';
 
 
 
@@ -245,6 +256,19 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
         }
     };
 
+    const handleStartVoting = async (config: VotingSessionConfig) => {
+        if (!versionId) return;
+        setIsStartingSession(true);
+        try {
+            await sessionService.startSession(versionId, config);
+            setIsVotingModalOpen(false);
+        } catch (error) {
+            console.error('Failed to start voting session', error);
+        } finally {
+            setIsStartingSession(false);
+        }
+    };
+
     // Viewport State for Presence Sync
     const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
 
@@ -290,6 +314,25 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                                 </Button>
                             </TooltipTrigger>
                             <TooltipContent>Nieuwe Factor</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                )}
+
+                {/* Voting Button - Moderator Only */}
+                {!isReadOnly && isModerator && (
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    size="sm"
+                                    onClick={() => setIsVotingModalOpen(true)}
+                                    variant="ghost"
+                                    className="h-8 w-8 p-0"
+                                >
+                                    <Target className="h-4 w-4 text-orange-500" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Stemsessie Starten</TooltipContent>
                         </Tooltip>
                     </TooltipProvider>
                 )}
@@ -341,6 +384,13 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                     viewport={viewport}
                 />
             </div>
+
+            <VotingConfigModal
+                isOpen={isVotingModalOpen}
+                onClose={() => setIsVotingModalOpen(false)}
+                onStart={handleStartVoting}
+                isLoading={isStartingSession}
+            />
         </div >
     );
 };

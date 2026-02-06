@@ -9,19 +9,14 @@ from neo4j.exceptions import ConstraintError
 
 logger = logging.getLogger(__name__)
 
-async def create_invite(inviter_email: str, target_email: str, entity_id: str, role: Role = Role.MEMBER, expires_in_days: int = 7, redirect_url: Optional[str] = None) -> Dict:
+async def create_invite(inviter_id: str, target_email: str, entity_id: str, role: Role = Role.MEMBER, expires_in_days: int = 7, redirect_url: Optional[str] = None) -> Dict:
     """
     Creates an invite for a user to join an entity.
-    If user exists, it MIGHT define direct add logic (hybrid), 
-    but per plan we rely on this function primarily for the 'Pending' flow 
-    or just creating the Invite node regardless.
-    
-    Start by checking if Inviter has Admin rights.
     """
     # 1. Check Permissions
-    can_invite = await check_permission(inviter_email, entity_id, Role.ADMIN)
+    can_invite = await check_permission(inviter_id, entity_id, Role.ADMIN)
     if not can_invite:
-        raise Exception(f"User {inviter_email} is not authorized to invite to entity {entity_id}")
+        raise Exception(f"User {inviter_id} is not authorized to invite to entity {entity_id}")
 
 
     # 2. Supabase Integration (Admin Invite)
@@ -74,7 +69,7 @@ async def create_invite(inviter_email: str, target_email: str, entity_id: str, r
     expiration = datetime.now() + timedelta(days=expires_in_days)
     
     query = """
-    MATCH (inviter:User {email: $inviter_email})
+    MATCH (inviter:User {id: $inviter_id})
     MATCH (entity {id: $entity_id}) // Match Org, Project, or Theme
     
     CREATE (i:Invite {
@@ -98,7 +93,7 @@ async def create_invite(inviter_email: str, target_email: str, entity_id: str, r
             # Note: We pass datetime object as ISO string or supported type if needed, 
             # but Neo4j python driver handles datetime.
             result = session.run(query, {
-                "inviter_email": inviter_email,
+                "inviter_id": inviter_id,
                 "entity_id": entity_id,
                 "target_email": target_email,
                 "code": invite_code,
@@ -143,7 +138,7 @@ async def get_pending_invites(entity_id: str) -> List[Dict]:
         logger.error(f"Failed to get pending invites: {e}")
         return []
 
-async def accept_invite(code: str, user_email: str) -> Dict:
+async def accept_invite(code: str, user_id: str, user_email: str) -> Dict:
     """
     User uses the code to accept. 
     We verify code, expiration, and email match.
@@ -157,7 +152,7 @@ async def accept_invite(code: str, user_email: str) -> Dict:
     WHERE i.status = 'pending' AND i.expires_at > datetime()
     
     // Validate User
-    MATCH (u:User {email: $email})
+    MATCH (u:User {id: $uid})
     
     // Check Email Match (Optional: enforce strict match)
     // WHERE i.email = $email // Enforce this? Yes, security.
@@ -180,7 +175,7 @@ async def accept_invite(code: str, user_email: str) -> Dict:
     
     try:
         with driver.session() as session:
-            result = session.run(query, {"code": code, "email": user_email})
+            result = session.run(query, {"code": code, "email": user_email, "uid": user_id})
             record = result.single()
             
             if not record:
@@ -210,7 +205,7 @@ async def accept_invite(code: str, user_email: str) -> Dict:
         logger.error(f"Failed to accept invite: {e}")
         raise e
 
-async def claim_pending_invites(user_email: str) -> List[Dict]:
+async def claim_pending_invites(user_id: str, user_email: str) -> List[Dict]:
     """
     Automatically accepts any pending invites for this email.
     Called on dashboard load to ensure roles are synced if user just signed up via invite.
@@ -221,7 +216,11 @@ async def claim_pending_invites(user_email: str) -> List[Dict]:
     WHERE i.expires_at > datetime()
     
     // Validate User
-    MATCH (u:User {email: $email})
+    MATCH (u:User {id: $uid})
+    
+    # Ensure User email matches Invite email (implicit via $email passed for Invite match, 
+    # but strictly checking User properties might be needed if email on User node differs from Auth email?
+    # Assuming synced. But here we match User by ID.
     
     MATCH (i)-[:FOR_ACCESS]->(entity)
     
@@ -237,7 +236,7 @@ async def claim_pending_invites(user_email: str) -> List[Dict]:
     """
     try:
         with driver.session() as session:
-            result = session.run(query, {"email": user_email})
+            result = session.run(query, {"email": user_email, "uid": user_id})
             claimed = []
             for record in result:
                 logger.info(f"Auto-claimed invite for {user_email} to {record['entity_name']} ({record['entity_id']})")
