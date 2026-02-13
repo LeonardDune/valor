@@ -152,7 +152,7 @@ async def fetch_existing_factors(conversation_id: str) -> List[str]:
     """Returns names of factors mentioned in this conversation or context."""
     driver = get_driver()
     query = """
-    MATCH (c:ConversationThread {id: $cid})-[:GENERATED]->(cl:Claim)
+    MATCH (c:ConversationThread {id: $cid})-[:GENERATED]->(cl:ClaimVersion)
     MATCH (source)-[:CLAIMS]->(cl)-[:TO]->(target)
     RETURN collect(distinct source.name) + collect(distinct target.name) as factors
     """
@@ -173,7 +173,7 @@ async def revoke_claims(conversation_id: str):
     """Marks claims from this conversation as revoked or deletes them?"""
     driver = get_driver()
     query = """
-    MATCH (c:ConversationThread {id: $cid})-[rel:GENERATED]->(cl:Claim)
+    MATCH (c:ConversationThread {id: $cid})-[rel:GENERATED]->(cl:ClaimVersion)
     DETACH DELETE cl
     """
     try:
@@ -544,7 +544,7 @@ async def remove_project_member(project_id: str, user_id: str):
 
 async def get_theme_users(theme_id: str) -> List[Dict]:
      driver = get_driver()
-     query = "MATCH (t:Theme {id: $tid})<-[r:HAS_ROLE]-(u:User) RETURN u, r.role as role"
+     query = "MATCH (t:ThemeBase {id: $tid})<-[r:HAS_ROLE]-(u:User) RETURN u, r.role as role"
      with driver.session() as session:
          return [{"id": rec["u"]["id"], "name": rec["u"].get("name",""), "email": rec["u"]["email"], "role": rec["role"]} for rec in session.run(query, {"tid": theme_id})]
 
@@ -581,7 +581,7 @@ async def get_projects(organization_id: str, user_id: str) -> List[Dict]:
          END as proj_role
          
     // Count Themes
-    OPTIONAL MATCH (p)-[:HAS_THEME]->(t:Theme)
+    OPTIONAL MATCH (p)-[:HAS_THEME]->(t:ThemeBase)
     WHERE t.status IS NULL OR t.status <> 'archived'
     WITH p, proj_role, org, collect(t) as themes
     
@@ -639,7 +639,7 @@ async def archive_project(project_id: str):
     MATCH (p:Project {id: $id})
     SET p.status = 'archived'
     WITH p
-    OPTIONAL MATCH (p)-[:HAS_THEME]->(t:Theme)
+    OPTIONAL MATCH (p)-[:HAS_THEME]->(t:ThemeBase)
     SET t.status = 'archived'
     WITH t
     OPTIONAL MATCH (t)-[:HAS_VERSION]->(s:ThemeVersion)
@@ -667,7 +667,7 @@ async def get_project_themes(project_id: str, user_id: str) -> List[Dict]:
             ELSE 'member'
          END as context_role
          
-    MATCH (p)-[:HAS_THEME]->(t:Theme)
+    MATCH (p)-[:HAS_THEME]->(t:ThemeBase)
     WHERE t.status IS NULL OR t.status <> 'archived'
     
     // Determine effective theme role
@@ -680,8 +680,8 @@ async def get_project_themes(project_id: str, user_id: str) -> List[Dict]:
             ELSE theme_role_direct
          END as effective_role
     
-    // Counting active factors/claims
-    OPTIONAL MATCH (t)-[:HAS_FACTOR]->(f:Factor)
+    // Counting active factors/claims (via active version)
+    OPTIONAL MATCH (t)-[:HAS_VERSION]->(tv:ThemeVersion {status: 'active'})-[:HAS_FACTOR]->(f:FactorVersion)
     WITH t, org, p, effective_role, count(f) as claim_count
     
     // Counting members (User -> HAS_ROLE -> Theme)
@@ -748,7 +748,7 @@ async def create_theme(project_id: str, name: str, description: Optional[str] = 
 
 async def update_theme(theme_id: str, name: Optional[str], description: Optional[str]):
     driver = get_driver()
-    query = "MATCH (t:Theme {id: $id}) SET t.name = coalesce($name, t.name), t.description = coalesce($desc, t.description)"
+    query = "MATCH (t:ThemeBase {id: $id}) SET t.name = coalesce($name, t.name), t.description = coalesce($desc, t.description)"
     with driver.session() as session:
         session.run(query, {"id": theme_id, "name": name, "desc": description})
 
@@ -756,7 +756,7 @@ async def archive_theme(theme_id: str):
     driver = get_driver()
     # Cascade: Theme -> Spaces
     query = """
-    MATCH (t:Theme {id: $id})
+    MATCH (t:ThemeBase {id: $id})
     SET t.status = 'archived'
     WITH t
     OPTIONAL MATCH (t)-[:HAS_VERSION]->(s:ThemeVersion)
@@ -769,7 +769,7 @@ async def create_theme_version(theme_id: str, name: str, description: Optional[s
     driver = get_driver()
     sid = str(uuid.uuid4())
     query = """
-    MATCH (t:Theme {id: $tid})
+    MATCH (t:ThemeBase {id: $tid})
     MATCH (u:User {id: $uid})
     CREATE (s:ThemeVersion {
         id: $id, 
@@ -803,7 +803,7 @@ async def get_theme_versions_by_theme(theme_id: str, user_id: str) -> List[Dict]
     driver = get_driver()
     logger.info(f"DEBUG: get_theme_versions_by_theme called with theme_id={theme_id}, user_id={user_id}")
     query = """
-    MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:Theme {id: $tid})
+    MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:ThemeBase {id: $tid})
     MATCH (t)-[:HAS_VERSION]->(s:ThemeVersion)
     MATCH (u:User {id: $uid})
     
@@ -836,7 +836,7 @@ async def get_theme_versions_by_theme(theme_id: str, user_id: str) -> List[Dict]
 async def get_theme_version(version_id: str, user_id: str) -> Optional[Dict]:
     driver = get_driver()
     query = """
-    MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:Theme)-[:HAS_VERSION]->(s:ThemeVersion {id: $sid})
+    MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:ThemeBase)-[:HAS_VERSION]->(s:ThemeVersion {id: $sid})
     MATCH (u:User {id: $uid})
     
     // Simplified: Strict Explicit Membership.
@@ -876,7 +876,7 @@ async def get_theme_active_version(theme_id: str, user_id: str) -> Optional[Dict
     """
     driver = get_driver()
     query = """
-    MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:Theme {id: $tid})
+    MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:ThemeBase {id: $tid})
     MATCH (t)-[:HAS_VERSION]->(s:ThemeVersion)
     WHERE s.valid_to IS NULL
     
@@ -965,7 +965,7 @@ async def delete_theme_version_member(version_id: str, user_id: str):
 
 async def get_project_id_by_theme(theme_id: str) -> Optional[str]:
     driver = get_driver()
-    query = "MATCH (p:Project)-[:HAS_THEME]->(t:Theme {id: $tid}) RETURN p.id as pid"
+    query = "MATCH (p:Project)-[:HAS_THEME]->(t:ThemeBase {id: $tid}) RETURN p.id as pid"
     try:
         with driver.session() as session:
             result = session.run(query, {"tid": theme_id})
@@ -1082,7 +1082,7 @@ async def get_claims_for_theme(theme_id: str) -> List[Claim]:
     """
     driver = get_driver()
     query = """
-    MATCH (t:Theme {id: $tid})-[:HAS_VERSION]->(tv:ThemeVersion)
+    MATCH (t:ThemeBase {id: $tid})-[:HAS_VERSION]->(tv:ThemeVersion)
     WHERE tv.status = 'active' AND tv.valid_to IS NULL
     RETURN tv.id as vid
     """
@@ -1125,7 +1125,7 @@ async def get_factors_for_theme(theme_id: str) -> List[Dict]:
     # For now, let's query the active version directly.
     driver = get_driver()
     query = """
-    MATCH (t:Theme {id: $tid})-[:HAS_VERSION]->(tv:ThemeVersion)
+    MATCH (t:ThemeBase {id: $tid})-[:HAS_VERSION]->(tv:ThemeVersion)
     WHERE tv.status = 'active' AND tv.valid_to IS NULL
     RETURN tv.id as vid
     """
@@ -1201,7 +1201,7 @@ async def update_factor_manual(factor_id: str, name: Optional[str], description:
     if not theme_id:
         # Fallback/Legacy Attempt: Update by ID directly if it's a legacy Factor node
         query = """
-        MATCH (f:Factor {id: $id})
+        MATCH (f:FactorBase {id: $id})
         SET f.name = coalesce($name, f.name), 
             f.description = coalesce($desc, f.description),
             f.type = coalesce($type, f.type)
@@ -1212,7 +1212,7 @@ async def update_factor_manual(factor_id: str, name: Optional[str], description:
 
     # Versioned Update
     query = """
-    MATCH (t:Theme {id: $tid})
+    MATCH (t:ThemeBase {id: $tid})
     MATCH (t)-[:HAS_VERSION]->(tv:ThemeVersion)
     WHERE tv.status = 'active' AND tv.valid_to IS NULL
     
@@ -1337,7 +1337,7 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
     # 1. Create Decision & Version Transition
     # Returns the old version ID to facilitate copying
     q_create_ver = """
-    MATCH (t:Theme:ThemeBase {id: $tid})
+    MATCH (t:ThemeBase {id: $tid})
     MATCH (u:User {id: $uid})
     
     // Find Current Active Version

@@ -29,7 +29,7 @@ async def create_voting_session(theme_version_id: str, created_by: str, config: 
     # 2. Create new session and fetch Project ID context
     create_query = """
     MATCH (v:ThemeVersion {id: $vid})
-    OPTIONAL MATCH (v)<-[:HAS_VERSION]-(t:Theme)<-[:HAS_THEME]-(p:Project)
+    OPTIONAL MATCH (v)<-[:HAS_VERSION]-(t:ThemeBase)<-[:HAS_THEME]-(p:Project)
     CREATE (s:VotingSession {
         id: $sid,
         status: 'active',
@@ -66,7 +66,7 @@ async def update_voting_session(session_id: str, status: str) -> Optional[str]:
     driver = get_driver()
     query = """
     MATCH (s:VotingSession {id: $sid})
-    OPTIONAL MATCH (s)<-[:HAS_SESSION]-(v:ThemeVersion)<-[:HAS_VERSION]-(t:Theme)<-[:HAS_THEME]-(p:Project)
+    OPTIONAL MATCH (s)<-[:HAS_SESSION]-(v:ThemeVersion)<-[:HAS_VERSION]-(t:ThemeBase)<-[:HAS_THEME]-(p:Project)
     SET s.status = $status
     RETURN s.id, p.id as project_id
     """
@@ -118,7 +118,7 @@ async def get_context_ids(version_id: str) -> Tuple[Optional[str], Optional[str]
     driver = get_driver()
     query = """
     MATCH (v:ThemeVersion {id: $vid})
-    OPTIONAL MATCH (v)<-[:HAS_VERSION]-(t:Theme)
+    OPTIONAL MATCH (v)<-[:HAS_VERSION]-(t:ThemeBase)
     OPTIONAL MATCH (t)<-[:HAS_THEME]-(p:Project)
     RETURN t.id as theme_id, p.id as project_id
     """
@@ -137,7 +137,7 @@ async def get_session_context(session_id: str) -> Tuple[Optional[str], Optional[
     driver = get_driver()
     query = """
     MATCH (s:VotingSession {id: $sid})
-    OPTIONAL MATCH (s)<-[:HAS_SESSION]-(v:ThemeVersion)<-[:HAS_VERSION]-(t:Theme)
+    OPTIONAL MATCH (s)<-[:HAS_SESSION]-(v:ThemeVersion)<-[:HAS_VERSION]-(t:ThemeBase)
     OPTIONAL MATCH (t)<-[:HAS_THEME]-(p:Project)
     RETURN t.id as theme_id, p.id as project_id
     """
@@ -165,16 +165,16 @@ async def get_moderator_sessions(user_id: str) -> List[Dict[str, Any]]:
     // If it's an Org or Project, we need to find all Themes under it.
     // For simplicity, let's find VotingSessions reachable from these entities.
     
-    OPTIONAL MATCH (entity)-[:HAS_PROJECT*0..1]->(p:Project)-[:HAS_THEME*0..1]->(t:Theme)-[:HAS_VERSION]->(tv:ThemeVersion)-[:HAS_SESSION]->(s:VotingSession)
+    OPTIONAL MATCH (entity)-[:HAS_PROJECT*0..1]->(p:Project)-[:HAS_THEME*0..1]->(t:ThemeBase)-[:HAS_VERSION]->(tv:ThemeVersion)-[:HAS_SESSION]->(s:VotingSession)
     WHERE s.status = 'active'
     
     // Also check direct Theme links
     OPTIONAL MATCH (entity)-[:HAS_VERSION*0..1]->(direct_tv:ThemeVersion)-[:HAS_SESSION]->(direct_s:VotingSession)
-    WHERE direct_s.status = 'active' AND entity:Theme
+    WHERE direct_s.status = 'active' AND entity:ThemeBase
     
     WITH collect(s) + collect(direct_s) as all_sessions
     UNWIND all_sessions as s
-    MATCH (s)<-[:HAS_SESSION]-(tv:ThemeVersion)<-[:HAS_VERSION]-(t:Theme)
+    MATCH (s)<-[:HAS_SESSION]-(tv:ThemeVersion)<-[:HAS_VERSION]-(t:ThemeBase)
     RETURN DISTINCT s.id as id, 
                     s.stage as stage, 
                     s.created_at as created_at,

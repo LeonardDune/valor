@@ -31,7 +31,7 @@ async def get_user_environments(user_id: str) -> List[Dict]:
     OPTIONAL MATCH (u)-[r_proj_indirect:HAS_ROLE]->(:Project)<-[:OWNS]-(org_proj:Organization)
     
     // Path C: Theme Membership -> owning Project -> owning Org
-    OPTIONAL MATCH (u)-[r_theme_indirect:HAS_ROLE]->(:Theme)<-[:HAS_THEME]-(:Project)<-[:OWNS]-(org_theme:Organization)
+    OPTIONAL MATCH (u)-[r_theme_indirect:HAS_ROLE]->(:ThemeBase)<-[:HAS_THEME]-(:Project)<-[:OWNS]-(org_theme:Organization)
     
     // Combine all reachable Orgs
     WITH u, 
@@ -69,7 +69,7 @@ async def get_user_environments(user_id: str) -> List[Dict]:
     WHERE proj IS NULL OR ((proj.status IS NULL OR proj.status <> 'archived') OR (proj_role = 'admin'))
     
     // 3. Find Themes in those Projects
-    OPTIONAL MATCH (proj)-[:HAS_THEME]->(theme:Theme)
+    OPTIONAL MATCH (proj)-[:HAS_THEME]->(theme:ThemeBase)
     // Check direct theme role OR project/org admin role OR platform admin
     OPTIONAL MATCH (u)-[r_theme:HAS_ROLE]->(theme)
     
@@ -94,12 +94,9 @@ async def get_user_environments(user_id: str) -> List[Dict]:
     WITH org, user_role, proj, proj_role, collect(DISTINCT CASE WHEN theme IS NOT NULL THEN {
         id: theme.id,
         // FETCH FROM ACTIVE VERSION
-        // We know 'av' is available if we matched it, but we need to match it first.
-        // Wait, I need to match it upstream or inside the WITH.
-        // It's cleaner to do an OPTIONAL MATCH before the aggregation.
-        // Let's modify the query structure slightly.
-        name: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v) | v.name ]), 
-        description: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v) | v.description ]),
+        // We look for the Active Version to get the name and description
+        name: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v:ThemeVersion) | v.name ]), 
+        description: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v:ThemeVersion) | v.description ]),
         role: theme_role,
         status: theme.status,
         type: "THEME"
@@ -157,16 +154,16 @@ async def get_user_themes(user_id: str) -> List[Dict]:
     // We simplify by looking for direct connections or upstream connections
     
     // Direct Theme Access
-    OPTIONAL MATCH (u)-[r1:HAS_ROLE]->(t1:Theme)
+    OPTIONAL MATCH (u)-[r1:HAS_ROLE]->(t1:ThemeBase)
     
     // Project Access (Cascading down)
-    OPTIONAL MATCH (u)-[r2:HAS_ROLE]->(p:Project)-[:HAS_THEME]->(t2:Theme)
+    OPTIONAL MATCH (u)-[r2:HAS_ROLE]->(p:Project)-[:HAS_THEME]->(t2:ThemeBase)
     
     // Organization Access (Cascading down)
-    OPTIONAL MATCH (u)-[r3:HAS_ROLE]->(o:Organization)-[:OWNS]->(p2:Project)-[:HAS_THEME]->(t3:Theme)
+    OPTIONAL MATCH (u)-[r3:HAS_ROLE]->(o:Organization)-[:OWNS]->(p2:Project)-[:HAS_THEME]->(t3:ThemeBase)
     
     // Platform Admin (All Themes)
-    OPTIONAL MATCH (t4:Theme)
+    OPTIONAL MATCH (t4:ThemeBase)
     WHERE u.is_platform_admin = true
     
     // Collect all valid themes with their highest role found
@@ -203,7 +200,7 @@ async def get_user_themes(user_id: str) -> List[Dict]:
     
     // Optional: Get stats (claims, members)
     // Counting active claims
-    OPTIONAL MATCH (theme)-[:HAS_FACTOR]->(f:Factor)
+    OPTIONAL MATCH (theme)-[:HAS_ACTIVE_VERSION]->(tv:ThemeVersion)-[:HAS_FACTOR]->(f:FactorVersion)
     WITH theme, effective_role, org, proj, count(f) as claim_count
     
     // Counting members
@@ -212,8 +209,8 @@ async def get_user_themes(user_id: str) -> List[Dict]:
 
     RETURN {
         id: theme.id,
-        name: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v) | v.name ]),
-        description: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v) | v.description ]),
+        name: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v:ThemeVersion) | v.name ]),
+        description: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v:ThemeVersion) | v.description ]),
         project_name: proj.name,
         organization_name: org.name,
         role: effective_role,
