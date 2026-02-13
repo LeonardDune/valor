@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { api } from '@/services/api';
+import { useCreateTheme } from '@/hooks/queries/useThemes';
 import {
     Dialog,
     DialogContent,
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from 'sonner';
 
 interface CreateThemeDialogProps {
     projectId: string;
@@ -36,23 +37,25 @@ export const CreateThemeDialog: React.FC<CreateThemeDialogProps> = ({
 
     const [name, setName] = useState('');
     const [desc, setDesc] = useState('');
-    const [loading, setLoading] = useState(false);
+    const createMutation = useCreateTheme();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!name) return;
-        setLoading(true);
-        try {
-            await api.createTheme(projectId, name, desc);
-            setIsOpen(false);
-            setName('');
-            setDesc('');
-            if (onSuccess) onSuccess();
-        } catch (error) {
-            console.error("Failed to create theme", error);
-        } finally {
-            setLoading(false);
-        }
+
+        createMutation.mutate({ projectId, name, description: desc }, {
+            onSuccess: () => {
+                setIsOpen(false);
+                setName('');
+                setDesc('');
+                toast.success("Thema succesvol toegevoegd!");
+                if (onSuccess) onSuccess();
+            },
+            onError: (error) => {
+                console.error("Failed to create theme", error);
+                toast.error("Kon thema niet toevoegen.");
+            }
+        });
     };
 
     return (
@@ -87,8 +90,8 @@ export const CreateThemeDialog: React.FC<CreateThemeDialogProps> = ({
                         />
                     </div>
                     <DialogFooter>
-                        <Button type="submit" disabled={!name || loading}>
-                            {loading ? "Bezig..." : "Aanmaken"}
+                        <Button type="submit" disabled={!name || createMutation.isPending}>
+                            {createMutation.isPending ? "Bezig..." : "Aanmaken"}
                         </Button>
                     </DialogFooter>
                 </form>

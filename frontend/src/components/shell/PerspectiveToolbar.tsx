@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, MessageSquareText, Network } from 'lucide-react';
+import { LayoutDashboard, MessageSquareText, Network, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,15 +31,26 @@ interface PerspectiveToolbarProps {
      */
     onLayoutChange?: (mode: LayoutMode) => void;
 
-    /**
-     * Handler to open the Global/View conversation context
-     */
-    onOpenGlobalConversation?: () => void;
 
     /**
      * Optional export actions component (e.g. <ExportMenu />)
      */
     exportActions?: React.ReactNode;
+
+    /**
+     * Handler to resume/open deliberation
+     */
+    onResumeDeliberation?: () => void;
+
+    /**
+     * Handler to open the moderator dashboard
+     */
+    onOpenModeratorDashboard?: () => void;
+
+    /**
+     * Whether the current user is a moderator
+     */
+    isModerator?: boolean;
 
     className?: string;
 }
@@ -48,8 +59,10 @@ export const PerspectiveToolbar: React.FC<PerspectiveToolbarProps> = ({
     children,
     layoutMode = 'free',
     onLayoutChange,
-    onOpenGlobalConversation,
     exportActions,
+    onResumeDeliberation,
+    onOpenModeratorDashboard,
+    isModerator,
     className
 }) => {
     return (
@@ -111,22 +124,51 @@ export const PerspectiveToolbar: React.FC<PerspectiveToolbarProps> = ({
                 </>
             )}
 
-            {/* Global Actions */}
-            <TooltipProvider>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={onOpenGlobalConversation}
-                            className="h-8 w-8"
-                        >
-                            <MessageSquareText className="h-4 w-4 text-purple-500" />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Start Perspectief Chat</TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
+            {/* Deliberation Resume */}
+            {onResumeDeliberation && (
+                <>
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={onResumeDeliberation}
+                                    className="h-8 gap-2 px-3 text-orange-600 bg-orange-600/5 hover:bg-orange-600/10 border border-orange-600/20"
+                                >
+                                    <MessageSquareText className="h-4 w-4" />
+                                    <span className="text-xs font-semibold">Stemsessie</span>
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Terug naar Deliberatie</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                    <div className="w-px h-6 bg-border mx-1" />
+                </>
+            )}
+
+            {/* Moderator Dashboard */}
+            {isModerator && onOpenModeratorDashboard && (
+                <>
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={onOpenModeratorDashboard}
+                                    className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10"
+                                >
+                                    <Shield className="h-4 w-4" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Moderatie Overzicht</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                    <div className="w-px h-6 bg-border mx-1" />
+                </>
+            )}
+
         </div>
     );
 };

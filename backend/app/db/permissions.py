@@ -6,14 +6,14 @@ from app.models.domain import Role
 
 logger = logging.getLogger(__name__)
 
-async def assign_role(user_email: str, entity_id: str, role: Role):
+async def assign_role(user_id: str, entity_id: str, role: Role):
     """
     Assigns a specific role to a user for a given entity (Org, Project, Theme).
     This creates or updates the HAS_ROLE relationship.
     """
     driver = get_driver()
     query = """
-    MATCH (u:User {email: toLower($email)})
+    MATCH (u:User {id: $uid})
     MATCH (e) WHERE e.id = $entity_id
     MERGE (u)-[r:HAS_ROLE]->(e)
     SET r.role = $role, r.updated_at = datetime(), r.status = coalesce(r.status, 'active')
@@ -21,7 +21,7 @@ async def assign_role(user_email: str, entity_id: str, role: Role):
     try:
         with driver.session() as session:
             # ensure user exists? assuming user exists for now or call create_user in crud
-            result = session.run(query, {"email": user_email, "entity_id": entity_id, "role": role.value})
+            result = session.run(query, {"uid": user_id, "entity_id": entity_id, "role": role.value})
             info = result.consume()
             if info.counters.relationships_created > 0 or info.counters.properties_set > 0:
                 logger.info(f"Assigned role {role.value} to user {user_email} on entity {entity_id}")
@@ -31,7 +31,7 @@ async def assign_role(user_email: str, entity_id: str, role: Role):
         logger.error(f"Failed to assign role: {e}")
         raise e
 
-async def check_permission(user_email: str, entity_id: str, required_role: Role) -> bool:
+async def check_permission(user_id: str, entity_id: str, required_role: Role) -> bool:
     """
     Checks if a user has the required role (or better) on the entity OR any of its parents.
     Hierarchy: Theme -> Project -> Organization
@@ -52,7 +52,7 @@ async def check_permission(user_email: str, entity_id: str, required_role: Role)
 
     query = """
     MATCH (target {id: $entity_id})
-    MATCH (u:User {email: toLower($email)})
+    MATCH (u:User {id: $uid})
     
     // Check Platform Admin
     WITH u, target, COALESCE(u.is_platform_admin, false) as is_platform_admin
@@ -68,7 +68,7 @@ async def check_permission(user_email: str, entity_id: str, required_role: Role)
     
     try:
         with driver.session() as session:
-            result = session.run(query, {"email": user_email, "entity_id": entity_id})
+            result = session.run(query, {"uid": user_id, "entity_id": entity_id})
             record = result.single()
             
             if not record:
@@ -92,7 +92,7 @@ async def check_permission(user_email: str, entity_id: str, required_role: Role)
         logger.error(f"Failed to check permissions: {e}")
         return False
 
-async def get_user_navigation_tree(user_email: str):
+async def get_user_navigation_tree(user_id: str):
     """
     Returns a tree of entities the user has access to.
     
@@ -118,7 +118,7 @@ async def get_user_navigation_tree(user_email: str):
     #    Actually, keeping it simple: Fetch all nodes U has access to via cascading rules.
     
     query = """
-    MATCH (u:User {email: toLower($email)})
+    MATCH (u:User {id: $uid})
     MATCH (u)-[r:HAS_ROLE]->(root_access_node)
     
     // 1. Collect descendants if Admin
@@ -140,7 +140,7 @@ async def get_user_navigation_tree(user_email: str):
     
     try:
         with driver.session() as session:
-            result = session.run(query, {"email": user_email})
+            result = session.run(query, {"uid": user_id})
             paths = [record["path_data"] for record in result]
             return _build_tree_from_paths(paths)
     except Exception as e:

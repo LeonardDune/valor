@@ -4,6 +4,8 @@ from app.models.domain import Proposal, LifecycleStatus
 from app.db.crud import create_proposal, get_proposals, get_proposal_by_id, update_proposal_status
 import logging
 
+from app.auth import get_current_user
+
 router = APIRouter(
     prefix="/proposals",
     tags=["proposals"],
@@ -18,18 +20,18 @@ from pydantic import BaseModel
 class CreateProposalRequest(BaseModel):
     title: str
     description: Optional[str] = None
-    description: Optional[str] = None
     type: Optional[str] = "standard" # standard, access_request, etc
-    author_id: str
+    # author_id: str  <-- Removed/Ignored from request logic, taken from token
     target_id: Optional[str] = None # For ACCESS_REQUEST: entity_id
 
 class UpdateProposalStatusRequest(BaseModel):
     status: LifecycleStatus
 
 @router.post("/", response_model=str)
-async def create_new_proposal(request: CreateProposalRequest):
+async def create_new_proposal(request: CreateProposalRequest, user: dict = Depends(get_current_user)):
     try:
-        pid = await create_proposal(request.title, request.author_id, request.description, request.type, request.target_id)
+        # Enforce author_id from token
+        pid = await create_proposal(request.title, user.get("id"), request.description, request.type, request.target_id)
         return pid
     except Exception as e:
         logger.error(f"Error creating proposal: {e}")

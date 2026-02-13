@@ -23,11 +23,11 @@ async def get_my_environments(user: dict = Depends(get_current_user)):
         if not email:
              raise HTTPException(status_code=401, detail="User not authenticated")
              
-        # Auto-claim any pending invites for this user
+        # Auto-claim any pending invites for this user (invites are linked to email)
         from app.db.invites import claim_pending_invites
-        await claim_pending_invites(email)
+        await claim_pending_invites(user.get("id"), email)
              
-        data = await get_user_environments(email)
+        data = await get_user_environments(user.get("id"))
         return data
     except Exception as e:
         logger.error(f"Error fetching dashboard environments: {e}")
@@ -45,7 +45,7 @@ async def get_my_themes(user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=401, detail="User not authenticated")
             
         from app.db.dashboard import get_user_themes
-        data = await get_user_themes(email)
+        data = await get_user_themes(user.get("id"))
         return data
     except Exception as e:
         logger.error(f"Error fetching dashboard themes: {e}")

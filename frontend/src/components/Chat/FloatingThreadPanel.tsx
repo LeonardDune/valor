@@ -15,6 +15,7 @@ interface FloatingThreadPanelProps {
     onThreadCreated?: () => void;
     position?: { x: number; y: number };
     readOnly?: boolean;
+    initialThreadId?: string;
 }
 
 export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
@@ -23,7 +24,8 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
     onClose,
     onThreadCreated,
     position,
-    readOnly = false
+    readOnly = false,
+    initialThreadId
 }) => {
     const [view, setView] = useState<'list' | 'chat' | 'create'>('list');
     const [threads, setThreads] = useState<Thread[]>([]);
@@ -45,6 +47,17 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
         try {
             const data = await api.getThreads(targetId);
             setThreads(data);
+
+            // If we have an initialThreadId, find and select it
+            if (initialThreadId) {
+                const thread = data.find(t => t.id === initialThreadId);
+                if (thread) {
+                    handleSelectThread(thread);
+                }
+            } else if (data.length === 1 && view === 'list') {
+                // Auto-select if there is only one thread and no specific one requested
+                handleSelectThread(data[0]);
+            }
         } catch (e) {
             console.error(e);
         } finally {

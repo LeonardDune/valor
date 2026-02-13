@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { api } from '@/services/api';
+import { useUpdateOrganization, useArchiveOrganization } from '@/hooks/queries/useOrganizations';
+import { useUpdateProject, useArchiveProject } from '@/hooks/queries/useProjects';
+import { useUpdateTheme, useArchiveTheme } from '@/hooks/queries/useThemes';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -39,10 +41,19 @@ export const ManageEntityDialog: React.FC<ManageEntityDialogProps> = ({
     const [activeTab, setActiveTab] = useState('details');
     const [name, setName] = useState(initialData?.name || '');
     const [description, setDescription] = useState(initialData?.description || '');
-    const [isSaving, setIsSaving] = useState(false);
-    const [isArchiving, setIsArchiving] = useState(false);
     const [isArchiveConfirmOpen, setIsArchiveConfirmOpen] = useState(false);
     const [role, setRole] = useState(initialData?.role || 'member');
+
+    // Mutations
+    const updateOrg = useUpdateOrganization();
+    const updateProj = useUpdateProject();
+    const updateTheme = useUpdateTheme();
+    const archiveOrg = useArchiveOrganization();
+    const archiveProj = useArchiveProject();
+    const archiveTheme = useArchiveTheme();
+
+    const isSaving = updateOrg.isPending || updateProj.isPending || updateTheme.isPending;
+    const isArchiving = archiveOrg.isPending || archiveProj.isPending || archiveTheme.isPending;
 
     const isAdmin = role === 'admin';
 
@@ -56,23 +67,24 @@ export const ManageEntityDialog: React.FC<ManageEntityDialogProps> = ({
     }, [open, initialData]);
 
     const handleSave = async () => {
-        setIsSaving(true);
-        try {
-            if (entityType === 'organization') {
-                await api.updateOrganization(entityId, name, description);
-            } else if (entityType === 'project') {
-                await api.updateProject(entityId, name, description);
-            } else if (entityType === 'theme') {
-                await api.updateTheme(entityId, name, description);
+        const mutationOptions = {
+            onSuccess: () => {
+                toast.success(`${getEntityLabel()} bijgewerkt`);
+                onUpdated?.();
+                onOpenChange(false);
+            },
+            onError: (error: any) => {
+                console.error('Failed to update entity', error);
+                toast.error('Fout bij het bijwerken');
             }
-            toast.success(`${getEntityLabel()} bijgewerkt`);
-            onUpdated?.();
-            onOpenChange(false);
-        } catch (error) {
-            console.error('Failed to update entity', error);
-            toast.error('Fout bij het bijwerken');
-        } finally {
-            setIsSaving(false);
+        };
+
+        if (entityType === 'organization') {
+            updateOrg.mutate({ id: entityId, name, description }, mutationOptions);
+        } else if (entityType === 'project') {
+            updateProj.mutate({ id: entityId, name, description }, mutationOptions);
+        } else if (entityType === 'theme') {
+            updateTheme.mutate({ id: entityId, name, description }, mutationOptions);
         }
     };
 
@@ -81,24 +93,26 @@ export const ManageEntityDialog: React.FC<ManageEntityDialogProps> = ({
     };
 
     const handleArchiveConfirm = async () => {
-        setIsArchiving(true);
-        try {
-            if (entityType === 'organization') {
-                await api.archiveOrganization(entityId);
-            } else if (entityType === 'project') {
-                await api.archiveProject(entityId);
-            } else if (entityType === 'theme') {
-                await api.archiveTheme(entityId);
+        const mutationOptions = {
+            onSuccess: () => {
+                toast.success(`${getEntityLabel()} gearchiveerd`);
+                onUpdated?.();
+                onOpenChange(false);
+                setIsArchiveConfirmOpen(false);
+            },
+            onError: (error: any) => {
+                console.error('Failed to archive entity', error);
+                toast.error('Fout bij archiveren');
+                setIsArchiveConfirmOpen(false);
             }
-            toast.success(`${getEntityLabel()} gearchiveerd`);
-            onUpdated?.();
-            onOpenChange(false);
-        } catch (error) {
-            console.error('Failed to archive entity', error);
-            toast.error('Fout bij archiveren');
-        } finally {
-            setIsArchiving(false);
-            setIsArchiveConfirmOpen(false);
+        };
+
+        if (entityType === 'organization') {
+            archiveOrg.mutate(entityId, mutationOptions);
+        } else if (entityType === 'project') {
+            archiveProj.mutate(entityId, mutationOptions);
+        } else if (entityType === 'theme') {
+            archiveTheme.mutate(entityId, mutationOptions);
         }
     };
 

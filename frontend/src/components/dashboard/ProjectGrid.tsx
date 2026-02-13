@@ -1,6 +1,7 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useMemo, useState } from 'react';
 import { ProjectCard, type Project } from './ProjectCard';
-import { api } from '@/services/api';
+import { useProjects } from '@/hooks/queries/useProjects';
+import { useDashboardEnvironments } from '@/hooks/queries/useOrganizations';
 import { GridToolbar, type FilterOption, type SortOption, type GroupOption } from './GridToolbar';
 import { CreateProjectDialog } from './dialogs/CreateProjectDialog';
 import { Button } from '@/components/ui/button';
@@ -12,59 +13,44 @@ interface ProjectGridProps {
 }
 
 export function ProjectGrid({ organizationId, organizationName }: ProjectGridProps) {
-    const [projects, setProjects] = useState<Project[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const { data: dashboardData = [], isLoading: isLoadingDashboard, refetch: refetchDashboard } = useDashboardEnvironments();
+    const { data: orgProjects = [], isLoading: isLoadingOrgProjects, refetch: refetchOrgProjects } = useProjects(organizationId);
+
+    const isLoading = organizationId ? isLoadingOrgProjects : isLoadingDashboard;
+    const refetch = organizationId ? refetchOrgProjects : refetchDashboard;
 
     // Toolbar State
     const [searchQuery, setSearchQuery] = useState('');
     const [currentSort, setCurrentSort] = useState('name_asc');
     const [currentGroup, setCurrentGroup] = useState('none');
     const [activeFilters, setActiveFilters] = useState<Record<string, string[]>>({
-        status: ['active'] // Default only active
+        status: ['active']
     });
 
-    const fetchProjects = useCallback(async (clearFirst: boolean = false) => {
-        if (clearFirst) setProjects([]);
-        setLoading(true);
-        setError(null);
-        try {
-            let allProjects: Project[] = [];
-            if (organizationId) {
-                const data = await api.getProjects(organizationId);
-                allProjects = data.map((p: any) => ({
-                    ...p,
-                    organization_id: organizationId,
-                    organization_name: organizationName,
-                    type: 'PROJECT'
-                }));
-            } else {
-                const data = await api.getDashboardEnvironments();
-                data.forEach((org: any) => {
-                    if (org.projects && Array.isArray(org.projects)) {
-                        org.projects.forEach((proj: any) => {
-                            allProjects.push({
-                                ...proj,
-                                organization_name: org.name,
-                                organization_id: org.id
-                            });
-                        });
-                    }
+    const projects = useMemo(() => {
+        if (organizationId) {
+            return orgProjects.map((p: any) => ({
+                ...p,
+                organization_id: organizationId,
+                organization_name: organizationName,
+                type: 'PROJECT'
+            })) as Project[];
+        }
+
+        const allProjects: Project[] = [];
+        dashboardData.forEach((org: any) => {
+            if (org.projects && Array.isArray(org.projects)) {
+                org.projects.forEach((proj: any) => {
+                    allProjects.push({
+                        ...proj,
+                        organization_name: org.name,
+                        organization_id: org.id
+                    } as Project);
                 });
             }
-            setProjects(allProjects);
-        } catch (err) {
-            console.error("Failed to fetch projects", err);
-            setError("Kon projecten niet laden.");
-        } finally {
-            setLoading(false);
-        }
-    }, [organizationId, organizationName]);
-
-    useEffect(() => {
-        fetchProjects(true);
-    }, [fetchProjects]);
+        });
+        return allProjects;
+    }, [organizationId, organizationName, orgProjects, dashboardData]);
 
     // Filtering & Sorting Logic
     const filteredProjects = useMemo(() => {
@@ -145,11 +131,7 @@ export function ProjectGrid({ organizationId, organizationName }: ProjectGridPro
         }
     }
 
-    if (error) {
-        return <div className="p-8 text-destructive">{error}</div>;
-    }
-
-    if (loading && projects.length === 0) {
+    if (isLoading && projects.length === 0) {
         return (
             <div className="flex-1 p-4 lg:p-8 space-y-6">
                 <div className="h-20 bg-muted/20 rounded-xl animate-pulse" />
@@ -183,9 +165,7 @@ export function ProjectGrid({ organizationId, organizationName }: ProjectGridPro
                 {organizationId && (
                     <CreateProjectDialog
                         organizationId={organizationId}
-                        open={isDialogOpen}
-                        onOpenChange={setIsDialogOpen}
-                        onSuccess={fetchProjects}
+                        onSuccess={() => refetch()}
                         trigger={
                             <Button className="gap-2 shadow-lg shadow-primary/20">
                                 <Plus className="h-4 w-4" />
@@ -213,9 +193,15 @@ export function ProjectGrid({ organizationId, organizationName }: ProjectGridPro
                 <div className="text-center py-20 bg-muted/5 rounded-2xl border border-dashed border-border/50">
                     <p className="text-muted-foreground mb-4">Geen projecten gevonden die voldoen aan je criteria.</p>
                     {organizationId ? (
-                        <Button variant="outline" onClick={() => setIsDialogOpen(true)}>
-                            Maak je eerste project aan
-                        </Button>
+                        <CreateProjectDialog
+                            organizationId={organizationId}
+                            onSuccess={() => refetch()}
+                            trigger={
+                                <Button variant="outline">
+                                    Maak je eerste project aan
+                                </Button>
+                            }
+                        />
                     ) : (
                         <p className="text-sm text-muted-foreground">Probeer je filters aan te passen of zoekopdracht te wijzigen.</p>
                     )}
@@ -235,7 +221,7 @@ export function ProjectGrid({ organizationId, organizationName }: ProjectGridPro
                             )}
                             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                                 {group.items.map((proj) => (
-                                    <ProjectCard key={proj.id} project={proj} onUpdate={fetchProjects} />
+                                    <ProjectCard key={proj.id} project={proj} onUpdate={() => refetch()} />
                                 ))}
                             </div>
                         </div>

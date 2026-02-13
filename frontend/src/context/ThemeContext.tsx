@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { api, type ThemeVersion } from '../services/api';
+import { type VotingSession } from '../types/session';
+import { useActiveSession } from '../hooks/queries/useSessions';
 
 interface ThemeContextType {
     themeId: string | null;
@@ -8,6 +10,8 @@ interface ThemeContextType {
     versions: ThemeVersion[];
     isReadOnly: boolean;
     isLoading: boolean;
+    activeVotingSession: VotingSession | null;
+    setActiveVotingSession: React.Dispatch<React.SetStateAction<VotingSession | null>>;
     switchVersion: (versionId: string) => void;
     refreshVersions: () => Promise<void>;
 }
@@ -24,6 +28,8 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ themeId, children 
     const [currentViewedVersion, setCurrentViewedVersion] = useState<ThemeVersion | null>(null);
     const [versions, setVersions] = useState<ThemeVersion[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+
+    const { data: activeVotingSession } = useActiveSession(activeVersion?.id || null);
 
     const fetchThemeData = useCallback(async () => {
         setIsLoading(true);
@@ -82,6 +88,10 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ themeId, children 
             versions,
             isReadOnly,
             isLoading,
+            activeVotingSession: activeVotingSession || null,
+            setActiveVotingSession: () => {
+                console.warn("setActiveVotingSession is deprecated. Session state is now managed by React Query.");
+            },
             switchVersion,
             refreshVersions
         }}>

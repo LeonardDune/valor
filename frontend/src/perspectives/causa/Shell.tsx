@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
-// ToggleGroup moved to PerspectiveToolbar component
+
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Target } from "lucide-react";
+import { useEffect, useMemo, useState, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
     Tooltip,
     TooltipContent,
@@ -11,18 +12,29 @@ import {
 import { getNodesBounds } from 'reactflow';
 import { PerspectiveToolbar } from '@/components/shell/PerspectiveToolbar';
 import { ExportMenu } from '@/components/shell/ExportMenu';
+import { ModeratorDashboard } from '@/components/deliberation/ModeratorDashboard';
+import {
+    Dialog,
+    DialogContent,
+} from "@/components/ui/dialog";
 import { useDomExport } from '@/hooks/useDomExport';
 import { CLDView } from './views/CLDView';
 import { useCausaData } from './hooks/useCausaData';
 import { LayoutSession } from './layout/session';
 import { ForceRunner } from './layout/runners/force';
 import { RailRunner } from './layout/runners/rail';
-// import { FactorModal } from '../../components/Graph/FactorModal';
 import { CreateFactorModal } from './views/modals/CreateFactorModal';
 import { EditFactorDetailModal } from './views/modals/EditFactorDetailModal';
 import { api } from '../../services/api';
 import type { ConversationContext } from '@/types/conversation';
 import { PresenceLayer } from '@/components/graph/PresenceLayer';
+import { VotingConfigModal } from '@/components/voting/VotingConfigModal';
+import { sessionService } from '@/services/sessions';
+import type { VotingSessionConfig } from '@/types/session';
+import { useTheme } from '../../context/ThemeContext';
+import { RankingBoard } from '@/components/deliberation/RankingBoard';
+import { ConsentBoard } from '@/components/deliberation/ConsentBoard';
+import { RefinementBoardComponent } from '@/components/deliberation/RefinementBoard';
 
 export interface CausaShellProps {
     themeId: string;
@@ -39,6 +51,7 @@ export interface CausaShellProps {
 }
 
 export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSelect, onOpenConversation, versionId, isReadOnly = false }: CausaShellProps) => {
+    const queryClient = useQueryClient();
     // A. Local UI State
     const [localSelection, setLocalSelection] = useState<{ type: 'node' | 'link'; data: any } | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -47,6 +60,20 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
     const containerRef = useRef<HTMLDivElement>(null);
     const { exportAsPng, exportAsPdf, exportAsSvg, isExporting } = useDomExport(containerRef);
     const [rfInstance, setRfInstance] = useState<any>(null);
+    const [isVotingModalOpen, setIsVotingModalOpen] = useState(false);
+    const [isStartingSession, setIsStartingSession] = useState(false);
+    const { activeVersion, activeVotingSession } = useTheme();
+    const [showDeliberation, setShowDeliberation] = useState(false);
+    const [viewMode, setViewMode] = useState<'graph' | 'deliberation'>('graph');
+
+
+    // Moderator Check: Use role from activeThemeVersion (sourced from Neo4j)
+    const [showModeratorDashboard, setShowModeratorDashboard] = useState(false);
+
+    const isModerator = activeVersion?.role === 'moderator' || activeVersion?.role === 'admin';
+
+    // Global Freeze Logic: If a session is active, the entire theme version is read-only
+    const effectiveIsReadOnly = isReadOnly || !!activeVotingSession;
 
 
 
@@ -112,7 +139,8 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
     };
 
     // B. Fetch Data
-    const { nodes, links, factors, refresh, loading } = useCausaData(themeId, versionId);
+    console.log('[CausaShell] Props:', { themeId, versionId, activeVersionId: activeVersion?.id });
+    const { nodes, links, factors, refresh, loading } = useCausaData(themeId, versionId || activeVersion?.id);
 
     // C. Initialize Session
     // Re-create session ONLY when layoutMode changes
@@ -161,13 +189,17 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
         const msg = websocket.lastMessage;
         // Check for data updates types
         if (['FACTOR_CREATED', 'FACTOR_UPDATED', 'FACTOR_DELETED', 'CLAIM_CREATED', 'CLAIM_UPDATED', 'CLAIM_DELETED'].includes(msg.type)) {
-            // Basic refresh for now. 
-            // Ideally we shouldn't re-fetch everything but update local cache.
-            // Given MVP and useCausaData structure, calling refresh() is safest.
             console.log('WS: Received update, refreshing graph...', msg.type);
             refresh();
         }
     }, [websocket.lastMessage, refresh]);
+
+    // Auto-show deliberation when session starts or stage changes
+    useEffect(() => {
+        if (activeVotingSession) {
+            setShowDeliberation(true);
+        }
+    }, [activeVotingSession?.stage, activeVotingSession?.id]);
 
     // Helper to switch mode safely
     const switchMode = (newMode: 'free' | 'system') => {
@@ -210,7 +242,7 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
     };
 
     const handleCreateFactor = async (name: string, type: any, description: string) => {
-        if (isReadOnly) return;
+        if (effectiveIsReadOnly) return;
         try {
             await api.createFactor(themeId, name, description, type);
             refresh();
@@ -220,7 +252,7 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
     };
 
     const handleConnect = async (connection: any) => {
-        if (isReadOnly) return;
+        if (effectiveIsReadOnly) return;
         if (!connection.source || !connection.target) return;
         try {
             // Default new relation to positive for now, or open modal
@@ -245,6 +277,24 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
         }
     };
 
+    const handleStartVoting = async (config: VotingSessionConfig) => {
+        if (!versionId) return;
+        setIsStartingSession(true);
+        try {
+            await sessionService.startSession(versionId, config);
+
+            // Force UI update by invalidating session queries
+            // This triggers useActiveSession (in ThemeContext) to refetch
+            await queryClient.invalidateQueries({ queryKey: ['sessions'] });
+
+            setIsVotingModalOpen(false);
+        } catch (error) {
+            console.error('Failed to start voting session', error);
+        } finally {
+            setIsStartingSession(false);
+        }
+    };
+
     // Viewport State for Presence Sync
     const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
 
@@ -256,13 +306,10 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
             {/* Standardized Toolbar */}
             <PerspectiveToolbar
                 layoutMode={layoutMode}
-                onLayoutChange={(mode) => switchMode(mode)}
-                onOpenGlobalConversation={() => onOpenConversation?.({
-                    scope: 'view',
-                    perspective: 'CAUSA',
-                    contextId: 'main-view',
-                    label: 'Causa Assistant'
-                })}
+                onLayoutChange={switchMode}
+                isModerator={isModerator}
+                onOpenModeratorDashboard={() => setShowModeratorDashboard(true)}
+                onResumeDeliberation={viewMode === 'graph' && activeVotingSession ? () => setViewMode('deliberation') : undefined}
                 exportActions={
                     <>
 
@@ -276,7 +323,7 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                     </>
                 }
             >
-                {!isReadOnly && (
+                {!effectiveIsReadOnly && (
                     <TooltipProvider>
                         <Tooltip>
                             <TooltipTrigger asChild>
@@ -290,6 +337,25 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                                 </Button>
                             </TooltipTrigger>
                             <TooltipContent>Nieuwe Factor</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                )}
+
+                {/* Voting Button - Moderator Only */}
+                {!effectiveIsReadOnly && isModerator && (
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    size="sm"
+                                    onClick={() => setIsVotingModalOpen(true)}
+                                    variant="ghost"
+                                    className="h-8 w-8 p-0"
+                                >
+                                    <Target className="h-4 w-4 text-orange-500" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Stemsessie Starten</TooltipContent>
                         </Tooltip>
                     </TooltipProvider>
                 )}
@@ -308,8 +374,8 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                 onEdit={handleEdit}
                 onViewportChange={setViewport}
                 onInit={setRfInstance}
-                onConnect={isReadOnly ? undefined : handleConnect}
-                isReadOnly={isReadOnly}
+                onConnect={effectiveIsReadOnly ? undefined : handleConnect}
+                isReadOnly={effectiveIsReadOnly}
             />
 
 
@@ -321,6 +387,19 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                 onSave={handleCreateFactor}
             />
 
+            {/* Moderator Dashboard Dialog */}
+            <Dialog open={showModeratorDashboard} onOpenChange={setShowModeratorDashboard}>
+                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+                    {activeVotingSession && (
+                        <ModeratorDashboard
+                            sessionId={activeVotingSession.id}
+                            stage={activeVotingSession.stage}
+                            onClose={() => setShowModeratorDashboard(false)}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
+
             <EditFactorDetailModal
                 open={isEditModalOpen}
                 onOpenChange={setIsEditModalOpen}
@@ -328,7 +407,7 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                 themeId={themeId}
                 factors={factors}
                 onRefresh={refresh}
-                readOnly={isReadOnly}
+                readOnly={effectiveIsReadOnly}
             />
             {/* Presence Overlay */}
             <div className="absolute inset-0 pointer-events-none z-50">
@@ -341,6 +420,47 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                     viewport={viewport}
                 />
             </div>
+
+            <VotingConfigModal
+                isOpen={isVotingModalOpen}
+                onClose={() => setIsVotingModalOpen(false)}
+                onStart={handleStartVoting}
+                isLoading={isStartingSession}
+            />
+
+            {/* Deliberation Boards */}
+            {activeVotingSession && showDeliberation && (
+                <>
+                    {activeVotingSession.stage === 'refine' && (
+                        <div className="fixed inset-0 z-[100] bg-background">
+                            <RefinementBoardComponent
+                                versionId={versionId!}
+                                currentUserId={currentUserId}
+                                onBack={() => setShowDeliberation(false)}
+                                factors={factors}
+                                isModerator={isModerator}
+                            />
+                        </div>
+                    )}
+
+                    {activeVotingSession.stage === 'ranking' && (
+                        <RankingBoard
+                            sessionId={activeVotingSession.id}
+                            onClose={() => setShowDeliberation(false)}
+                            isModerator={isModerator}
+                        />
+                    )}
+
+                    {activeVotingSession.stage === 'consent' && (
+                        <ConsentBoard
+                            sessionId={activeVotingSession.id}
+                            onClose={() => setShowDeliberation(false)}
+                            isModerator={isModerator}
+                        />
+                    )}
+                </>
+            )}
+
         </div >
     );
 };

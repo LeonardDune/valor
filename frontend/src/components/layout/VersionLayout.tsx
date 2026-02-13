@@ -23,7 +23,7 @@ export const VersionLayout: React.FC<VersionLayoutProps> = ({ children }) => {
         {
             id: 'claims',
             icon: FileText,
-            label: 'Claims',
+            label: 'Verfijn',
             path: `/versions/${versionId}/claims`
         },
         {

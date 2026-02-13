@@ -10,7 +10,7 @@ import {
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from '@/components/ui/badge';
-import { History, Clock, CheckCircle2, GitBranch } from 'lucide-react';
+import { History, Clock, CheckCircle2, GitBranch, Target } from 'lucide-react';
 import { type ThemeVersion } from '../../services/api';
 
 // --- Tree Logic ---
@@ -55,7 +55,8 @@ export const ThemeContextPanel: React.FC = () => {
         currentViewedVersion,
         versions,
         switchVersion,
-        isReadOnly
+        isReadOnly,
+        activeVotingSession
     } = useTheme();
 
     if (!activeVersion || !currentViewedVersion) return null;
@@ -65,6 +66,7 @@ export const ThemeContextPanel: React.FC = () => {
     const renderNode = (node: TreeNode, depth: number = 0) => {
         const isCurrent = node.id === currentViewedVersion.id;
         const isActive = node.id === activeVersion.id;
+        const hasVoting = isActive && !!activeVotingSession;
 
         return (
             <React.Fragment key={node.id}>
@@ -82,7 +84,8 @@ export const ThemeContextPanel: React.FC = () => {
                     <div className="flex flex-col">
                         <span className="font-medium flex items-center gap-2">
                             {node.name}
-                            {isActive && <Badge variant="outline" className="text-[10px] h-4 px-1 py-0 text-green-600 border-green-200">Actief</Badge>}
+                            {hasVoting && <Badge variant="outline" className="text-[10px] h-4 px-1 py-0 text-orange-600 border-orange-200 bg-orange-50 font-bold">Stemming</Badge>}
+                            {isActive && !hasVoting && <Badge variant="outline" className="text-[10px] h-4 px-1 py-0 text-green-600 border-green-200">Actief</Badge>}
                         </span>
                         <span className="text-[10px] text-muted-foreground">
                             {node.valid_from ? new Date(node.valid_from).toLocaleDateString("nl-NL") : 'Initieel'}
@@ -100,9 +103,15 @@ export const ThemeContextPanel: React.FC = () => {
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                     <Button variant={isReadOnly ? "secondary" : "outline"} size="sm" className="gap-2 border-dashed">
-                        {isReadOnly ? <History className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4 text-green-500" />}
+                        {isReadOnly ? (
+                            <History className="h-4 w-4" />
+                        ) : activeVotingSession ? (
+                            <Target className="h-4 w-4 text-orange-500 animate-pulse" />
+                        ) : (
+                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                        )}
                         <span className="hidden md:inline">
-                            {isReadOnly ? `Versie: ${currentViewedVersion.name}` : `Actief: ${activeVersion.name}`}
+                            {isReadOnly ? `Versie: ${currentViewedVersion.name}` : activeVotingSession ? `Stemming: ${activeVersion.name}` : `Actief: ${activeVersion.name}`}
                         </span>
                         {isReadOnly && <Badge variant="secondary" className="text-[10px] h-5 px-1">ALLEEN-LEZEN</Badge>}
                     </Button>
@@ -112,8 +121,8 @@ export const ThemeContextPanel: React.FC = () => {
                     <div className="px-2 py-1.5 text-xs text-muted-foreground bg-muted/50 rounded-md mx-1 mb-2">
                         <div className="flex justify-between">
                             <span>Status:</span>
-                            <span className={isReadOnly ? "text-orange-500 font-medium" : "text-green-500 font-medium"}>
-                                {isReadOnly ? "Historisch (Alleen-lezen)" : "Actief (Bewerkbaar)"}
+                            <span className={isReadOnly ? "text-orange-500 font-medium" : activeVotingSession ? "text-orange-500 font-bold" : "text-green-500 font-medium"}>
+                                {isReadOnly ? "Historisch (Alleen-lezen)" : activeVotingSession ? "Stemming Actief (Alleen-lezen)" : "Actief (Bewerkbaar)"}
                             </span>
                         </div>
                         <div className="flex justify-between mt-1">
