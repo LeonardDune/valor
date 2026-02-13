@@ -127,7 +127,8 @@ async def chat_endpoint(request: ConversationRequest):
     
     # Persist extracted claims to Neo4j
     if response.extracted_claims:
-        await save_claims(cid, response.extracted_claims)
+        # Agent writes disabled by user request (Production Safety)
+        pass
         
     return response
     return response
