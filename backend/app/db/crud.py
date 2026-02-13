@@ -812,13 +812,16 @@ async def get_theme_versions_by_theme(theme_id: str, user_id: str) -> List[Dict]
     MATCH (u)-[r_space:HAS_ROLE]->(t)
          
     
+    OPTIONAL MATCH (s)-[:HAS_SESSION]->(sess:VotingSession)
+    WHERE sess.status = 'active'
+    
     OPTIONAL MATCH (s)-[:DERIVED_FROM]->(parent:ThemeVersion)
          
     RETURN {
         id: s.id,
         name: s.name,
         description: s.description,
-        status: s.status,
+        status: CASE WHEN sess IS NOT NULL THEN 'voting' ELSE s.status END,
         is_archived: (s.status = 'archived' OR t.status = 'archived' OR p.status = 'archived' OR org.status = 'archived'),
         role: r_space.role,
         created_at: toString(s.created_at),
@@ -839,11 +842,15 @@ async def get_theme_version(version_id: str, user_id: str) -> Optional[Dict]:
     // Simplified: Strict Explicit Membership.
     MATCH (u)-[r_space:HAS_ROLE]->(s)
     
+    // Check for active voting session to override status
+    OPTIONAL MATCH (s)-[:HAS_SESSION]->(sess:VotingSession)
+    WHERE sess.status = 'active'
+    
     RETURN {
         id: s.id,
         name: s.name,
         description: s.description,
-        status: s.status,
+        status: CASE WHEN sess IS NOT NULL THEN 'voting' ELSE s.status END,
         is_archived: (s.status = 'archived' OR t.status = 'archived' OR p.status = 'archived' OR org.status = 'archived'),
         theme_id: t.id,
         theme_name: t.name,
@@ -851,7 +858,6 @@ async def get_theme_version(version_id: str, user_id: str) -> Optional[Dict]:
         project_name: p.name,
         organization_id: org.id,
         organization_name: org.name,
-        role: r_space.role, 
         role: r_space.role, 
         created_at: toString(s.created_at),
         valid_from: toString(s.valid_from),
@@ -873,6 +879,11 @@ async def get_theme_active_version(theme_id: str, user_id: str) -> Optional[Dict
     MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:Theme {id: $tid})
     MATCH (t)-[:HAS_VERSION]->(s:ThemeVersion)
     WHERE s.valid_to IS NULL
+    
+    // Check for active voting session to override status
+    OPTIONAL MATCH (s)-[:HAS_SESSION]->(sess:VotingSession)
+    WHERE sess.status = 'active'
+    
     MATCH (u:User {id: $uid})
     
     // Simplified: Strict Explicit Membership.
@@ -893,7 +904,7 @@ async def get_theme_active_version(theme_id: str, user_id: str) -> Optional[Dict
         id: s.id,
         name: s.name,
         description: s.description,
-        status: s.status,
+        status: CASE WHEN sess IS NOT NULL THEN 'voting' ELSE s.status END,
         is_archived: (s.status = 'archived' OR t.status = 'archived' OR p.status = 'archived' OR org.status = 'archived'),
         theme_id: t.id,
         theme_name: s.name,
@@ -1022,6 +1033,12 @@ async def get_claims_for_version(version_id: str) -> List[Claim]:
     MATCH (tv)-[:HAS_FACTOR]->(fv_source:FactorVersion)
     MATCH (fv_source)-[rel:CLAIMS]->(cv:ClaimVersion)-[:TO]->(fv_target:FactorVersion)
     MATCH (cb:ClaimBase)-[:HAS_VERSION]->(cv) // Retrieve Base for immutable props
+    
+    // Optional threads for claim, source and target
+    OPTIONAL MATCH (cv)-[:HAS_THREAD]->(t_claim:ConversationThread)
+    OPTIONAL MATCH (fv_source)-[:HAS_THREAD]->(t_source:ConversationThread)
+    OPTIONAL MATCH (fv_target)-[:HAS_THREAD]->(t_target:ConversationThread)
+    
     // Ensure target is also in this version (Consistency Check)
     WHERE (tv)-[:HAS_FACTOR]->(fv_target)
     
@@ -1037,6 +1054,10 @@ async def get_claims_for_version(version_id: str) -> List[Claim]:
         target_id: fv_target.base_id,
         source_version_id: fv_source.id,
         target_version_id: fv_target.id,
+        
+        claim_thread_id: t_claim.id,
+        source_thread_id: t_source.id,
+        target_thread_id: t_target.id,
         
         created_at: toString(cv.created_at),
         created_by: cb.created_by  // Immutable Creator
@@ -1080,13 +1101,15 @@ async def get_factors_for_version(version_id: str) -> List[Dict]:
     driver = get_driver()
     query = """
     MATCH (tv:ThemeVersion {id: $vid})-[:HAS_FACTOR]->(fv:FactorVersion)
+    OPTIONAL MATCH (fv)-[:HAS_THREAD]->(t:ConversationThread)
     RETURN {
         id: fv.base_id,              // Frontend expects Identity ID
         version_id: fv.id,           // Specific Version ID
         name: fv.name,
         description: fv.description,
         type: fv.type,
-        theme_id: fv.theme_id        // If encoded in FactorVersion, or we omit
+        theme_id: fv.theme_id,       // If encoded in FactorVersion, or we omit
+        thread_id: t.id
     } as factor
     """
     with driver.session() as session:
@@ -1334,6 +1357,8 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
     SET old_v.valid_to = datetime()
     SET old_v.status = 'historical'
     
+    WITH old_v, t
+    
     // Remove old active relationship
     MATCH (t)-[r_active:HAS_ACTIVE_VERSION]->(old_v)
     DELETE r_active
@@ -1421,6 +1446,7 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
     CREATE (new_f_source)-[:CLAIMS]->(new_c)
     CREATE (new_c)-[:TO]->(new_f_target)
     CREATE (new_c)-[:DERIVED_FROM]->(old_c)
+    CREATE (new_v)-[:HAS_CLAIM]->(new_c)
     SET old_c.valid_to = datetime()
     
     // Link to Base

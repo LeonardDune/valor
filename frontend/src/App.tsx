@@ -18,6 +18,7 @@ import { DashboardLayout } from './views/shell/DashboardLayout';
 import { VersionLayout } from './components/layout/VersionLayout';
 import { VersionDashboard } from './pages/VersionDashboard';
 import { VersionChat } from './pages/VersionChat';
+import { RefinementBoardComponent } from './components/deliberation/RefinementBoard';
 import { ThemeProvider } from './context/ThemeContext';
 
 function App() {
@@ -127,7 +128,7 @@ function App() {
           {/* Version Routes (Primary) */}
           <Route path="/versions/:versionId" element={<VersionLayout />}>
             <Route index element={<VersionDashboard />} />
-            <Route path="claims" element={<div className="p-8">Claims (Coming Soon)</div>} />
+            <Route path="claims" element={<RefinementBoardComponent />} />
             <Route path="chat" element={<VersionChat />} />
             <Route path="members" element={<div className="p-8">Members (Coming Soon)</div>} />
             <Route path="settings" element={<div className="p-8">Version Settings (Coming Soon)</div>} />

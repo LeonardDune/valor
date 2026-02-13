@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { CausaShell } from '../../perspectives/causa';
 import { api, type Claim } from '../../services/api';
 import { Maximize2, Minimize2, ArrowLeft, Settings } from 'lucide-react';
@@ -39,10 +39,29 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
 
     // WebSocket Integration
     const { lastMessage, sendMessage } = useWebSocket(projectId);
+    const websocketContext = useMemo(() => ({ lastMessage, sendMessage }), [lastMessage, sendMessage]);
     const [currentUser, setCurrentUser] = useState<any>(null);
 
     // Context Integration
-    const { currentViewedVersion, isReadOnly } = useTheme();
+    const { currentViewedVersion, isReadOnly, setActiveVotingSession } = useTheme();
+
+    // WS to Context Sync
+    useEffect(() => {
+        if (!lastMessage) return;
+        const msg = lastMessage;
+
+        if (msg.type === 'SESSION_STARTED') {
+            setActiveVotingSession(msg.payload);
+        }
+
+        if (msg.type === 'STAGE_UPDATED') {
+            setActiveVotingSession(prev => prev ? { ...prev, stage: msg.payload.stage } : null);
+        }
+
+        if (msg.type === 'SESSION_CLOSED') {
+            setActiveVotingSession(null);
+        }
+    }, [lastMessage, setActiveVotingSession]);
 
     // Fetch user on mount for identity
     useEffect(() => {
@@ -59,8 +78,7 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
                     const profile = await api.getProfile();
                     // Use Username if available, fallback to name, then email
                     const displayName = profile.username || profile.name || profile.email;
-                    // Spread profile first, then override specific fields if needed
-                    setCurrentUser({ ...profile, id: displayName, email: profile.email });
+                    setCurrentUser({ ...profile, displayName });
                 }
             } catch (err) {
                 console.error("Failed to fetch user profile", err);
@@ -112,9 +130,9 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
         refreshData();
     }, [refreshData]);
 
-    const handleOpenConversation = (context: ConversationContext) => {
+    const handleOpenConversation = useCallback((context: ConversationContext) => {
         setActiveConversation(context);
-    };
+    }, []);
 
     const handleCloseConversation = () => {
         setActiveConversation(null);
@@ -189,8 +207,8 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
                                 themeId={themeId}
                                 projectId={projectId}
                                 onOpenConversation={handleOpenConversation}
-                                websocket={{ lastMessage, sendMessage }}
-                                currentUserId={currentUser?.email || 'anon'}
+                                websocket={websocketContext}
+                                currentUserId={currentUser?.id || null}
                                 versionId={currentViewedVersion?.id}
                                 isReadOnly={isReadOnly}
                             />
@@ -218,7 +236,7 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
             />
 
             <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
-                <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto">
+                <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto" aria-describedby={undefined}>
                     <DialogHeader>
                         <DialogTitle>Thema Instellingen: {themeName}</DialogTitle>
                     </DialogHeader>

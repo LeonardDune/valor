@@ -15,6 +15,7 @@ import type { LayoutNode } from '../layout/types';
 import CLDNode from './nodes/CLDNode';
 import { SystemScopeNode } from './nodes/SystemScopeNode';
 import CLDEdge from './edges/CLDEdge';
+import { getGeometricHandles } from '../layout/edgeUtils';
 import { CanvasContextMenu } from '@/components/shell/CanvasContextMenu';
 import { ViewControls } from '@/components/shell/ViewControls';
 import type { ConversationContext } from '@/types/conversation';
@@ -42,12 +43,13 @@ interface CLDViewProps {
 
 
 
-const nodeTypes = {
+
+const NODE_TYPES = {
     cldNode: CLDNode,
     systemScope: SystemScopeNode
 };
 
-const edgeTypes = {
+const EDGE_TYPES = {
     cldEdge: CLDEdge
 };
 
@@ -69,10 +71,6 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     const [rfInstance, setRfInstance] = useState<any>(null);
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-
-
-
-
 
     // Thread State
     const [threadStats, setThreadStats] = useState<Record<string, number>>({});
@@ -222,35 +220,10 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                 // [US-09] Revert to Legacy Geometric Logic (matches ReactFlowCanvas.tsx)
                 // This ensures connections follow the visual physics rather than arbitrary role rules.
 
-                let sourceHandle = 'source-right';
-                let targetHandle = 'target-left';
-
-                if (sourceNode && targetNode) {
-                    const dx = targetNode.x - sourceNode.x;
-                    const dy = targetNode.y - sourceNode.y;
-
-                    // Use 1.2 factor to bias slightly towards horizontal connections 
-                    // unless clearly vertical.
-                    if (Math.abs(dy) > Math.abs(dx) * 1.2) {
-                        // Primarily vertical
-                        if (dy > 0) { // Target is below
-                            sourceHandle = 'source-bottom';
-                            targetHandle = 'target-top';
-                        } else { // Target is above
-                            sourceHandle = 'source-top';
-                            targetHandle = 'target-bottom';
-                        }
-                    } else {
-                        // Primarily horizontal
-                        if (dx > 0) { // Target is right
-                            sourceHandle = 'source-right';
-                            targetHandle = 'target-left';
-                        } else { // Target is left
-                            sourceHandle = 'source-left';
-                            targetHandle = 'target-right';
-                        }
-                    }
-                }
+                const { sourceHandle, targetHandle } = getGeometricHandles(
+                    { x: sourceNode?.x || 0, y: sourceNode?.y || 0 },
+                    { x: targetNode?.x || 0, y: targetNode?.y || 0 }
+                );
                 const isPositive = cl.polarity === 'positive';
                 const edgeStrokeColor = isPositive ? 'var(--color-causal-positive-line)' : 'var(--color-causal-negative-line)';
                 const edgeMarkerColor = isPositive ? 'var(--color-causal-positive-marker)' : 'var(--color-causal-negative-marker)';
@@ -326,32 +299,6 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
         }
     }, [layoutMode, rfInstance]);
 
-    // Helper: Calculate geometric handles based on positions
-    const getGeometricHandles = (source: LayoutNode, target: LayoutNode) => {
-        const dx = target.x - source.x;
-        const dy = target.y - source.y;
-        let sourceHandle = 'source-right';
-        let targetHandle = 'target-left';
-
-        if (Math.abs(dy) > Math.abs(dx) * 1.2) {
-            if (dy > 0) { // Target is below
-                sourceHandle = 'source-bottom';
-                targetHandle = 'target-top';
-            } else { // Target is above
-                sourceHandle = 'source-top';
-                targetHandle = 'target-bottom';
-            }
-        } else {
-            if (dx > 0) { // Target is right
-                sourceHandle = 'source-right';
-                targetHandle = 'target-left';
-            } else { // Target is left
-                sourceHandle = 'source-left';
-                targetHandle = 'target-right';
-            }
-        }
-        return { sourceHandle, targetHandle };
-    };
 
     // 2. Physics Sync (Handle Position Updates from Runner)
     useEffect(() => {
@@ -379,7 +326,10 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
 
                     if (!sourceNode || !targetNode) return edge;
 
-                    const { sourceHandle, targetHandle } = getGeometricHandles(sourceNode, targetNode);
+                    const { sourceHandle, targetHandle } = getGeometricHandles(
+                        { x: sourceNode.x, y: sourceNode.y },
+                        { x: targetNode.x, y: targetNode.y }
+                    );
 
                     // Optimization: Only return new object if changed
                     if (edge.sourceHandle === sourceHandle && edge.targetHandle === targetHandle) {
@@ -414,8 +364,8 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                 }}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
-                nodeTypes={nodeTypes}
-                edgeTypes={edgeTypes}
+                nodeTypes={NODE_TYPES}
+                edgeTypes={EDGE_TYPES}
                 onNodeClick={(_, node) => {
                     if (onSelect) {
                         // Reconstruct a data object that mimics what Inspector expects.

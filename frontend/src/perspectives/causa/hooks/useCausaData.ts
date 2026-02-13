@@ -27,17 +27,23 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
             let claimsData: Claim[];
             let factorsData: Factor[];
 
+            console.log('[useCausaData] Refreshing...', { themeId, versionId });
+
             if (versionId) {
+                console.log('[useCausaData] Fetching specific version:', versionId);
                 [claimsData, factorsData] = await Promise.all([
                     api.getThemeVersionClaims(versionId),
                     api.getThemeVersionFactors(versionId)
                 ]);
             } else {
+                console.log('[useCausaData] Fetching active theme:', themeId);
                 [claimsData, factorsData] = await Promise.all([
                     api.getThemeClaims(themeId),
                     api.getThemeFactors(themeId)
                 ]);
             }
+
+            console.log('[useCausaData] Fetched:', { claims: claimsData.length, factors: factorsData.length });
 
             setFactors(factorsData);
             setClaims(claimsData);

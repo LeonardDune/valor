@@ -22,7 +22,7 @@ export const OrganizationProvider: React.FC<{ children: ReactNode }> = ({ childr
     const fetchOrganizations = async () => {
         if (!session) return; // Don't fetch if no session
 
-        setIsLoading(true);
+        if (organizations.length === 0) setIsLoading(true);
         try {
             const orgs = await api.getDashboardEnvironments();
             setOrganizations(orgs);

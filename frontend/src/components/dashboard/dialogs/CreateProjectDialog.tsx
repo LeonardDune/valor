@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { api } from '@/services/api';
+import { useCreateProject } from '@/hooks/queries/useProjects';
 import {
     Dialog,
     DialogContent,
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from 'sonner';
 
 interface CreateProjectDialogProps {
     organizationId: string;
@@ -36,23 +37,25 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
 
     const [name, setName] = useState('');
     const [desc, setDesc] = useState('');
-    const [loading, setLoading] = useState(false);
+    const createMutation = useCreateProject();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!name) return;
-        setLoading(true);
-        try {
-            await api.createProject(name, organizationId, desc);
-            setIsOpen(false);
-            setName('');
-            setDesc('');
-            if (onSuccess) onSuccess();
-        } catch (error) {
-            console.error("Failed to create project", error);
-        } finally {
-            setLoading(false);
-        }
+
+        createMutation.mutate({ name, organizationId, description: desc }, {
+            onSuccess: () => {
+                setIsOpen(false);
+                setName('');
+                setDesc('');
+                toast.success("Project succesvol aangemaakt!");
+                if (onSuccess) onSuccess();
+            },
+            onError: (error) => {
+                console.error("Failed to create project", error);
+                toast.error("Kon project niet aanmaken.");
+            }
+        });
     };
 
     return (
@@ -87,8 +90,8 @@ export const CreateProjectDialog: React.FC<CreateProjectDialogProps> = ({
                         />
                     </div>
                     <DialogFooter>
-                        <Button type="submit" disabled={!name || loading}>
-                            {loading ? "Bezig..." : "Aanmaken"}
+                        <Button type="submit" disabled={!name || createMutation.isPending}>
+                            {createMutation.isPending ? "Bezig..." : "Aanmaken"}
                         </Button>
                     </DialogFooter>
                 </form>

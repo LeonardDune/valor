@@ -1,10 +1,11 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useMemo, useState } from 'react';
 import { ThemeCard, type Theme } from './ThemeCard';
-import { api } from '@/services/api';
+import { useThemes, useDashboardThemes } from '@/hooks/queries/useThemes';
 import { GridToolbar, type FilterOption, type SortOption, type GroupOption } from './GridToolbar';
 import { CreateThemeDialog } from './dialogs/CreateThemeDialog';
 import { Button } from '@/components/ui/button';
 import { Plus, Layers } from 'lucide-react';
+import { ModeratorSection } from './ModeratorSection';
 
 interface ThemeGridProps {
     projectId?: string;
@@ -12,10 +13,24 @@ interface ThemeGridProps {
 }
 
 export function ThemeGrid({ projectId, projectName }: ThemeGridProps) {
-    const [themes, setThemes] = useState<Theme[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const { data: projectThemes = [], isLoading: isLoadingProject, refetch: refetchProject } = useThemes(projectId || '');
+    const { data: dashboardThemes = [], isLoading: isLoadingDashboard, refetch: refetchDashboard } = useDashboardThemes();
+
+    const isLoading = projectId ? isLoadingProject : isLoadingDashboard;
+    const refetch = projectId ? refetchProject : refetchDashboard;
+
+    // Unified themes list for display
+    const themes = useMemo(() => {
+        if (projectId) {
+            return (projectThemes as any[]).map(t => ({
+                ...t,
+                organization_name: '', // Will be empty in project-specific view
+                project_name: projectName || '',
+                type: 'THEME' as const
+            }));
+        }
+        return dashboardThemes;
+    }, [projectId, projectName, projectThemes, dashboardThemes]);
 
     // Toolbar State
     const [searchQuery, setSearchQuery] = useState('');
@@ -25,37 +40,13 @@ export function ThemeGrid({ projectId, projectName }: ThemeGridProps) {
         status: ['active']
     });
 
-    const fetchThemes = useCallback(async (clearFirst: boolean = false) => {
-        if (clearFirst) setThemes([]);
-        setLoading(true);
-        setError(null);
-        try {
-            let data: any[] = [];
-            if (projectId) {
-                data = await api.getProjectThemes(projectId);
-            } else {
-                data = await api.getDashboardThemes();
-            }
-            setThemes(data);
-        } catch (err) {
-            console.error("Failed to fetch themes", err);
-            setError("Kon thema's niet laden.");
-        } finally {
-            setLoading(false);
-        }
-    }, [projectId, projectName]);
-
-    useEffect(() => {
-        fetchThemes(true);
-    }, [fetchThemes]);
-
     // Filtering & Sorting
     const filteredThemes = useMemo(() => {
-        return themes.filter(t => {
+        return (themes as any[]).filter(t => {
             // Search
             const matchesSearch = !searchQuery ||
                 t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                t.description?.toLowerCase().includes(searchQuery.toLowerCase());
+                (t.description || '').toLowerCase().includes(searchQuery.toLowerCase());
 
             // Status
             const statusFilter = activeFilters.status || [];
@@ -145,7 +136,7 @@ export function ThemeGrid({ projectId, projectName }: ThemeGridProps) {
     ];
 
     if (!projectId) {
-        const uniqueOrgs = Array.from(new Set(themes.map(t => t.organization_name).filter(Boolean)));
+        const uniqueOrgs = Array.from(new Set((themes as any[]).map(t => t.organization_name).filter(Boolean))) as string[];
         if (uniqueOrgs.length > 1) {
             filterConfig.push({
                 label: 'Organisatie',
@@ -153,21 +144,17 @@ export function ThemeGrid({ projectId, projectName }: ThemeGridProps) {
                 options: uniqueOrgs.map(org => ({ label: org, value: org }))
             });
         }
-        const uniqueProjs = Array.from(new Set(themes.map(t => t.project_name).filter(Boolean)));
+        const uniqueProjs = Array.from(new Set((themes as any[]).map(t => t.project_name).filter(Boolean))) as string[];
         if (uniqueProjs.length > 1) {
             filterConfig.push({
                 label: 'Project',
                 field: 'project',
-                options: uniqueProjs.map(p => ({ label: p!, value: p! }))
+                options: uniqueProjs.map(p => ({ label: p, value: p }))
             });
         }
     }
 
-    if (error) {
-        return <div className="p-8 text-destructive">{error}</div>;
-    }
-
-    if (loading && themes.length === 0) {
+    if (isLoading && themes.length === 0) {
         return (
             <div className="flex-1 p-4 lg:p-8 space-y-6">
                 <div className="h-20 bg-muted/20 rounded-xl animate-pulse" />
@@ -182,6 +169,8 @@ export function ThemeGrid({ projectId, projectName }: ThemeGridProps) {
 
     return (
         <div className="flex-1 overflow-y-auto p-4 lg:p-8">
+            {!projectId && <ModeratorSection />}
+
             <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div className="space-y-1">
                     <div className="flex items-center gap-2 text-primary mb-1">
@@ -201,9 +190,7 @@ export function ThemeGrid({ projectId, projectName }: ThemeGridProps) {
                 {projectId && (
                     <CreateThemeDialog
                         projectId={projectId}
-                        open={isDialogOpen}
-                        onOpenChange={setIsDialogOpen}
-                        onSuccess={fetchThemes}
+                        onSuccess={() => refetch()}
                         trigger={
                             <Button className="gap-2 shadow-lg shadow-primary/20">
                                 <Plus className="h-4 w-4" />
@@ -230,6 +217,17 @@ export function ThemeGrid({ projectId, projectName }: ThemeGridProps) {
             {filteredThemes.length === 0 ? (
                 <div className="text-center py-20 bg-muted/5 rounded-2xl border border-dashed border-border/50">
                     <p className="text-muted-foreground mb-4">Geen thema's gevonden die voldoen aan je criteria.</p>
+                    {projectId && (
+                        <CreateThemeDialog
+                            projectId={projectId}
+                            onSuccess={() => refetch()}
+                            trigger={
+                                <Button variant="outline">
+                                    Maak je eerste thema aan
+                                </Button>
+                            }
+                        />
+                    )}
                 </div>
             ) : (
                 <div className="space-y-12">
@@ -246,7 +244,7 @@ export function ThemeGrid({ projectId, projectName }: ThemeGridProps) {
                             )}
                             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                                 {group.items.map((theme) => (
-                                    <ThemeCard key={theme.id} theme={theme} onUpdate={fetchThemes} />
+                                    <ThemeCard key={theme.id} theme={theme} onUpdate={() => refetch()} />
                                 ))}
                             </div>
                         </div>

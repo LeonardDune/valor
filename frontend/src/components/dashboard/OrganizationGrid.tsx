@@ -1,15 +1,13 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { OrganizationCard, type Organization } from './OrganizationCard';
-import { api } from '@/services/api';
+import { useDashboardEnvironments } from '@/hooks/queries/useOrganizations';
 import { CreateOrganizationDialog } from './dialogs/CreateOrganizationDialog';
 import { GridToolbar, type FilterOption, type SortOption } from './GridToolbar';
 import { Button } from '@/components/ui/button';
 import { Plus, Building2 } from 'lucide-react';
 
 export function OrganizationGrid() {
-    const [organizations, setOrganizations] = useState<Organization[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const { data: dashboardData = [], isLoading, error, refetch } = useDashboardEnvironments();
 
     // Toolbar State
     const [searchQuery, setSearchQuery] = useState('');
@@ -18,23 +16,9 @@ export function OrganizationGrid() {
         status: ['active']
     });
 
-    const fetchOrganizations = async () => {
-        try {
-            setLoading(true);
-            const data = await api.getDashboardEnvironments();
-            const orgs = data.filter((node: any) => node.type === 'ORGANIZATION');
-            setOrganizations(orgs);
-        } catch (err) {
-            console.error("Failed to fetch organizations", err);
-            setError("Kon organisaties niet laden.");
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        fetchOrganizations();
-    }, []);
+    const organizations = useMemo(() => {
+        return dashboardData.filter((node: any) => node.type === 'ORGANIZATION') as Organization[];
+    }, [dashboardData]);
 
     // Filter & Sort
     const filteredOrgs = useMemo(() => {
@@ -73,10 +57,10 @@ export function OrganizationGrid() {
     ];
 
     if (error) {
-        return <div className="p-8 text-destructive">{error}</div>;
+        return <div className="p-8 text-destructive">Kon organisaties niet laden.</div>;
     }
 
-    if (loading && organizations.length === 0) {
+    if (isLoading && organizations.length === 0) {
         return (
             <div className="flex-1 p-4 lg:p-8 space-y-6">
                 <div className="h-20 bg-muted/20 rounded-xl animate-pulse" />
@@ -109,7 +93,7 @@ export function OrganizationGrid() {
                             Nieuwe Organisatie
                         </Button>
                     }
-                    onSuccess={fetchOrganizations}
+                    onSuccess={() => refetch()}
                 />
             </div>
 
@@ -130,7 +114,7 @@ export function OrganizationGrid() {
                         trigger={
                             <Button variant="outline">Start een Organisatie</Button>
                         }
-                        onSuccess={fetchOrganizations}
+                        onSuccess={() => refetch()}
                     />
                 </div>
             ) : (
@@ -139,7 +123,7 @@ export function OrganizationGrid() {
                         <OrganizationCard
                             key={org.id}
                             organization={org}
-                            onUpdate={fetchOrganizations}
+                            onUpdate={() => refetch()}
                         />
                     ))}
                 </div>

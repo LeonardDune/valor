@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { api } from '@/services/api';
+import { useCreateOrganization } from '@/hooks/queries/useOrganizations';
 import {
     Dialog,
     DialogContent,
@@ -35,24 +35,23 @@ export const CreateOrganizationDialog: React.FC<CreateOrganizationDialogProps> =
 
     const [name, setName] = useState('');
     const [desc, setDesc] = useState('');
-    const [loading, setLoading] = useState(false);
+    const createMutation = useCreateOrganization();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setLoading(true);
-        try {
-            await api.createOrganization(name, desc);
-            setIsOpen(false);
-            setName('');
-            setDesc('');
-            toast.success("Organisatie aangemaakt!");
-            if (onSuccess) onSuccess();
-        } catch (error) {
-            console.error("Failed to create org", error);
-            toast.error("Kon organisatie niet aanmaken.");
-        } finally {
-            setLoading(false);
-        }
+        createMutation.mutate({ name, description: desc }, {
+            onSuccess: () => {
+                setIsOpen(false);
+                setName('');
+                setDesc('');
+                toast.success("Organisatie aangemaakt!");
+                if (onSuccess) onSuccess();
+            },
+            onError: (error) => {
+                console.error("Failed to create org", error);
+                toast.error("Kon organisatie niet aanmaken.");
+            }
+        });
     };
 
     return (
@@ -87,8 +86,8 @@ export const CreateOrganizationDialog: React.FC<CreateOrganizationDialogProps> =
                         />
                     </div>
                     <DialogFooter>
-                        <Button type="submit" disabled={!name || loading}>
-                            {loading ? "Bezig..." : "Aanmaken"}
+                        <Button type="submit" disabled={!name || createMutation.isPending}>
+                            {createMutation.isPending ? "Bezig..." : "Aanmaken"}
                         </Button>
                     </DialogFooter>
                 </form>

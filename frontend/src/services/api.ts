@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 // Create axios instance
-const apiClient = axios.create({
+export const apiClient = axios.create({
     baseURL: API_URL
 });
 
@@ -23,7 +23,7 @@ apiClient.interceptors.response.use(
     async (error) => {
         if (error.response?.status === 401) {
             console.warn("Session expired or unauthorized (401). Signing out...");
-            await supabase.auth.signOut();
+            // await supabase.auth.signOut();
             // Force reload/redirect if needed, but AuthContext should handle it
             // window.location.href = '/login'; 
         }
@@ -47,6 +47,16 @@ export interface Claim {
     polarity: string;
     created_at?: string;
     version_id?: string;
+    claim_thread_id?: string;
+    source_thread_id?: string;
+    target_thread_id?: string;
+    status?: string;
+}
+
+export interface ValidationResult {
+    allowed: boolean;
+    type: 'success' | 'warning' | 'error';
+    message: string;
 }
 
 export interface AgentResponse {
@@ -63,12 +73,33 @@ export interface ConversationResponse {
     agent_responses: AgentResponse[];
 }
 
+export type ShortlistStatus = 'positive' | 'contested' | 'rejected';
+
+export interface ShortlistClaim extends Claim {
+    status: ShortlistStatus;
+    high_p: number;
+    combined_p: number;
+    discard_p: number;
+    user_vote?: ConsentVoteType;
+    user_motivation?: string;
+}
+
+export type ConsentVoteType = 'approve' | 'object';
+
+export interface ConsentVotePayload {
+    session_id: string;
+    claim_version_id: string;
+    vote: ConsentVoteType;
+    motivation?: string;
+}
+
 export interface Factor {
     id: string;
     name: string;
     description: string;
     type: FactorType;
     version_id?: string;
+    thread_id?: string;
 }
 
 export interface Organization {

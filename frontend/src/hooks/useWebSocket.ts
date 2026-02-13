@@ -19,6 +19,7 @@ export const useWebSocket = (projectId: string | null) => {
 
         // cleanup previous
         if (socketRef.current) {
+            socketRef.current.onclose = null; // Prevent reconnect trigger
             socketRef.current.close();
         }
 
@@ -68,6 +69,7 @@ export const useWebSocket = (projectId: string | null) => {
         connect();
         return () => {
             if (socketRef.current) {
+                socketRef.current.onclose = null; // Prevent reconnect trigger
                 socketRef.current.close();
             }
             if (reconnectTimeoutRef.current) {
