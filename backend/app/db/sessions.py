@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple
 import uuid
 import logging
 import json
@@ -33,6 +33,7 @@ async def create_voting_session(theme_version_id: str, created_by: str, config: 
     CREATE (s:VotingSession {
         id: $sid,
         status: 'active',
+        stage: 'refine',
         config: $config,
         created_at: datetime(),
         created_by: $uid
@@ -103,6 +104,7 @@ async def get_active_session(theme_version_id: str) -> Optional[VotingSession]:
                     id=node["id"],
                     theme_version_id=record["vid"],
                     status=node.get("status", "active"),
+                    stage=node.get("stage", "refine"),
                     config=config,
                     created_by=node.get("created_by", "system"),
                     created_at=str(node.get("created_at")) 
@@ -149,3 +151,42 @@ async def get_session_context(session_id: str) -> Tuple[Optional[str], Optional[
     except Exception as e:
         logger.error(f"Error getting session context: {e}")
         return None, None
+
+async def get_moderator_sessions(user_id: str) -> List[Dict[str, Any]]:
+    """
+    Returns all active voting sessions where the user has MODERATOR or ADMIN role.
+    """
+    driver = get_driver()
+    query = """
+    MATCH (u:User {id: $uid})-[r:HAS_ROLE]->(entity)
+    WHERE r.role IN ['moderator', 'admin']
+    
+    // The entity can be an Org, Project, or Theme.
+    // If it's an Org or Project, we need to find all Themes under it.
+    // For simplicity, let's find VotingSessions reachable from these entities.
+    
+    OPTIONAL MATCH (entity)-[:HAS_PROJECT*0..1]->(p:Project)-[:HAS_THEME*0..1]->(t:Theme)-[:HAS_VERSION]->(tv:ThemeVersion)-[:HAS_SESSION]->(s:VotingSession)
+    WHERE s.status = 'active'
+    
+    // Also check direct Theme links
+    OPTIONAL MATCH (entity)-[:HAS_VERSION*0..1]->(direct_tv:ThemeVersion)-[:HAS_SESSION]->(direct_s:VotingSession)
+    WHERE direct_s.status = 'active' AND entity:Theme
+    
+    WITH collect(s) + collect(direct_s) as all_sessions
+    UNWIND all_sessions as s
+    MATCH (s)<-[:HAS_SESSION]-(tv:ThemeVersion)<-[:HAS_VERSION]-(t:Theme)
+    RETURN DISTINCT s.id as id, 
+                    s.stage as stage, 
+                    s.created_at as created_at,
+                    t.name as theme_name,
+                    tv.name as version_name,
+                    tv.id as version_id
+    ORDER BY s.created_at DESC
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"uid": user_id})
+            return [dict(record) for record in result]
+    except Exception as e:
+        logger.error(f"Error getting moderator sessions: {e}")
+        return []

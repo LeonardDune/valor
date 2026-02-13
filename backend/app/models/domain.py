@@ -82,6 +82,7 @@ class Factor(FactorBase):
     type: str
     description: Optional[str]
     version_id: str # The ID of the specific version being viewed
+    thread_id: Optional[str] = None
 
 class Claim(ClaimBase):
     statement: str
@@ -90,6 +91,10 @@ class Claim(ClaimBase):
     source_id: str # Base ID of source
     target_id: str # Base ID of target
     version_id: str
+    claim_thread_id: Optional[str] = None
+    source_thread_id: Optional[str] = None
+    target_thread_id: Optional[str] = None
+    status: Optional[str] = None # draft, proposed, etc.
 
 class Theme(ThemeBase):
     name: str
@@ -194,10 +199,54 @@ class ThreadMessageCreate(BaseModel):
     content: str
 
 
+
+class DeliberationStage(str, Enum):
+    REFINE = "refine"
+    RANKING = "ranking"
+    CONSENT = "consent"
+    CLOSED = "closed"
+
 class VotingSession(BaseModel):
     id: str
     theme_version_id: str
     status: str = "active"
+    stage: DeliberationStage = DeliberationStage.REFINE
     config: Dict[str, Any]
     created_by: str
     created_at: datetime
+
+class Feedback(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str
+    claim_version_id: str
+    user_id: str
+    color: str # green, amber, red
+    motivation: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+
+class RankingCategory(str, Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    BACKLOG = "backlog"
+    DISCARD = "discard"
+
+class Ranking(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str
+    claim_version_id: str
+    user_id: str
+    category: RankingCategory
+    created_at: datetime = Field(default_factory=datetime.now)
+
+class ConsentVoteType(str, Enum):
+    APPROVE = "approve"
+    OBJECT = "object"
+
+class ConsentVote(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    session_id: str
+    claim_version_id: str
+    user_id: str
+    vote: ConsentVoteType
+    motivation: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)

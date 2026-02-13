@@ -28,17 +28,17 @@ async def start_session(data: CreateSessionRequest, user: dict = Depends(get_cur
         raise HTTPException(status_code=404, detail="Theme Version context not found")
 
     # Check Permissions on Theme (Moderator+)
-    is_allowed = await check_permission(user.get("sub"), theme_id, Role.MODERATOR)
+    is_allowed = await check_permission(user.get("id"), theme_id, Role.MODERATOR)
     if not is_allowed:
         raise HTTPException(status_code=403, detail="Not authorized to start voting session")
 
     # Sync User to Graph (Ensure they exist for relationship creation)
-    user_id = user.get("sub")
+    user_id = user.get("id")
     await ensure_user_sync(user_id, user_email, user.get("user_metadata", {}).get("full_name"))
 
     try:
         # Create Session
-        session_id, _ = await create_voting_session(data.theme_version_id, user.get("sub"), data.config)
+        session_id, _ = await create_voting_session(data.theme_version_id, user.get("id"), data.config)
         
         # Broadcast
         if project_id:
@@ -66,7 +66,7 @@ async def update_session(session_id: str, data: UpdateSessionRequest, user: dict
         raise HTTPException(status_code=404, detail="Session context not found")
         
     # Check Permissions (Moderator+)
-    is_allowed = await check_permission(user.get("sub"), theme_id, Role.MODERATOR)
+    is_allowed = await check_permission(user.get("id"), theme_id, Role.MODERATOR)
     if not is_allowed:
         raise HTTPException(status_code=403, detail="Not authorized to update voting session")
 
@@ -93,7 +93,7 @@ async def get_active_session_endpoint(theme_version_id: str, user: dict = Depend
         raise HTTPException(status_code=404, detail="Theme Version context not found")
         
     user_email = user.get("email")
-    can_view = await check_permission(user.get("sub"), theme_id, Role.VIEWER)
+    can_view = await check_permission(user.get("id"), theme_id, Role.VIEWER)
     if not can_view:
         raise HTTPException(status_code=403, detail="Not authorized to view sessions")
 

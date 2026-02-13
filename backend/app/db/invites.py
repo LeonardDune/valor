@@ -218,9 +218,9 @@ async def claim_pending_invites(user_id: str, user_email: str) -> List[Dict]:
     // Validate User
     MATCH (u:User {id: $uid})
     
-    # Ensure User email matches Invite email (implicit via $email passed for Invite match, 
-    # but strictly checking User properties might be needed if email on User node differs from Auth email?
-    # Assuming synced. But here we match User by ID.
+    // Ensure User email matches Invite email (implicit via $email passed for Invite match, 
+    // but strictly checking User properties might be needed if email on User node differs from Auth email?
+    // Assuming synced. But here we match User by ID.
     
     MATCH (i)-[:FOR_ACCESS]->(entity)
     

@@ -31,7 +31,7 @@ class UpdateProposalStatusRequest(BaseModel):
 async def create_new_proposal(request: CreateProposalRequest, user: dict = Depends(get_current_user)):
     try:
         # Enforce author_id from token
-        pid = await create_proposal(request.title, user.get("sub"), request.description, request.type, request.target_id)
+        pid = await create_proposal(request.title, user.get("id"), request.description, request.type, request.target_id)
         return pid
     except Exception as e:
         logger.error(f"Error creating proposal: {e}")

@@ -322,57 +322,55 @@ async def finalize_deliberation(session_id: str, user_id: str) -> Dict[str, Any]
         
         WITH s, new_tv
         
-        // Find all claims discussed in this session
-        OPTIONAL MATCH (s)-[:COLLECTED]->(v:ConsentVote)-[:VOTE_ON]->(sess_cv:ClaimVersion)
-        WITH s, new_tv, sess_cv, 
+        // 1. Identify ALL claims discussed in this session
+        // (Anything with a Vote, Feedback, or Ranking)
+        OPTIONAL MATCH (s)-[:COLLECTED]->(activity)
+        OPTIONAL MATCH (activity)-[:VOTE_ON|ON_CLAIM|RANKED_CLAIM]->(sess_cv:ClaimVersion)
+        WITH s, new_tv, collect(DISTINCT sess_cv.base_id) as discussed_base_ids
+        
+        // 2. Remove Snapshot Clones for ALL discussed claims
+        // (Status Quo remains untouched if NOT discussed)
+        UNWIND discussed_base_ids as b_id
+        OPTIONAL MATCH (new_tv)-[:HAS_CLAIM]->(clone:ClaimVersion {base_id: b_id})
+        DETACH DELETE clone
+        
+        WITH s, new_tv
+        
+        // 3. Re-calculate Consensus and Re-create Accepted Claims
+        // We look for approvals/objections specifically
+        OPTIONAL MATCH (s)-[:COLLECTED]->(v:ConsentVote)-[:VOTE_ON]->(cv:ClaimVersion)
+        WITH s, new_tv, cv, 
              count(CASE WHEN v.vote = 'approve' THEN 1 END) as approvals,
              count(CASE WHEN v.vote = 'object' THEN 1 END) as objections
         
-        // Strategy: Prune and Apply
-        // 1. Identify all claims that were part of this session's deliberation
-        WITH s, new_tv, collect({
-            cv: sess_cv,
-            is_accepted: (approvals > 0 AND objections = 0)
-        }) as session_results
-        
-        UNWIND session_results as result
-        WITH s, new_tv, result.cv as sess_cv, result.is_accepted as is_accepted
-        WHERE sess_cv IS NOT NULL
-        
-        // 2. Remove the Snapshot Clone for EVERY claim that was in the session
-        // (If it's rejected, it stays gone. If it's accepted, we'll re-add a fresh version below)
-        OPTIONAL MATCH (new_tv)-[:HAS_CLAIM]->(clone:ClaimVersion {base_id: sess_cv.base_id})
-        DETACH DELETE clone
-        
-        // 3. Re-create ONLY the accepted ones
-        WITH s, new_tv, sess_cv, is_accepted
-        WHERE is_accepted = true
+        // ONLY re-create if we have consensus (at least one approval AND zero objections)
+        WHERE cv IS NOT NULL AND approvals > 0 AND objections = 0
         
         CREATE (final_cv:ClaimVersion {
             id: randomUUID(),
-            base_id: sess_cv.base_id,
-            statement: sess_cv.statement,
-            polarity: sess_cv.polarity,
-            confidence: sess_cv.confidence,
+            base_id: cv.base_id,
+            statement: cv.statement,
+            polarity: cv.polarity,
+            confidence: cv.confidence,
             valid_from: datetime(),
             created_at: datetime()
         })
         CREATE (new_tv)-[:HAS_CLAIM]->(final_cv)
         
         // Link to ClaimBase (Identity)
-        WITH final_cv, sess_cv, new_tv
-        MATCH (cb:ClaimBase {id: sess_cv.base_id})
+        WITH final_cv, cv, new_tv
+        MATCH (cb:ClaimBase {id: cv.base_id})
         MERGE (cb)-[:HAS_VERSION]->(final_cv)
         
         // Structural Re-wiring (Source/Target Factors)
-        WITH final_cv, sess_cv, new_tv
-        MATCH (sess_cv)<-[:CLAIMS]-(old_f_source:FactorVersion)
+        WITH final_cv, cv, new_tv
+        MATCH (cv)<-[:CLAIMS]-(old_f_source:FactorVersion)
         MATCH (new_tv)-[:HAS_FACTOR]->(new_f_source:FactorVersion)
         WHERE new_f_source.base_id = old_f_source.base_id
         CREATE (new_f_source)-[:CLAIMS]->(final_cv)
         
-        WITH final_cv, sess_cv, new_tv
-        MATCH (sess_cv)-[:TO]->(old_f_target:FactorVersion)
+        WITH final_cv, cv, new_tv
+        MATCH (cv)-[:TO]->(old_f_target:FactorVersion)
         MATCH (new_tv)-[:HAS_FACTOR]->(new_f_target:FactorVersion)
         WHERE new_f_target.base_id = old_f_target.base_id
         CREATE (final_cv)-[:TO]->(new_f_target)

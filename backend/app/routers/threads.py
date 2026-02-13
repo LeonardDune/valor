@@ -7,10 +7,9 @@ from app.db.crud import (
     get_threads_by_target, 
     get_thread_counts, 
     create_thread_message, 
-    get_thread_messages,
-    ensure_user_sync
+    get_thread_messages
 )
-from app.auth import verify_token
+from app.auth import get_current_user, verify_token
 
 router = APIRouter(
     tags=["threads"],
@@ -18,19 +17,6 @@ router = APIRouter(
 )
 
 logger = logging.getLogger(__name__)
-
-# Replicate get_current_user from main.py to avoid circular imports
-async def get_current_user(payload: dict = Depends(verify_token)):
-    user_id = payload.get("sub")
-    email = payload.get("email")
-    user_meta = payload.get("user_metadata", {})
-    name = user_meta.get("full_name") or user_meta.get("name")
-    
-    if not user_id or not email:
-        raise HTTPException(status_code=401, detail="Invalid token payload")
-        
-    # JIT Sync: Ensure user exists in Neo4j and is up-to-date
-    return await ensure_user_sync(user_id, email, name)
 
 @router.post("/threads")
 async def create_thread_generic(thread: ThreadCreate, user: dict = Depends(get_current_user)):
