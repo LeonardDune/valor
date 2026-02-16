@@ -19,6 +19,11 @@ Dit is de primaire deployment methode voor de Valor applicatie op een eigen VPS 
    - `PORT`: `8000`
 5. **Domains:** Stel in op `https://api.valor-ecosystem.nl`.
 
+6. **Supabase Auth (Cruciaal!):**
+   - Ga naar het Supabase Dashboard -> Authentication -> URL Configuration.
+   - Voeg `https://valor-ecosystem.nl` toe aan de **Redirect URLs** (zodat invites en login werken).
+   - Voeg ook `https://valor-ecosystem.nl/update-password` toe voor wachtwoord resets.
+
 ## 3. Frontend Setup (valor-ecosystem.nl)
 1. **Service:** Maak een nieuwe "Application" aan in Coolify.
 2. **Context:** Zet de `Base Directory` op `/frontend`.
