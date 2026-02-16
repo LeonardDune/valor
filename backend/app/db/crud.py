@@ -544,11 +544,7 @@ async def remove_project_member(project_id: str, user_id: str):
 
 async def get_theme_users(theme_id: str) -> List[Dict]:
      driver = get_driver()
-     query = """
-    MATCH (t:ThemeBase {id: $tid})-[:HAS_ACTIVE_VERSION]->(v:ThemeVersion)
-    MATCH (v)<-[r:HAS_ROLE]-(u:User) 
-    RETURN u, r.role as role
-    """
+     query = "MATCH (t:ThemeBase {id: $tid})<-[r:HAS_ROLE]-(u:User) RETURN u, r.role as role"
      with driver.session() as session:
          return [{"id": rec["u"]["id"], "name": rec["u"].get("name",""), "email": rec["u"]["email"], "role": rec["role"]} for rec in session.run(query, {"tid": theme_id})]
 

@@ -275,8 +275,8 @@ async def get_session_participation(session_id: str) -> List[Dict[str, Any]]:
     """
     driver = get_driver()
     query = """
-    MATCH (s:VotingSession {id: $sid})<-[:HAS_SESSION]-(tv:ThemeVersion)
-    MATCH (u:User)-[:HAS_ROLE]->(tv)
+    MATCH (s:VotingSession {id: $sid})<-[:HAS_SESSION]-(tv:ThemeVersion)<-[:HAS_VERSION]-(t:ThemeBase)
+    MATCH (u:User)-[:HAS_ROLE]->(t)
     
     WITH DISTINCT u, s
     
