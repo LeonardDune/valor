@@ -36,3 +36,14 @@ export interface Ranking {
     category: 'high' | 'medium' | 'backlog' | 'discard';
     count: number;
 }
+
+export interface Participation {
+    user_id: string;
+    user_name: string;
+    has_completed_refinement?: boolean;
+    has_completed_ranking?: boolean;
+    has_completed_consent?: boolean;
+    has_ranking?: boolean;
+    has_consent?: boolean;
+    feedback_count: number;
+}

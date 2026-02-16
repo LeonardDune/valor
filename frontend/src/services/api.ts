@@ -568,6 +568,16 @@ export const api = {
     getThreadMessages: async (threadId: string): Promise<ConversationMessage[]> => {
         const response = await apiClient.get<ConversationMessage[]>(`/threads/${threadId}/messages`);
         return response.data;
+    },
+
+    advanceSession: async (sessionId: string) => {
+        const response = await apiClient.post(`/sessions/${sessionId}/advance`);
+        return response.data;
+    },
+
+    completePhase: async (sessionId: string, phase: 'refine' | 'ranking' | 'consent') => {
+        const response = await apiClient.post(`/sessions/${sessionId}/complete-phase`, { phase });
+        return response.data;
     }
 };
 

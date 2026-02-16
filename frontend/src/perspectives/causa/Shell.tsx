@@ -282,7 +282,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                 onLayoutChange={switchMode}
                 isModerator={!!isModerator}
                 onOpenModeratorDashboard={() => setShowModeratorDashboard(true)}
-                onOpenVoting={activeVotingSession ? () => setShowParticipantDashboard(true) : undefined}
+                onResumeDeliberation={activeVotingSession ? () => setShowParticipantDashboard(true) : undefined}
                 exportActions={
                     <>
                         <ExportMenu

@@ -109,7 +109,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({
                     <TabsContent value="start" className="space-y-4">
                         {!sessionId ? (
                             <PhaseStart
-                                onStart={(config) => onStartSession?.(config)}
+                                onStart={(config: VotingSessionConfig) => onStartSession?.(config)}
                                 isStarting={isStartingSession}
                                 participantCount={0} // TODO: Pass potential participants count?
                             />
