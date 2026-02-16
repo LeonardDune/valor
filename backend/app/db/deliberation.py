@@ -19,16 +19,20 @@ async def submit_feedback(feedback: Feedback) -> bool:
     WHERE f_old.session_id = $sid
     DETACH DELETE f_old
     
-    CREATE (f:Feedback {
-        id: $fid,
-        session_id: $sid,
-        color: $color,
-        motivation: $motivation,
-        created_at: datetime($now)
-    })
-    CREATE (u)-[:GAVE_FEEDBACK]->(f)
-    CREATE (f)-[:ON_CLAIM]->(cv)
-    CREATE (s)-[:COLLECTED]->(f)
+    MERGE (f:Feedback {id: $fid})
+    ON CREATE SET 
+        f.session_id = $sid,
+        f.color = $color,
+        f.motivation = $motivation,
+        f.created_at = datetime($now)
+    ON MATCH SET
+        f.color = $color,
+        f.motivation = $motivation,
+        f.updated_at = datetime($now)
+        
+    MERGE (u)-[:GAVE_FEEDBACK]->(f)
+    MERGE (f)-[:ON_CLAIM]->(cv)
+    MERGE (s)-[:COLLECTED]->(f)
     RETURN f.id
     """
     try:
@@ -74,15 +78,18 @@ async def submit_ranking(ranking: Ranking) -> bool:
     WHERE r_old.session_id = $sid
     DETACH DELETE r_old
     
-    CREATE (r:Ranking {
-        id: $rid,
-        session_id: $sid,
-        category: $category,
-        created_at: datetime($now)
-    })
-    CREATE (u)-[:RANKED]->(r)
-    CREATE (r)-[:RANKED_CLAIM]->(cv)
-    CREATE (s)-[:COLLECTED]->(r)
+    MERGE (r:Ranking {id: $rid})
+    ON CREATE SET
+        r.session_id = $sid,
+        r.category = $category,
+        r.created_at = datetime($now)
+    ON MATCH SET
+        r.category = $category,
+        r.updated_at = datetime($now)
+        
+    MERGE (u)-[:RANKED]->(r)
+    MERGE (r)-[:RANKED_CLAIM]->(cv)
+    MERGE (s)-[:COLLECTED]->(r)
     RETURN r.id
     """
     try:
@@ -136,8 +143,9 @@ async def get_eligible_claims_for_ranking(session_id: str) -> List[Dict[str, Any
     """
     driver = get_driver()
     query = """
-    MATCH (s:VotingSession {id: $sid})
+    MATCH (s:VotingSession {id: $sid})<-[:HAS_SESSION]-(tv:ThemeVersion)
     MATCH (s)-[:COLLECTED]->(f:Feedback)-[:ON_CLAIM]->(cv:ClaimVersion)
+    WHERE (tv)-[:HAS_CLAIM]->(cv) OR (tv)-[:HAS_FACTOR]->()-[:CLAIMS]->(cv)
     WITH cv, collect(f.color) as colors
     WHERE NOT 'red' IN colors
     RETURN DISTINCT cv.id as id, cv.statement as statement, cv.polarity as polarity, cv.confidence as confidence
@@ -160,7 +168,9 @@ async def get_consent_shortlist(session_id: str, user_id: Optional[str] = None) 
     """
     driver = get_driver()
     query = """
-    MATCH (s:VotingSession {id: $sid})-[:COLLECTED]->(r:Ranking)-[:RANKED_CLAIM]->(cv:ClaimVersion)
+    MATCH (s:VotingSession {id: $sid})<-[:HAS_SESSION]-(tv:ThemeVersion)
+    MATCH (s)-[:COLLECTED]->(r:Ranking)-[:RANKED_CLAIM]->(cv:ClaimVersion)
+    WHERE (tv)-[:HAS_CLAIM]->(cv) OR (tv)-[:HAS_FACTOR]->()-[:CLAIMS]->(cv)
     WITH cv, 
          count(r) as total_votes,
          count(CASE WHEN r.category = 'high' THEN 1 END) as high_count,
@@ -209,16 +219,20 @@ async def submit_consent_vote(vote: ConsentVote) -> bool:
     WHERE v_old.session_id = $sid
     DETACH DELETE v_old
     
-    CREATE (v:ConsentVote {
-        id: $vid,
-        session_id: $sid,
-        vote: $vote,
-        motivation: $motivation,
-        created_at: datetime($now)
-    })
-    CREATE (u)-[:VOTED_CONSENT]->(v)
-    CREATE (v)-[:VOTE_ON]->(cv)
-    CREATE (s)-[:COLLECTED]->(v)
+    MERGE (v:ConsentVote {id: $vid})
+    ON CREATE SET
+        v.session_id = $sid,
+        v.vote = $vote,
+        v.motivation = $motivation,
+        v.created_at = datetime($now)
+    ON MATCH SET
+        v.vote = $vote,
+        v.motivation = $motivation,
+        v.updated_at = datetime($now)
+        
+    MERGE (u)-[:VOTED_CONSENT]->(v)
+    MERGE (v)-[:VOTE_ON]->(cv)
+    MERGE (s)-[:COLLECTED]->(v)
     RETURN v.id
     """
     try:
@@ -237,6 +251,24 @@ async def submit_consent_vote(vote: ConsentVote) -> bool:
         logger.error(f"Error submitting consent vote: {e}")
         return False
 
+async def mark_phase_completed(session_id: str, user_id: str, phase: str) -> bool:
+    driver = get_driver()
+    query = """
+    MATCH (s:VotingSession {id: $sid})
+    MATCH (u:User {id: $uid})
+    MERGE (u)-[r:COMPLETED_PHASE {phase: $phase}]->(s)
+    ON CREATE SET r.completed_at = datetime()
+    ON MATCH SET r.completed_at = datetime()
+    RETURN r
+    """
+    try:
+        with driver.session() as session:
+            session.run(query, {"sid": session_id, "uid": user_id, "phase": phase})
+            return True
+    except Exception as e:
+        logger.error(f"Error marking phase completed: {e}")
+        return False
+
 async def get_session_participation(session_id: str) -> List[Dict[str, Any]]:
     """
     Returns a list of participants and their activity status for the given session.
@@ -244,36 +276,29 @@ async def get_session_participation(session_id: str) -> List[Dict[str, Any]]:
     driver = get_driver()
     query = """
     MATCH (s:VotingSession {id: $sid})<-[:HAS_SESSION]-(tv:ThemeVersion)<-[:HAS_VERSION]-(t:ThemeBase)
+    MATCH (u:User)-[:HAS_ROLE]->(t)
     
-    // 1. Get all emails from Invites OR Users with roles on the theme
-    OPTIONAL MATCH (i:Invite)-[:FOR_ACCESS]->(t)
-    WITH s, t, collect(DISTINCT i.email) as invited_emails
+    WITH DISTINCT u, s
     
-    OPTIONAL MATCH (u:User)-[:HAS_ROLE]->(t)
-    WITH s, t, invited_emails, collect(DISTINCT u.email) as role_emails
-    
-    WITH s, t, [e IN (invited_emails + role_emails) WHERE e IS NOT NULL] as all_emails
-    UNWIND all_emails as email
-    
-    // 2. Resolve to User where possible
-    OPTIONAL MATCH (u:User {email: email})
-    
-    // 3. Activity counts
     OPTIONAL MATCH (u)-[:GAVE_FEEDBACK]->(f:Feedback) WHERE f.session_id = $sid
-    WITH email, u, count(DISTINCT f) as feedback_count, s, t
-    
     OPTIONAL MATCH (u)-[:RANKED]->(r:Ranking) WHERE r.session_id = $sid
-    WITH email, u, feedback_count, count(DISTINCT r) as ranking_count, s, t
-    
     OPTIONAL MATCH (u)-[:VOTED_CONSENT]->(v:ConsentVote) WHERE v.session_id = $sid
-    WITH email, u, feedback_count, ranking_count, count(DISTINCT v) as consent_count
     
-    RETURN DISTINCT email,
-           coalesce(u.name, email) as name,
-           u.id as user_id,
-           feedback_count > 0 as has_feedback,
-           ranking_count > 0 as has_ranking,
-           consent_count > 0 as has_consent
+    // Check for explicit completion
+    OPTIONAL MATCH (u)-[c_refine:COMPLETED_PHASE {phase: 'refine'}]->(s)
+    OPTIONAL MATCH (u)-[c_ranking:COMPLETED_PHASE {phase: 'ranking'}]->(s)
+    OPTIONAL MATCH (u)-[c_consent:COMPLETED_PHASE {phase: 'consent'}]->(s)
+    
+    RETURN u.email as email, 
+           coalesce(u.name, u.email) as name, 
+           u.id as user_id, 
+           count(DISTINCT f) > 0 as has_feedback,
+           count(DISTINCT r) > 0 as has_ranking,
+           count(DISTINCT v) > 0 as has_consent,
+           c_refine IS NOT NULL as has_completed_refinement,
+           c_ranking IS NOT NULL as has_completed_ranking,
+           c_consent IS NOT NULL as has_completed_consent,
+           count(DISTINCT f) as feedback_count
     """
     try:
         with driver.session() as session:
@@ -309,79 +334,94 @@ async def finalize_deliberation(session_id: str, user_id: str) -> Dict[str, Any]
             author_id=user_id
         )
         
-        # 3. APPLY SESSION DELTA (Consensus)
-        # We need to:
-        # a. Mark clones of rejected claims as historical? 
-        #    Actually, create_decision copies EVERYTHING active.
-        #    If the session had proposals, we need to ADD the accepted ones.
-        
-        query_apply_consensus = """
-        MATCH (s:VotingSession {id: $sid})
-        MATCH (new_tv:ThemeVersion {id: $nvid})
-        SET s.status = 'closed', s.stage = 'closed'
-        
-        WITH s, new_tv
-        
-        // 1. Identify ALL claims discussed in this session
-        // (Anything with a Vote, Feedback, or Ranking)
-        OPTIONAL MATCH (s)-[:COLLECTED]->(activity)
-        OPTIONAL MATCH (activity)-[:VOTE_ON|ON_CLAIM|RANKED_CLAIM]->(sess_cv:ClaimVersion)
-        WITH s, new_tv, collect(DISTINCT sess_cv.base_id) as discussed_base_ids
-        
-        // 2. Remove Snapshot Clones for ALL discussed claims
-        // (Status Quo remains untouched if NOT discussed)
-        UNWIND discussed_base_ids as b_id
-        OPTIONAL MATCH (new_tv)-[:HAS_CLAIM]->(clone:ClaimVersion {base_id: b_id})
-        DETACH DELETE clone
-        
-        WITH s, new_tv
-        
-        // 3. Re-calculate Consensus and Re-create Accepted Claims
-        // We look for approvals/objections specifically
-        OPTIONAL MATCH (s)-[:COLLECTED]->(v:ConsentVote)-[:VOTE_ON]->(cv:ClaimVersion)
-        WITH s, new_tv, cv, 
-             count(CASE WHEN v.vote = 'approve' THEN 1 END) as approvals,
-             count(CASE WHEN v.vote = 'object' THEN 1 END) as objections
-        
-        // ONLY re-create if we have consensus (at least one approval AND zero objections)
-        WHERE cv IS NOT NULL AND approvals > 0 AND objections = 0
-        
-        CREATE (final_cv:ClaimVersion {
-            id: randomUUID(),
-            base_id: cv.base_id,
-            statement: cv.statement,
-            polarity: cv.polarity,
-            confidence: cv.confidence,
-            valid_from: datetime(),
-            created_at: datetime()
-        })
-        CREATE (new_tv)-[:HAS_CLAIM]->(final_cv)
-        
-        // Link to ClaimBase (Identity)
-        WITH final_cv, cv, new_tv
-        MATCH (cb:ClaimBase {id: cv.base_id})
-        MERGE (cb)-[:HAS_VERSION]->(final_cv)
-        
-        // Structural Re-wiring (Source/Target Factors)
-        WITH final_cv, cv, new_tv
-        MATCH (cv)<-[:CLAIMS]-(old_f_source:FactorVersion)
-        MATCH (new_tv)-[:HAS_FACTOR]->(new_f_source:FactorVersion)
-        WHERE new_f_source.base_id = old_f_source.base_id
-        CREATE (new_f_source)-[:CLAIMS]->(final_cv)
-        
-        WITH final_cv, cv, new_tv
-        MATCH (cv)-[:TO]->(old_f_target:FactorVersion)
-        MATCH (new_tv)-[:HAS_FACTOR]->(new_f_target:FactorVersion)
-        WHERE new_f_target.base_id = old_f_target.base_id
-        CREATE (final_cv)-[:TO]->(new_f_target)
-        
-        RETURN count(final_cv) as applied_count
-        """
-        
-        with driver.session() as sess:
-            sess.run(query_apply_consensus, {"sid": session_id, "nvid": new_version_id})
+        try:
+            # 3. APPLY SESSION DELTA (Consensus)
+            query_apply_consensus = """
+            MATCH (s:VotingSession {id: $sid})
+            MATCH (new_tv:ThemeVersion {id: $nvid})
+            SET s.status = 'closed', s.stage = 'closed'
             
-        return {"status": "success", "next_version_id": new_version_id}
+            WITH s, new_tv
+            
+            // 1. Identify ALL claims discussed in this session
+            // (Anything with a Vote, Feedback, or Ranking)
+            OPTIONAL MATCH (s)-[:COLLECTED]->(activity)
+            OPTIONAL MATCH (activity)-[:VOTE_ON|ON_CLAIM|RANKED_CLAIM]->(sess_cv:ClaimVersion)
+            WITH s, new_tv, collect(DISTINCT sess_cv.base_id) as discussed_base_ids
+            
+            // 2. Remove Snapshot Clones for ALL discussed claims
+            // (Status Quo remains untouched if NOT discussed)
+            // Ensure query continues even if discussed_base_ids is empty
+            WITH s, new_tv, discussed_base_ids
+            UNWIND (CASE WHEN discussed_base_ids = [] THEN [null] ELSE discussed_base_ids END) as b_id
+            OPTIONAL MATCH (new_tv)-[:HAS_CLAIM]->(clone:ClaimVersion {base_id: b_id})
+            WHERE clone IS NOT NULL
+            DETACH DELETE clone
+            
+            WITH s, new_tv
+            
+            // 3. Re-calculate Consensus and Re-create Accepted Claims
+            // We look for approvals/objections specifically
+            OPTIONAL MATCH (s)-[:COLLECTED]->(v:ConsentVote)-[:VOTE_ON]->(cv:ClaimVersion)
+            WITH DISTINCT s, new_tv, cv, v
+            WITH s, new_tv, cv, 
+                 count(CASE WHEN v.vote = 'approve' THEN 1 END) as approvals,
+                 count(CASE WHEN v.vote = 'object' THEN 1 END) as objections
+            
+            // ONLY re-create if we have consensus (at least one approval AND zero objections)
+            WHERE cv IS NOT NULL AND approvals > 0 AND objections = 0
+            
+            CREATE (final_cv:ClaimVersion {
+                id: randomUUID(),
+                base_id: cv.base_id,
+                statement: cv.statement,
+                polarity: cv.polarity,
+                confidence: cv.confidence,
+                valid_from: datetime(),
+                created_at: datetime()
+            })
+            CREATE (new_tv)-[:HAS_CLAIM]->(final_cv)
+            
+            // Link to ClaimBase (Identity)
+            WITH final_cv, cv, new_tv
+            MATCH (cb:ClaimBase {id: cv.base_id})
+            MERGE (cb)-[:HAS_VERSION]->(final_cv)
+            
+            // Structural Re-wiring (Source/Target Factors)
+            WITH final_cv, cv, new_tv
+            MATCH (cv)<-[:CLAIMS]-(old_f_source:FactorVersion)
+            MATCH (new_tv)-[:HAS_FACTOR]->(new_f_source:FactorVersion)
+            WHERE new_f_source.base_id = old_f_source.base_id
+            WITH DISTINCT final_cv, cv, new_f_source, new_tv
+            CREATE (new_f_source)-[:CLAIMS]->(final_cv)
+            
+            WITH final_cv, cv, new_tv
+            MATCH (cv)-[:TO]->(old_f_target:FactorVersion)
+            MATCH (new_tv)-[:HAS_FACTOR]->(new_f_target:FactorVersion)
+            WHERE new_f_target.base_id = old_f_target.base_id
+            WITH DISTINCT final_cv, new_f_target, new_tv
+            CREATE (final_cv)-[:TO]->(new_f_target)
+            
+            RETURN count(final_cv) as applied_count
+            """
+            
+            with driver.session() as sess:
+                sess.run(query_apply_consensus, {"sid": session_id, "nvid": new_version_id})
+                
+            return {"status": "success", "next_version_id": new_version_id}
+
+        except Exception as e_query:
+            logger.error(f"Error executing finalization query: {e_query}")
+            # ROLLBACK: Delete the orphaned version
+            try:
+                logger.info(f"Rolling back: Deleting orphaned version {new_version_id}")
+                with driver.session() as sess:
+                    sess.run("MATCH (tv:ThemeVersion {id: $vid}) DETACH DELETE tv", {"vid": new_version_id})
+            except Exception as e_rollback:
+                logger.error(f"CRITICAL: Failed to rollback version {new_version_id}: {e_rollback}")
+            
+            # Re-raise original error to outer handler
+            raise e_query
 
     except Exception as e:
         logger.error(f"Error finalizing deliberation: {e}")

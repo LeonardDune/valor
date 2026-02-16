@@ -1,22 +1,16 @@
-
 import { Button } from "@/components/ui/button";
-import { Plus, Target } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { getNodesBounds } from 'reactflow';
 import {
     Tooltip,
     TooltipContent,
     TooltipProvider,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { getNodesBounds } from 'reactflow';
 import { PerspectiveToolbar } from '@/components/shell/PerspectiveToolbar';
 import { ExportMenu } from '@/components/shell/ExportMenu';
-import { ModeratorDashboard } from '@/components/deliberation/ModeratorDashboard';
-import {
-    Dialog,
-    DialogContent,
-} from "@/components/ui/dialog";
 import { useDomExport } from '@/hooks/useDomExport';
 import { CLDView } from './views/CLDView';
 import { useCausaData } from './hooks/useCausaData';
@@ -25,91 +19,80 @@ import { ForceRunner } from './layout/runners/force';
 import { RailRunner } from './layout/runners/rail';
 import { CreateFactorModal } from './views/modals/CreateFactorModal';
 import { EditFactorDetailModal } from './views/modals/EditFactorDetailModal';
-import { api } from '../../services/api';
-import type { ConversationContext } from '@/types/conversation';
-import { PresenceLayer } from '@/components/graph/PresenceLayer';
-import { VotingConfigModal } from '@/components/voting/VotingConfigModal';
+import { ParticipantDashboard } from '@/components/deliberation/ParticipantDashboard';
+import { ModeratorDashboard } from '@/components/deliberation/ModeratorDashboard';
+import { useTheme } from '@/context/ThemeContext';
+// RankingBoard, ConsentBoard, RefinementBoard removed
+import { api } from '@/services/api';
 import { sessionService } from '@/services/sessions';
 import type { VotingSessionConfig } from '@/types/session';
-import { useTheme } from '../../context/ThemeContext';
-import { RankingBoard } from '@/components/deliberation/RankingBoard';
-import { ConsentBoard } from '@/components/deliberation/ConsentBoard';
-import { RefinementBoardComponent } from '@/components/deliberation/RefinementBoard';
+import type { ConversationContext } from '@/types/conversation';
+
 
 export interface CausaShellProps {
     themeId: string;
-    projectId: string;
-    websocket: {
-        lastMessage: any;
-        sendMessage: (type: string, payload: any) => void;
-    };
+    projectId?: string;
+    websocket?: any;
+    currentUserId?: string;
+    onSelect?: (nodeId: string | null) => void;
+    onOpenConversation?: (context: ConversationContext) => void;
     versionId?: string;
     isReadOnly?: boolean;
-    currentUserId?: string;
-    onOpenConversation?: (context: ConversationContext) => void;
-    onSelect?: (selection: any) => void;
 }
 
-export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSelect, onOpenConversation, versionId, isReadOnly = false }: CausaShellProps) => {
+export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpenConversation, versionId, isReadOnly = false }: CausaShellProps) => {
     const queryClient = useQueryClient();
+    const themeState = useTheme();
+
     // A. Local UI State
     const [localSelection, setLocalSelection] = useState<{ type: 'node' | 'link'; data: any } | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [layoutMode, setLayoutMode] = useState<'free' | 'system'>('free');
+
+    // Derived state
+    const { activeVersion, activeVotingSession } = themeState;
+    // TODO: Verify if activeVersion has role. Use role 'moderator' check if available, or fallback.
+    // Ideally user role should be joined. For now assuming activeVersion carries role context or we check activeVersion.role
+    const isModerator = (activeVersion as any)?.role === 'moderator' || (activeVersion as any)?.role === 'admin';
+
+    // const [showDeliberation, setShowDeliberation] = useState(false); // Removed
+    const [showModeratorDashboard, setShowModeratorDashboard] = useState(false);
+    const [showParticipantDashboard, setShowParticipantDashboard] = useState(false);
+    // const [isFullscreen, setIsFullscreen] = useState(false); // Unused
     const containerRef = useRef<HTMLDivElement>(null);
     const { exportAsPng, exportAsPdf, exportAsSvg, isExporting } = useDomExport(containerRef);
     const [rfInstance, setRfInstance] = useState<any>(null);
-    const [isVotingModalOpen, setIsVotingModalOpen] = useState(false);
-    const [isStartingSession, setIsStartingSession] = useState(false);
-    const { activeVersion, activeVotingSession } = useTheme();
-    const [showDeliberation, setShowDeliberation] = useState(false);
-    const [viewMode, setViewMode] = useState<'graph' | 'deliberation'>('graph');
 
+    // Is Effective Read Only?
+    // If we are in a specific version (history) -> Read Only
+    // If explicit prop isReadOnly -> Read Only
+    // If versionId is provided AND it is NOT the active version -> Read Only
+    const effectiveIsReadOnly = isReadOnly || (!!versionId && versionId !== activeVersion?.id);
 
-    // Moderator Check: Use role from activeThemeVersion (sourced from Neo4j)
-    const [showModeratorDashboard, setShowModeratorDashboard] = useState(false);
-
-    const isModerator = activeVersion?.role === 'moderator' || activeVersion?.role === 'admin';
-
-    // Global Freeze Logic: If a session is active, the entire theme version is read-only
-    const effectiveIsReadOnly = isReadOnly || !!activeVotingSession;
-
-
-
-    // Cache for layout positions per mode (Persists across renders, does not trigger render)
-    // Stores { [nodeId]: {x, y} } for each mode
-    const layoutCache = useRef<{
-        free: Map<string, { x: number, y: number }>;
-        system: Map<string, { x: number, y: number }>;
-    }>({
+    // Persist layout mode preference across re-renders/sessions if needed?
+    // For now, we prefer to keep it in state. 
+    // But we might want to Cache positions when switching.
+    const layoutCache = useRef<{ [key: string]: Map<string, { x: number, y: number }> }>({
         free: new Map(),
         system: new Map()
     });
 
-    // Helper: Calculate Export Config for Full Diagram
+    const [isStartingSession, setIsStartingSession] = useState(false);
+
+    // Helpers for Export
     const getExportConfig = () => {
         if (!rfInstance || !containerRef.current) return {};
-        // Filter out hidden nodes AND system scope nodes AND explicitly set origin
-        // CLDView uses nodeOrigin={[0.5, 0.5]}, so we must tell getNodesBounds this,
-        // otherwise it calculates bounds from the center point (cutting nodes in half).
-        const nodes = rfInstance.getNodes()
-            .filter((n: any) => !n.hidden && n.type !== 'hidden' && n.type !== 'systemScope')
-            .map((n: any) => ({
-                ...n,
-                // Force origin to match CLDView's global configuration
-                origin: [0.5, 0.5]
-            }));
+        const getNodes = rfInstance.getNodes;
+        if (!getNodes) return {};
 
+        const nodes = getNodes();
         if (nodes.length === 0) return {};
 
-        // Use official React Flow util (getNodesBounds preferred in v11)
         const bounds = getNodesBounds(nodes);
-
-        // Dynamic Dimensions = Exact Content Size + Comfortable Padding
-        const padding = 150;
-        const width = Math.ceil(bounds.width + (padding * 2));
-        const height = Math.ceil(bounds.height + (padding * 2));
+        const padding = 50;
+        const width = bounds.width + (padding * 2);
+        const height = bounds.height + (padding * 2);
 
         // CRITICAL FIX: Do NOT use getViewportForBounds. 
         // We want 1:1 scale (zoom=1). We just need to shift (translate) the viewport
@@ -117,8 +100,6 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
         const x = -bounds.x + padding;
         const y = -bounds.y + padding;
         const zoom = 1;
-
-
 
         // Find the viewport element to export directly
         const viewportParams = {
@@ -139,8 +120,8 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
     };
 
     // B. Fetch Data
-    console.log('[CausaShell] Props:', { themeId, versionId, activeVersionId: activeVersion?.id });
-    const { nodes, links, factors, refresh, loading } = useCausaData(themeId, versionId || activeVersion?.id);
+    // console.log('[CausaShell] Props:', { themeId, versionId, activeVersionId: themeState.activeVersion?.id });
+    const { nodes, links, factors, refresh, loading } = useCausaData(themeId, versionId || themeState.activeVersion?.id);
 
     // C. Initialize Session
     // Re-create session ONLY when layoutMode changes
@@ -185,21 +166,16 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
 
     // WebSocket Data Sync
     useEffect(() => {
-        if (!websocket.lastMessage) return;
+        if (!websocket?.lastMessage) return;
         const msg = websocket.lastMessage;
         // Check for data updates types
         if (['FACTOR_CREATED', 'FACTOR_UPDATED', 'FACTOR_DELETED', 'CLAIM_CREATED', 'CLAIM_UPDATED', 'CLAIM_DELETED'].includes(msg.type)) {
             console.log('WS: Received update, refreshing graph...', msg.type);
-            refresh();
+            refresh(true);
         }
-    }, [websocket.lastMessage, refresh]);
+    }, [websocket?.lastMessage, refresh]);
 
-    // Auto-show deliberation when session starts or stage changes
-    useEffect(() => {
-        if (activeVotingSession) {
-            setShowDeliberation(true);
-        }
-    }, [activeVotingSession?.stage, activeVotingSession?.id]);
+    // Auto-show deliberation removed -> Manual trigger via Toolbar
 
     // Helper to switch mode safely
     const switchMode = (newMode: 'free' | 'system') => {
@@ -221,11 +197,11 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
         setLocalSelection(sel);
 
         if (onSelect) {
-            onSelect(sel?.data || null);
+            onSelect(sel?.data?.id || null);
         }
 
         // Broadcast Focus
-        if (websocket.sendMessage) {
+        if (websocket?.sendMessage) {
             if (sel?.type === 'node' && sel.data?.id) {
                 websocket.sendMessage('NODE_FOCUS', { nodeId: sel.data.id });
             } else {
@@ -245,7 +221,9 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
         if (effectiveIsReadOnly) return;
         try {
             await api.createFactor(themeId, name, description, type);
-            refresh();
+            await api.createFactor(themeId, name, description, type);
+            // Force refresh to bypass cache check and show new factor immediately
+            await refresh(true);
         } catch (error) {
             console.error('Failed to create factor', error);
         }
@@ -255,14 +233,6 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
         if (effectiveIsReadOnly) return;
         if (!connection.source || !connection.target) return;
         try {
-            // Default new relation to positive for now, or open modal
-            // For MVP: Create a neutral/positive claim directly
-            // createClaim signature: (themeId, sourceId, targetId, relationType, polarity, certainty)
-            // Assuming api.createClaim expects an object or specific args. Let's check api.ts definition if possible, 
-            // but based on error 'Expected 1 arguments', it likely takes a single object.
-            // Wait, looking at previous api.ts usage or definition is better. 
-            // For now, I'll assume it takes an object based on the error.
-            // Start API call
             await api.createClaim({
                 theme_id: themeId,
                 source_id: connection.source,
@@ -271,32 +241,35 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                 polarity: '+',
                 confidence: 0.8
             });
-            refresh();
+            // Force refresh to show new connection immediately
+            await refresh(true);
         } catch (error) {
             console.error('Failed to create connection', error);
         }
     };
 
     const handleStartVoting = async (config: VotingSessionConfig) => {
-        if (!versionId) return;
+        if (!versionId && !themeState.activeVersion?.id) return;
+        const targetVersionId = versionId || themeState.activeVersion?.id;
+        if (!targetVersionId) return;
+
         setIsStartingSession(true);
         try {
-            await sessionService.startSession(versionId, config);
+            await sessionService.startSession(targetVersionId, config);
 
             // Force UI update by invalidating session queries
             // This triggers useActiveSession (in ThemeContext) to refetch
             await queryClient.invalidateQueries({ queryKey: ['sessions'] });
 
-            setIsVotingModalOpen(false);
+            // Note: ModeratorDashboard will auto-switch tab via its own effect
         } catch (error) {
             console.error('Failed to start voting session', error);
-        } finally {
             setIsStartingSession(false);
         }
     };
 
-    // Viewport State for Presence Sync
-    const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
+    // Calculate viewMode primarily for toolbar state
+    // const viewMode = (showDeliberation && activeVotingSession) ? 'deliberation' : 'graph'; 
 
     if (!themeId) return <div className="p-10 text-muted-foreground italic">Geen thema geactiveerd.</div>;
 
@@ -307,13 +280,11 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
             <PerspectiveToolbar
                 layoutMode={layoutMode}
                 onLayoutChange={switchMode}
-                isModerator={isModerator}
+                isModerator={!!isModerator}
                 onOpenModeratorDashboard={() => setShowModeratorDashboard(true)}
-                onResumeDeliberation={viewMode === 'graph' && activeVotingSession ? () => setViewMode('deliberation') : undefined}
+                onOpenVoting={activeVotingSession ? () => setShowParticipantDashboard(true) : undefined}
                 exportActions={
                     <>
-
-
                         <ExportMenu
                             onExportPng={() => exportAsPng(`Causa_Snapshot_${themeId}_${new Date().toISOString().slice(0, 10)}`, getExportConfig())}
                             onExportPdf={() => exportAsPdf(`Causa_Snapshot_${themeId}_${new Date().toISOString().slice(0, 10)}`, getExportConfig())}
@@ -341,24 +312,7 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                     </TooltipProvider>
                 )}
 
-                {/* Voting Button - Moderator Only */}
-                {!effectiveIsReadOnly && isModerator && (
-                    <TooltipProvider>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                <Button
-                                    size="sm"
-                                    onClick={() => setIsVotingModalOpen(true)}
-                                    variant="ghost"
-                                    className="h-8 w-8 p-0"
-                                >
-                                    <Target className="h-4 w-4 text-orange-500" />
-                                </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Stemsessie Starten</TooltipContent>
-                        </Tooltip>
-                    </TooltipProvider>
-                )}
+
             </PerspectiveToolbar>
 
             {/* View */}
@@ -372,13 +326,11 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                 layoutMode={layoutMode}
                 onOpenConversation={onOpenConversation || (() => { })}
                 onEdit={handleEdit}
-                onViewportChange={setViewport}
+                onViewportChange={() => { }} // Clean up unused
                 onInit={setRfInstance}
                 onConnect={effectiveIsReadOnly ? undefined : handleConnect}
                 isReadOnly={effectiveIsReadOnly}
             />
-
-
 
             {/* Modals */}
             <CreateFactorModal
@@ -387,78 +339,41 @@ export const CausaShell = ({ themeId, projectId, websocket, currentUserId, onSel
                 onSave={handleCreateFactor}
             />
 
-            {/* Moderator Dashboard Dialog */}
-            <Dialog open={showModeratorDashboard} onOpenChange={setShowModeratorDashboard}>
-                <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                    {activeVotingSession && (
-                        <ModeratorDashboard
-                            sessionId={activeVotingSession.id}
-                            stage={activeVotingSession.stage}
-                            onClose={() => setShowModeratorDashboard(false)}
-                        />
-                    )}
-                </DialogContent>
-            </Dialog>
-
             <EditFactorDetailModal
                 open={isEditModalOpen}
                 onOpenChange={setIsEditModalOpen}
                 selection={localSelection}
-                themeId={themeId}
+                onRefresh={() => refresh(true)}
                 factors={factors}
-                onRefresh={refresh}
+                themeId={themeId}
                 readOnly={effectiveIsReadOnly}
             />
-            {/* Presence Overlay */}
-            <div className="absolute inset-0 pointer-events-none z-50">
-                <PresenceLayer
-                    projectId={projectId}
-                    websocket={websocket}
-                    containerRef={containerRef}
-                    nodes={session.getNodes()}
-                    currentUserId={currentUserId}
-                    viewport={viewport}
-                />
-            </div>
 
-            <VotingConfigModal
-                isOpen={isVotingModalOpen}
-                onClose={() => setIsVotingModalOpen(false)}
-                onStart={handleStartVoting}
-                isLoading={isStartingSession}
-            />
+            {/* Moderator Dashboard Sidebar */}
+            {showModeratorDashboard && (
+                <div className="absolute top-0 right-0 h-full w-[600px] bg-background border-l shadow-2xl z-50 overflow-hidden flex flex-col transition-transform duration-300 ease-in-out transform translate-x-0">
+                    <ModeratorDashboard
+                        sessionId={activeVotingSession?.id}
+                        stage={activeVotingSession?.stage}
+                        onClose={() => setShowModeratorDashboard(false)}
+                        onStartSession={handleStartVoting}
+                        isStartingSession={isStartingSession}
+                    />
+                </div>
+            )}
 
-            {/* Deliberation Boards */}
-            {activeVotingSession && showDeliberation && (
-                <>
-                    {activeVotingSession.stage === 'refine' && (
-                        <div className="fixed inset-0 z-[100] bg-background">
-                            <RefinementBoardComponent
-                                versionId={versionId!}
-                                currentUserId={currentUserId}
-                                onBack={() => setShowDeliberation(false)}
-                                factors={factors}
-                                isModerator={isModerator}
-                            />
-                        </div>
-                    )}
-
-                    {activeVotingSession.stage === 'ranking' && (
-                        <RankingBoard
-                            sessionId={activeVotingSession.id}
-                            onClose={() => setShowDeliberation(false)}
-                            isModerator={isModerator}
-                        />
-                    )}
-
-                    {activeVotingSession.stage === 'consent' && (
-                        <ConsentBoard
-                            sessionId={activeVotingSession.id}
-                            onClose={() => setShowDeliberation(false)}
-                            isModerator={isModerator}
-                        />
-                    )}
-                </>
+            {/* Participant Dashboard Sidebar (Voting) */}
+            {showParticipantDashboard && activeVotingSession && (
+                <div className="absolute top-0 right-0 h-full w-full md:w-[800px] bg-background border-l shadow-2xl z-50 overflow-hidden flex flex-col transition-transform duration-300 ease-in-out transform translate-x-0">
+                    <ParticipantDashboard
+                        sessionId={activeVotingSession.id}
+                        versionId={versionId || themeState.activeVersion?.id || ''}
+                        stage={activeVotingSession.stage}
+                        onClose={() => setShowParticipantDashboard(false)}
+                        currentUserId={currentUserId}
+                        factors={factors}
+                    />
+                </div>
             )}
 
         </div >

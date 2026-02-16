@@ -680,18 +680,21 @@ async def get_project_themes(project_id: str, user_id: str) -> List[Dict]:
             ELSE theme_role_direct
          END as effective_role
     
-    // Counting active factors/claims (via active version)
-    OPTIONAL MATCH (t)-[:HAS_VERSION]->(tv:ThemeVersion {status: 'active'})-[:HAS_FACTOR]->(f:FactorVersion)
-    WITH t, org, p, effective_role, count(f) as claim_count
+    // Fetch Active Version for Metadata and Stats
+    OPTIONAL MATCH (t)-[:HAS_ACTIVE_VERSION]->(av:ThemeVersion)
+    
+    // Counting active factors/claims
+    OPTIONAL MATCH (av)-[:HAS_FACTOR]->(f:FactorVersion)
+    WITH t, org, p, av, effective_role, count(f) as claim_count
     
     // Counting members (User -> HAS_ROLE -> Theme)
     OPTIONAL MATCH (member:User)-[:HAS_ROLE]->(t)
-    WITH t, org, p, effective_role, claim_count, count(member) as member_count
+    WITH t, org, p, av, effective_role, claim_count, count(member) as member_count
 
     RETURN {
         id: t.id,
-        name: t.name,
-        description: t.description,
+        name: av.name,
+        description: av.description,
         project_name: p.name,
         organization_name: org.name,
         organization_id: org.id,
@@ -738,6 +741,7 @@ async def create_theme(project_id: str, name: str, description: Optional[str] = 
     })
     CREATE (t)-[:HAS_VERSION]->(v)
     CREATE (t)-[:HAS_ACTIVE_VERSION]->(v)
+    CREATE (u)-[:HAS_ROLE {role: 'admin'}]->(v) // Strict Access: Creator gets role on V1
     
     RETURN t.id as id
     """
@@ -798,6 +802,26 @@ async def archive_theme_version(version_id: str):
     query = "MATCH (s:ThemeVersion {id: $id}) SET s.status = 'archived'"
     with driver.session() as session:
         session.run(query, {"id": version_id})
+
+async def get_theme_by_id_simple(theme_id: str) -> Dict[str, Any]:
+    """
+    Fetches basic theme data (name, description) by ID.
+    Used for notifications/logging where full hierarchy isn't needed.
+    """
+    driver = get_driver()
+    query = """
+    MATCH (t:ThemeBase {id: $tid})-[:HAS_ACTIVE_VERSION]->(v:ThemeVersion)
+    RETURN t.id as id, v.name as name, v.description as description
+    """
+    try:
+        with driver.session() as session:
+            record = session.run(query, {"tid": theme_id}).single()
+            if record:
+                return dict(record)
+            return {}
+    except Exception as e:
+        logger.error(f"Error fetching theme simple: {e}")
+        return {}
 
 async def get_theme_versions_by_theme(theme_id: str, user_id: str) -> List[Dict]:
     driver = get_driver()
@@ -926,6 +950,32 @@ async def get_theme_active_version(theme_id: str, user_id: str) -> Optional[Dict
 
 # --- ThemeVersion Members ---
 
+async def get_active_version_id_if_theme(entity_id: str) -> str:
+    """
+    Checks if the entity_id belongs to a ThemeBase.
+    If so, returns the ID of the currently ACTIVE ThemeVersion.
+    If not, returns the entity_id as-is (e.g. Organization or Project ID, or already a Version ID).
+    """
+    driver = get_driver()
+    query = """
+    MATCH (t:ThemeBase {id: $id})
+    OPTIONAL MATCH (t)-[:HAS_ACTIVE_VERSION]->(v:ThemeVersion)
+    RETURN t.id as theme_id, v.id as version_id
+    """
+    with driver.session() as session:
+        result = session.run(query, {"id": entity_id}).single()
+        if result and result["theme_id"]:
+            if result["version_id"]:
+                logger.info(f"Redirecting Invite: Theme {entity_id} -> Active Version {result['version_id']}")
+                return result["version_id"]
+            else:
+                 # Theme exists but no active version? Should rare.
+                 # Fallback to Theme ID? Or Error?
+                 # If we return Theme ID, it fails strict check later.
+                 logger.warning(f"Invite target is Theme {entity_id} but no active version found. Invite may fail strict checks.")
+                 return entity_id
+        return entity_id
+
 async def get_theme_version_users(version_id: str) -> List[Dict]:
      driver = get_driver()
      query = "MATCH (s:ThemeVersion {id: $sid})<-[r:HAS_ROLE]-(u:User) RETURN u, r.role as role"
@@ -1042,7 +1092,7 @@ async def get_claims_for_version(version_id: str) -> List[Claim]:
     // Ensure target is also in this version (Consistency Check)
     WHERE (tv)-[:HAS_FACTOR]->(fv_target)
     
-    RETURN {
+    RETURN DISTINCT {
         id: cv.base_id,          // Identity
         version_id: cv.id,       // State
         statement: cv.statement,
@@ -1100,9 +1150,10 @@ async def get_factors_for_version(version_id: str) -> List[Dict]:
     """
     driver = get_driver()
     query = """
-    MATCH (tv:ThemeVersion {id: $vid})-[:HAS_FACTOR]->(fv:FactorVersion)
+    MATCH (tv:ThemeVersion {id: $vid})
+    MATCH (tv)-[:HAS_FACTOR]->(fv:FactorVersion)
     OPTIONAL MATCH (fv)-[:HAS_THREAD]->(t:ConversationThread)
-    RETURN {
+    RETURN DISTINCT {
         id: fv.base_id,              // Frontend expects Identity ID
         version_id: fv.id,           // Specific Version ID
         name: fv.name,
@@ -1155,6 +1206,8 @@ async def create_factor_manual(name: str, description: Optional[str], type: str,
     MATCH (t)-[:HAS_VERSION]->(tv:ThemeVersion)
     WHERE tv.status = 'active' AND tv.valid_to IS NULL
     
+    WITH DISTINCT t, u, tv
+    
     // 2. Create FactorBase
     CREATE (fb:FactorBase {
         id: $fid,
@@ -1185,7 +1238,7 @@ async def create_factor_manual(name: str, description: Optional[str], type: str,
     """
     
     with driver.session() as session:
-        return session.run(query, {
+        result = session.run(query, {
                 "fid": fid, 
                 "vid": vid, 
                 "name": name, 
@@ -1193,7 +1246,11 @@ async def create_factor_manual(name: str, description: Optional[str], type: str,
                 "type": type, 
                 "tid": theme_id,
                 "uid": author_id
-            }).single()["id"]
+        })
+        record = result.single()
+        if not record:
+            raise ValueError(f"Theme {theme_id} not found or has no active version.")
+        return record["id"]
 
 async def update_factor_manual(factor_id: str, name: Optional[str], description: Optional[str], type: Optional[str], theme_id: Optional[str]):
     driver = get_driver()
@@ -1261,6 +1318,8 @@ async def create_claim_manual(theme_id: str, source_id: str, target_id: str, sta
     // We look for FactorVersions BELONGING TO this active ThemeVersion that link to the given Base IDs
     MATCH (tv)-[:HAS_FACTOR]->(fv_source:FactorVersion {base_id: $sid})
     MATCH (tv)-[:HAS_FACTOR]->(fv_target:FactorVersion {base_id: $tid})
+    
+    WITH DISTINCT theme, u, tv, fv_source, fv_target
     
     // 3. Create ClaimBase
     CREATE (cb:ClaimBase {
@@ -1343,6 +1402,7 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
     // Find Current Active Version
     MATCH (t)-[:HAS_VERSION]->(old_v:ThemeVersion)
     WHERE old_v.status = 'active' AND old_v.valid_to IS NULL
+    WITH DISTINCT t, old_v, u
     
     // Create Decision
     CREATE (d:Decision {
@@ -1380,9 +1440,10 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
     CREATE (new_v)-[:DERIVED_FROM]->(old_v)
     
     // Copy Role (Fixes access control)
-    // Assuming User needs access to new version too, if we used direct roles.
-    // But we switched to ThemeBase roles, so this is less critical, but good for consistency/auditing?
-    // Let's rely on ThemeBase role for now.
+    // Copy all explicit roles from old version to new version
+    WITH new_v, old_v
+    MATCH (old_v)<-[r_role:HAS_ROLE]-(member:User)
+    MERGE (member)-[:HAS_ROLE {role: r_role.role}]->(new_v)
     
     RETURN new_v.id as new_id, old_v.id as old_id
     """
@@ -1392,6 +1453,7 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
     MATCH (old_v:ThemeVersion {id: $old_id})
     MATCH (new_v:ThemeVersion {id: $new_id})
     MATCH (old_v)-[:HAS_FACTOR]->(old_f:FactorVersion)
+    WITH DISTINCT old_v, new_v, old_f
     
     CREATE (new_f:FactorVersion {
         id: randomUUID(),
