@@ -85,8 +85,12 @@ load_dotenv()
 app = FastAPI(title="CAUSA Backend", lifespan=lifespan)
 
 # CORS Configuration
-# Allow all for MVP simplicity, restrict in production if needed
-origins = ["*"]
+# Restrict in production, allow development origins
+origins = [
+    "http://localhost:5173",
+    "https://valor-ecosystem.nl",
+    "https://api.valor-ecosystem.nl"
+]
 
 app.add_middleware(
     CORSMiddleware,
