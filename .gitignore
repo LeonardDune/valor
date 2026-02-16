@@ -11,3 +11,25 @@ _bmad
 **/node_modules/
 **/venv/
 **/__pycache__
+
+# App specific ignores
+exports/
+screenshots/
+playwright/
+*.png
+*.yaml
+*.yml
+!.agent/*.yaml
+!.agent/*.yml
+docs/.env-prod
+backend/.env.production
+frontend/lint_output*.txt
+
+# Tooling mappen
+.playwright/
+.playwright-cli/
+.agent/playwright-cli/
+
+# Debug scripts (use scripts/ instead)
+backend/debug_*.py
+backend/deduplicate_db.py
