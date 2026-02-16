@@ -44,12 +44,12 @@ interface CLDViewProps {
 
 
 
-const NODE_TYPES = {
+const STATIC_NODE_TYPES = {
     cldNode: CLDNode,
     systemScope: SystemScopeNode
 };
 
-const EDGE_TYPES = {
+const STATIC_EDGE_TYPES = {
     cldEdge: CLDEdge
 };
 
@@ -72,7 +72,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-    // Thread State
+    // thread stats
     const [threadStats, setThreadStats] = useState<Record<string, number>>({});
     const [floatingThread, setFloatingThread] = useState<{ targetId: string; label: string; position?: { x: number; y: number } } | null>(null);
 
@@ -364,8 +364,8 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                 }}
                 onNodesChange={onNodesChange}
                 onEdgesChange={onEdgesChange}
-                nodeTypes={NODE_TYPES}
-                edgeTypes={EDGE_TYPES}
+                nodeTypes={STATIC_NODE_TYPES}
+                edgeTypes={STATIC_EDGE_TYPES}
                 onNodeClick={(_, node) => {
                     if (onSelect) {
                         // Reconstruct a data object that mimics what Inspector expects.
