@@ -243,7 +243,7 @@ async def get_session_participation(session_id: str) -> List[Dict[str, Any]]:
     """
     driver = get_driver()
     query = """
-    MATCH (s:VotingSession {id: $sid})<-[:HAS_SESSION]-(tv:ThemeVersion)<-[:HAS_VERSION]-(t:Theme)
+    MATCH (s:VotingSession {id: $sid})<-[:HAS_SESSION]-(tv:ThemeVersion)<-[:HAS_VERSION]-(t:ThemeBase)
     
     // 1. Get all emails from Invites OR Users with roles on the theme
     OPTIONAL MATCH (i:Invite)-[:FOR_ACCESS]->(t)
