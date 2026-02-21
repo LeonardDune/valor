@@ -55,7 +55,7 @@ class FactorVersion(BaseModel):
     id: str
     base_id: str = Field(description="Reference to FactorBase")
     name: str
-    type: str = "systeemelement"
+    # type removed - now context-dependent on relationship role
     description: Optional[str] = None
     version_id: str = Field(description="Belongs to ThemeVersion")
     valid_from: datetime
@@ -79,7 +79,7 @@ class ClaimVersion(BaseModel):
 class Factor(FactorBase): 
     # Use Base ID as 'id' for stable reference
     name: str 
-    type: str
+    type: str = Field(description="Derived from HAS_FACTOR relationship role")
     description: Optional[str]
     version_id: str # The ID of the specific version being viewed
     thread_id: Optional[str] = None

@@ -50,11 +50,11 @@ async def save_claims(conversation_id: str, claims: List[Claim]):
             id: randomUUID(),
             base_id: fb_source.id,
             name: claim.source_node,
-            type: coalesce(claim.source_type, 'systeemelement'),
+            // type removed - now context-dependent on relationship
             version_id: v.id,
             created_at: datetime()
         })
-        CREATE (v)-[:HAS_FACTOR]->(fv_source)
+        CREATE (v)-[:HAS_FACTOR {role: coalesce(claim.source_type, 'systeemelement')}]->(fv_source)
         // No User-Created ink for agent? Or link to System Admin?
         RETURN fv_source as source_v
         
@@ -81,11 +81,11 @@ async def save_claims(conversation_id: str, claims: List[Claim]):
             id: randomUUID(),
             base_id: fb_target.id,
             name: claim.target_node,
-            type: coalesce(claim.target_type, 'systeemelement'),
+            // type removed - now context-dependent on relationship
             version_id: v.id,
             created_at: datetime()
         })
-        CREATE (v)-[:HAS_FACTOR]->(fv_target)
+        CREATE (v)-[:HAS_FACTOR {role: coalesce(claim.target_type, 'systeemelement')}]->(fv_target)
         RETURN fv_target as target_v
         
         UNION
@@ -1151,14 +1151,14 @@ async def get_factors_for_version(version_id: str) -> List[Dict]:
     driver = get_driver()
     query = """
     MATCH (tv:ThemeVersion {id: $vid})
-    MATCH (tv)-[:HAS_FACTOR]->(fv:FactorVersion)
+    MATCH (tv)-[r:HAS_FACTOR]->(fv:FactorVersion)
     OPTIONAL MATCH (fv)-[:HAS_THREAD]->(t:ConversationThread)
     RETURN DISTINCT {
         id: fv.base_id,              // Frontend expects Identity ID
         version_id: fv.id,           // Specific Version ID
         name: fv.name,
         description: fv.description,
-        type: fv.type,
+        type: r.role,                // Fetched from relationship
         theme_id: fv.theme_id,       // If encoded in FactorVersion, or we omit
         thread_id: t.id
     } as factor
@@ -1225,14 +1225,14 @@ async def create_factor_manual(name: str, description: Optional[str], type: str,
         base_id: $fid,
         name: $name,
         description: $desc,
-        type: $type,
+        // type removed - now context-dependent on relationship
         version_id: tv.id,
         created_at: datetime(),
         valid_from: datetime(),
         valid_to: NULL
     })
     CREATE (fb)-[:HAS_VERSION]->(fv) // Base -> Version
-    CREATE (tv)-[:HAS_FACTOR]->(fv)
+    CREATE (tv)-[:HAS_FACTOR {role: $type}]->(fv)
     
     RETURN fb.id as id // Return Base ID to be consistent with "Entity Identity"
     """
@@ -1274,12 +1274,12 @@ async def update_factor_manual(factor_id: str, name: Optional[str], description:
     WHERE tv.status = 'active' AND tv.valid_to IS NULL
     
     MATCH (fb:FactorBase {id: $fid})
-    MATCH (tv)-[:HAS_FACTOR]->(fv:FactorVersion)
+    MATCH (tv)-[rel:HAS_FACTOR]->(fv:FactorVersion)
     WHERE fv.base_id = fb.id
     
     SET fv.name = coalesce($name, fv.name), 
         fv.description = coalesce($desc, fv.description),
-        fv.type = coalesce($type, fv.type)
+        rel.role = coalesce($type, rel.role)
     """
     with driver.session() as session:
         session.run(query, {"fid": factor_id, "tid": theme_id, "name": name, "desc": description, "type": type})
@@ -1452,21 +1452,21 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
     q_copy_factors = """
     MATCH (old_v:ThemeVersion {id: $old_id})
     MATCH (new_v:ThemeVersion {id: $new_id})
-    MATCH (old_v)-[:HAS_FACTOR]->(old_f:FactorVersion)
-    WITH DISTINCT old_v, new_v, old_f
+    MATCH (old_v)-[r:HAS_FACTOR]->(old_f:FactorVersion)
+    WITH DISTINCT old_v, new_v, old_f, r
     
     CREATE (new_f:FactorVersion {
         id: randomUUID(),
         base_id: old_f.base_id,
         name: old_f.name,
-        type: old_f.type,
+        // type removed from node
         description: old_f.description,
         version_id: new_v.id,
         created_at: datetime(),
         valid_from: datetime(),
         valid_to: NULL
     })
-    CREATE (new_v)-[:HAS_FACTOR]->(new_f)
+    CREATE (new_v)-[:HAS_FACTOR {role: r.role}]->(new_f)
     CREATE (new_f)-[:DERIVED_FROM]->(old_f)
     SET old_f.valid_to = datetime()
     
