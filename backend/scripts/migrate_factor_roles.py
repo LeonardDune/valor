@@ -1,80 +1,61 @@
 import os
+import uuid
 import logging
+from datetime import datetime
 from neo4j import GraphDatabase
-from dotenv import load_dotenv
-import sys
 
-# Setup logging
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Load env vars - try multiple paths
-load_dotenv(dotenv_path="../.env")
-if not os.getenv("NEO4J_URI"):
-    load_dotenv(dotenv_path="../../.env")
-if not os.getenv("NEO4J_URI"):
-    # Fallback for when running from project root
-    load_dotenv(dotenv_path=".env")
+# Neo4j connection details from environment
+NEO4J_URI = os.environ.get("NEO4J_URI", "bolt://causa-neo4j:7687")
+NEO4J_USER = os.environ.get("NEO4J_USER", "neo4j")
+NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "password")
 
-NEO4J_URI = os.getenv("NEO4J_URI")
-NEO4J_USERNAME = os.getenv("NEO4J_USERNAME")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD")
-
-def migrate_roles():
-    if not NEO4J_URI or not NEO4J_USERNAME or not NEO4J_PASSWORD:
-        logger.error("Neo4j credentials not found in env.")
-        # Fallback to defaults or exit
-        return
-
-    try:
-        driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USERNAME, NEO4J_PASSWORD))
-        driver.verify_connectivity()
-        logger.info("Connected to Neo4j.")
-    except Exception as e:
-        logger.error(f"Failed to connect to Neo4j: {e}")
-        return
-
-    query_migrate = """
-    MATCH (th:Theme)-[r:HAS_FACTOR]->(f:Factor)
-    WHERE f.type IS NOT NULL
-    SET r.role = f.type
+def migrate_factor_roles():
     """
+    Migrates the 'type' property from FactorVersion nodes to the 'role' property
+    on the incoming HAS_FACTOR relationship from ThemeVersion.
+    """
+    logger.info("Starting migration: FactorVersion.type -> HAS_FACTOR.role")
     
-    query_cleanup = """
-    MATCH (f:Factor)
-    WHERE f.type IS NOT NULL
-    REMOVE f.type
-    """
+    driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
     
-    # Optional: Set default role for relationships that might not have one (if any)
-    query_default = """
-    MATCH (th:Theme)-[r:HAS_FACTOR]->(f:Factor)
-    WHERE r.role IS NULL
-    SET r.role = 'systeemelement'
-    """
-
-    try:
-        with driver.session() as session:
-            logger.info("Migrating roles from Factor nodes to HAS_FACTOR relationships...")
-            result = session.run(query_migrate)
-            summary = result.consume()
-            logger.info(f"Updated {summary.counters.properties_set} properties in relationships.")
-
-            logger.info("Setting default role for any missing relationships...")
-            result = session.run(query_default)
-            summary = result.consume()
-            logger.info(f"Set default defaults for {summary.counters.properties_set} relationships.")
-
-            logger.info("Removing 'type' property from Factor nodes (Cleanup)...")
-            result = session.run(query_cleanup)
-            summary = result.consume()
-            logger.info(f"Removed type property from {summary.counters.properties_set} nodes.")
+    with driver.session() as session:
+        # 1. Find all relationships to migrate
+        # We look for ThemeVersion -> FactorVersion where FactorVersion has a 'type' property
+        query_find = """
+        MATCH (tv:ThemeVersion)-[r:HAS_FACTOR]->(fv:FactorVersion)
+        WHERE fv.type IS NOT NULL
+        RETURN tv.id as theme_version_id, fv.id as factor_version_id, fv.type as factor_type, r.role as existing_role
+        """
+        
+        results = session.run(query_find)
+        records = list(results)
+        logger.info(f"Found {len(records)} relationships to potentially migrate.")
+        
+        # 2. Apply migration in a transaction
+        query_migrate = """
+        MATCH (tv:ThemeVersion)-[r:HAS_FACTOR]->(fv:FactorVersion)
+        WHERE fv.type IS NOT NULL
+        SET r.role = fv.type
+        REMOVE fv.type
+        RETURN count(*) as migrated_count
+        """
+        
+        with session.begin_transaction() as tx:
+            result = tx.run(query_migrate)
+            migrated_count = result.single()["migrated_count"]
+            tx.commit()
             
-            logger.info("Migration complete.")
-    except Exception as e:
-        logger.error(f"Migration failed: {e}")
-    finally:
-        driver.close()
+        logger.info(f"Migration complete. {migrated_count} relationships updated and properties removed.")
+
+    driver.close()
 
 if __name__ == "__main__":
-    migrate_roles()
+    try:
+        migrate_factor_roles()
+    except Exception as e:
+        logger.error(f"Migration failed: {e}")
+        exit(1)
