@@ -107,6 +107,8 @@ async def save_claims(conversation_id: str, claims: List[Claim]):
         statement: claim.statement,
         confidence: claim.confidence,
         polarity: claim.polarity,
+        evidence_text: claim.evidence_text,
+        evidence_url: claim.evidence_url,
         source_version_id: source_v.id,
         target_version_id: target_v.id,
         created_at: datetime()
@@ -1098,6 +1100,8 @@ async def get_claims_for_version(version_id: str) -> List[Claim]:
         statement: cv.statement,
         polarity: cv.polarity,
         confidence: cv.confidence,
+        evidence_text: cv.evidence_text,
+        evidence_url: cv.evidence_url,
         status: cv.status,
         
         source_id: fv_source.base_id,
@@ -1297,7 +1301,7 @@ async def delete_factor_manual(factor_id: str):
     with driver.session() as session:
         session.run(query, {"id": factor_id})
 
-async def create_claim_manual(theme_id: str, source_id: str, target_id: str, statement: str, author_id: str, polarity: str = "+", confidence: float = 1.0) -> str:
+async def create_claim_manual(theme_id: str, source_id: str, target_id: str, statement: str, author_id: str, polarity: str = "+", confidence: float = 1.0, evidence_text: Optional[str] = None, evidence_url: Optional[str] = None) -> str:
     """
     Creates ClaimBase + ClaimVersion.
     Resolves Source/Target Base IDs to their Active Versions in the current Theme Version.
@@ -1336,6 +1340,8 @@ async def create_claim_manual(theme_id: str, source_id: str, target_id: str, sta
         statement: $stmt,
         polarity: $pol,
         confidence: $conf,
+        evidence_text: $ev_txt,
+        evidence_url: $ev_url,
         source_version_id: fv_source.id,
         target_version_id: fv_target.id,
         created_at: datetime(),
@@ -1360,6 +1366,8 @@ async def create_claim_manual(theme_id: str, source_id: str, target_id: str, sta
             "stmt": statement, 
             "pol": polarity, 
             "conf": confidence, 
+            "ev_txt": evidence_text,
+            "ev_url": evidence_url,
             "thid": theme_id,
             "uid": author_id
         })
@@ -1498,6 +1506,8 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
         statement: old_c.statement,
         confidence: old_c.confidence,
         polarity: old_c.polarity,
+        evidence_text: old_c.evidence_text,
+        evidence_url: old_c.evidence_url,
         source_version_id: new_f_source.id,
         target_version_id: new_f_target.id,
         created_at: datetime(),
@@ -1540,7 +1550,7 @@ async def create_decision(theme_id: str, description: str, author_id: str) -> st
         
         return new_version_id
 
-async def update_claim_manual(claim_id: str, statement: Optional[str], polarity: Optional[str], confidence: Optional[float], source_id: Optional[str], target_id: Optional[str]):
+async def update_claim_manual(claim_id: str, statement: Optional[str], polarity: Optional[str], confidence: Optional[float], source_id: Optional[str], target_id: Optional[str], evidence_text: Optional[str] = None, evidence_url: Optional[str] = None):
     driver = get_driver()
     query = """
     MATCH (cb:ClaimBase {id: $id})
@@ -1548,10 +1558,21 @@ async def update_claim_manual(claim_id: str, statement: Optional[str], polarity:
     WHERE cv.valid_to IS NULL
     SET cv.statement = coalesce($stmt, cv.statement),
         cv.polarity = coalesce($pol, cv.polarity),
-        cv.confidence = coalesce($conf, cv.confidence)
+        cv.confidence = coalesce($conf, cv.confidence),
+        cv.evidence_text = CASE WHEN $ev_txt_provided THEN $ev_txt ELSE cv.evidence_text END,
+        cv.evidence_url = CASE WHEN $ev_url_provided THEN $ev_url ELSE cv.evidence_url END
     """
     with driver.session() as session:
-        session.run(query, {"id": claim_id, "stmt": statement, "pol": polarity, "conf": confidence})
+        session.run(query, {
+            "id": claim_id, 
+            "stmt": statement, 
+            "pol": polarity, 
+            "conf": confidence,
+            "ev_txt": evidence_text,
+            "ev_url": evidence_url,
+            "ev_txt_provided": evidence_text is not None,
+            "ev_url_provided": evidence_url is not None
+        })
 
 
 

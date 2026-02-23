@@ -254,6 +254,8 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                         target: cl.target, // redundancy for data access
                         threadCount: (cl.version_id && threadStats[cl.version_id]) || 0,
                         version_id: cl.version_id,
+                        evidence_text: cl.evidence_text,
+                        evidence_url: cl.evidence_url,
                         onOpenThread: handleOpenThread
                     }
                 };
