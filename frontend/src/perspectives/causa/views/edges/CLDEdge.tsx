@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { type EdgeProps, getBezierPath, EdgeLabelRenderer, BaseEdge } from 'reactflow';
-import { PlusCircle, MinusCircle, MessageSquare } from 'lucide-react';
+import { PlusCircle, MinusCircle, MessageSquare, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const CLDEdge = ({
@@ -57,6 +57,16 @@ const CLDEdge = ({
                             strokeWidth={2}
                         />
                     </div>
+
+                    {/* Evidence Indicator */}
+                    {(data?.evidence_text || data?.evidence_url) && (
+                        <div
+                            className="bg-white rounded-full p-[3px] shadow-sm ring-1 ring-amber-200 text-amber-500 flex items-center justify-center pointer-events-none"
+                            title="Bevat bewijs of context"
+                        >
+                            <FileText size={12} strokeWidth={2.5} />
+                        </div>
+                    )}
 
                     {/* Thread Indicator */}
                     {(data?.threadCount !== undefined) && (

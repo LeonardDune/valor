@@ -68,6 +68,8 @@ class ClaimVersion(BaseModel):
     statement: str
     polarity: str
     confidence: float
+    evidence_text: Optional[str] = None
+    evidence_url: Optional[str] = None
     # Note: connect to FactorVersions in graph
     source_version_id: str
     target_version_id: str
@@ -88,6 +90,8 @@ class Claim(ClaimBase):
     statement: str
     polarity: str
     confidence: float
+    evidence_text: Optional[str] = None
+    evidence_url: Optional[str] = None
     source_id: str # Base ID of source
     target_id: str # Base ID of target
     version_id: str

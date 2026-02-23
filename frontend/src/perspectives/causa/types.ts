@@ -23,5 +23,7 @@ export interface CausalLink {
     certainty?: number; // 0.0 - 1.0
     statement?: string;
     version_id?: string;
+    evidence_text?: string;
+    evidence_url?: string;
     threadCount?: number;
 }

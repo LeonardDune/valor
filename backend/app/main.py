@@ -713,6 +713,8 @@ class ClaimManualCreate(BaseModel):
     statement: str
     polarity: Optional[str] = "+"
     confidence: Optional[float] = 1.0
+    evidence_text: Optional[str] = None
+    evidence_url: Optional[str] = None
 
 class ClaimUpdate(BaseModel):
     statement: Optional[str] = None
@@ -720,6 +722,8 @@ class ClaimUpdate(BaseModel):
     confidence: Optional[float] = None
     source_id: Optional[str] = None
     target_id: Optional[str] = None
+    evidence_text: Optional[str] = None
+    evidence_url: Optional[str] = None
 
 @app.post("/factors")
 async def create_factor(factor: FactorManualCreate, user: dict = Depends(get_current_user)):
@@ -771,7 +775,9 @@ async def create_claim(claim: ClaimManualCreate, user: dict = Depends(get_curren
         claim.statement, 
         user["id"],
         claim.polarity, 
-        claim.confidence
+        claim.confidence,
+        claim.evidence_text,
+        claim.evidence_url
     )
     # Broadcast
     if claim.theme_id:
@@ -779,7 +785,7 @@ async def create_claim(claim: ClaimManualCreate, user: dict = Depends(get_curren
         if project_id:
             await manager.broadcast_data(project_id, {
                 "type": "CLAIM_CREATED",
-                "payload": {"id": cid, "source_id": claim.source_id, "target_id": claim.target_id, "theme_id": claim.theme_id, "statement": claim.statement}
+                "payload": {"id": cid, "source_id": claim.source_id, "target_id": claim.target_id, "theme_id": claim.theme_id, "statement": claim.statement, "evidence_text": claim.evidence_text, "evidence_url": claim.evidence_url}
             })
 
     return {"status": "created", "id": cid}
@@ -792,7 +798,9 @@ async def update_claim_route(claim_id: str, claim: ClaimUpdate):
         claim.polarity, 
         claim.confidence, 
         claim.source_id, 
-        claim.target_id
+        claim.target_id,
+        claim.evidence_text,
+        claim.evidence_url
     )
     # Broadcast
     project_id = await get_project_id_by_claim(claim_id)

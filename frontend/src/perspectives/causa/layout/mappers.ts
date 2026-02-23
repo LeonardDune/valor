@@ -33,7 +33,9 @@ export const mapClaimToLink = (claim: Claim): CausalLink => {
         status: 'validated',
         certainty: claim.confidence || 1.0,
         statement: claim.statement,
-        version_id: claim.version_id
+        version_id: claim.version_id,
+        evidence_text: claim.evidence_text,
+        evidence_url: claim.evidence_url
     };
 };
 

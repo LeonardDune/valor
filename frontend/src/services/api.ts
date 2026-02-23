@@ -51,6 +51,8 @@ export interface Claim {
     source_thread_id?: string;
     target_thread_id?: string;
     status?: string;
+    evidence_text?: string;
+    evidence_url?: string;
 }
 
 export interface ValidationResult {
@@ -486,6 +488,8 @@ export const api = {
         statement: string;
         polarity?: string;
         confidence?: number;
+        evidence_text?: string;
+        evidence_url?: string;
     }) => {
         const response = await apiClient.post('/claims_manual', data);
         return response.data;
@@ -497,6 +501,8 @@ export const api = {
         confidence?: number;
         source_id?: string;
         target_id?: string;
+        evidence_text?: string;
+        evidence_url?: string;
     }) => {
         const response = await apiClient.patch(`/claims/${id}`, data);
         return response.data;

@@ -44,6 +44,8 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
     const [confidence, setConfidence] = useState(0.5);
     const [sourceId, setSourceId] = useState('');
     const [targetId, setTargetId] = useState('');
+    const [evidenceText, setEvidenceText] = useState('');
+    const [evidenceUrl, setEvidenceUrl] = useState('');
 
     const [isSaving, setIsSaving] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -53,6 +55,8 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
     const [newStatement, setNewStatement] = useState('');
     const [newPolarity, setNewPolarity] = useState('+');
     const [newConfidence, setNewConfidence] = useState(0.5);
+    const [newEvidenceText, setNewEvidenceText] = useState('');
+    const [newEvidenceUrl, setNewEvidenceUrl] = useState('');
     const [isCreatingLink, setIsCreatingLink] = useState(false);
 
     // Sync state when selection changes
@@ -70,6 +74,8 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
             setStatement('');
             setPolarity('+');
             setConfidence(0.5);
+            setEvidenceText('');
+            setEvidenceUrl('');
         } else {
             // Link
             const data = selection.data;
@@ -85,6 +91,8 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
 
             setSourceId(data.source_id || data.source || '');
             setTargetId(data.target_id || data.target || '');
+            setEvidenceText(data.evidence_text || '');
+            setEvidenceUrl(data.evidence_url || '');
         }
     }, [selection, open]);
 
@@ -100,7 +108,9 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
                     polarity,
                     confidence,
                     source_id: sourceId,
-                    target_id: targetId
+                    target_id: targetId,
+                    evidence_text: evidenceText,
+                    evidence_url: evidenceUrl
                 });
             }
             toast.success("Wijzigingen opgeslagen.");
@@ -146,10 +156,14 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
                 source_id: sourceId,
                 target_id: newTargetId,
                 polarity: newPolarity,
-                confidence: newConfidence
+                confidence: newConfidence,
+                evidence_text: newEvidenceText,
+                evidence_url: newEvidenceUrl
             });
             setNewStatement('');
             setNewTargetId('');
+            setNewEvidenceText('');
+            setNewEvidenceUrl('');
             onRefresh();
             toast.success("Verbinding aangemaakt!");
         } catch (e) {
@@ -233,6 +247,24 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
                                                     placeholder="Waarom?"
                                                 />
                                             </div>
+                                            <div className="grid gap-1">
+                                                <Label className="text-xs">Bron URL (optioneel)</Label>
+                                                <Input
+                                                    value={newEvidenceUrl}
+                                                    onChange={e => setNewEvidenceUrl(e.target.value)}
+                                                    className="h-8 text-xs"
+                                                    placeholder="https://..."
+                                                />
+                                            </div>
+                                            <div className="grid gap-1">
+                                                <Label className="text-xs">Bewijs / Context (optioneel)</Label>
+                                                <Textarea
+                                                    value={newEvidenceText}
+                                                    onChange={e => setNewEvidenceText(e.target.value)}
+                                                    className="h-16 text-xs"
+                                                    placeholder="Kopieer relevante tekst..."
+                                                />
+                                            </div>
                                             <div className="flex gap-2">
                                                 <div className="flex-1">
                                                     <Label className="text-xs">Polariteit</Label>
@@ -282,6 +314,14 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
                                 <div className="grid gap-2">
                                     <Label htmlFor="statement">Claim</Label>
                                     <Textarea id="statement" value={statement} onChange={e => setStatement(e.target.value)} disabled={readOnly} />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="evidenceUrl">Bron URL</Label>
+                                    <Input id="evidenceUrl" value={evidenceUrl} onChange={e => setEvidenceUrl(e.target.value)} disabled={readOnly} placeholder="https://..." />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="evidenceText">Bewijs / Context</Label>
+                                    <Textarea id="evidenceText" value={evidenceText} onChange={e => setEvidenceText(e.target.value)} disabled={readOnly} placeholder="Geciteerde tekst of toelichting..." />
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="grid gap-2">
