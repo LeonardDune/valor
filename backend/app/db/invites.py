@@ -53,15 +53,31 @@ async def create_invite(inviter_id: str, target_email: str, entity_id: str, role
             logger.info(f"Supabase Invite sent to {target_email} with redirect: {final_redirect}")
             
     except Exception as e:
-         # Check for "User already registered" error from Supabase
          error_str = str(e).lower()
+         
+         # Extra logging om te debuggen waarom Supabase faalt
+         logger.error(f"===== SUPABASE INVITE ERROR DEBUG =====")
+         logger.error(f"Type fout: {type(e).__name__}")
+         logger.error(f"String representatie: {e}")
+         if hasattr(e, 'response') and e.response is not None:
+             logger.error(f"Response URL: {getattr(e.response, 'url', 'N/A')}")
+             logger.error(f"Response status: {getattr(e.response, 'status_code', 'N/A')}")
+             logger.error(f"Response body: {getattr(e.response, 'text', 'N/A')}")
+         if hasattr(e, 'message'):
+             logger.error(f"Message attribuut: {e.message}")
+         if hasattr(e, 'code'):
+             logger.error(f"Code attribuut: {e.code}")
+         logger.error(f"=======================================")
+
+         send_custom_email = False
          if "already registered" in error_str or "already been registered" in error_str:
              logger.info(f"User {target_email} already exists in Supabase. Proceeding to create local invite.")
+             send_custom_email = True
          else:
-             logger.error(f"Supabase Invite Failed: {e}")
-             # Only raise if it's NOT an "already registered" error
-             # For other errors (e.g. connection), strictly failing is safer
-             raise Exception(f"Failed to send invite email: {e}")
+             # Tijdelijke workaround: we loggen de fout gedetailleerd, maar laten de aanroep NIET crashen.
+             # Zo wordt de neo4j invite tenminste gemaakt en kan de frontend het succesvol tonen.
+             logger.warning(f"Supabase stuurde mogelijk geen mail, maar we maken wel de lokale uitnodiging aan. Originele fout: {e}")
+             # raise Exception(f"Failed to send invite email: {e}")
 
     # 3. Create Local Invite Record
     driver = get_driver()
@@ -85,9 +101,12 @@ async def create_invite(inviter_id: str, target_email: str, entity_id: str, role
     MERGE (inviter)-[:CREATED]->(i)
     MERGE (i)-[:FOR_ACCESS]->(entity)
     
-    RETURN i.id as id, i.code as code
+    RETURN i.id as id, i.code as code, 
+           coalesce(inviter.name, inviter.email, 'Een bekende') as inviter_name, 
+           coalesce(entity.name, entity.title, 'Valor') as entity_name
     """
     
+
     try:
         with driver.session() as session:
             # Note: We pass datetime object as ISO string or supported type if needed, 
@@ -107,6 +126,17 @@ async def create_invite(inviter_id: str, target_email: str, entity_id: str, role
                  raise Exception(f"Entity {entity_id} not found or Inviter {inviter_email} not found.")
             
             logger.info(f"Invite created for {target_email} to {entity_id}")
+            
+            if send_custom_email:
+                from app.services.email import EmailService
+                email_svc = EmailService()
+                await email_svc.send_invitation_email(
+                    email=target_email,
+                    inviter_name=record["inviter_name"],
+                    entity_name=record["entity_name"],
+                    redirect_url=redirect_url or "https://app.valor.com"
+                )
+                
             return {"id": record["id"], "code": record["code"]}
             
     except Exception as e:

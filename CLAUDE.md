@@ -145,6 +145,48 @@ VITE_SUPABASE_ANON_KEY=...
 VITE_APP_URL=http://localhost:5173   # Used for invite redirect URLs
 ```
 
+## Coding Standards
+
+### Frontend
+- **Env vars:** `import.meta.env.VITE_*` (Vite standaard)
+- **TypeScript:** Strict mode, interfaces voor alle props/API responses, geen `any`
+- **Componenten:** Functional components only, één per bestand, PascalCase bestandsnamen
+- **Path aliases:** `import { Button } from "@/components/ui/button"`
+
+### Design System (STRIKT)
+- **Primair:** Shadcn/UI — Style: "New York", Color: Zinc, Icons: Lucide React
+- **Complexe primitieven** niet in Shadcn: gebruik Radix UI (`@radix-ui/react-*`)
+- **Geen vervangers:** Als een component ontbreekt, INSTALLEER het. Nooit een "vergelijkbaar" component als workaround.
+  ```bash
+  npm install @radix-ui/react-<component>
+  # Maak daarna components/ui/<component>.tsx aan volgens Shadcn-patroon
+  ```
+- **Styling:** Tailwind utility classes + semantische tokens (`bg-destructive`, `text-muted-foreground`, `border-input`)
+- **Geen hand-gemaakte** modals/popovers/tabs van divs
+
+### Directory structuur
+- UI componenten: `src/components/ui/` (Shadcn/Radix only)
+- Feature componenten: `src/components/<feature-name>/`
+- Globale CSS / design tokens: `src/index.css`
+
+### API Architectuur
+- **ALLE** backend-communicatie via `src/services/api.ts`
+- **VERBODEN:** `fetch('/api/...')` direct in React componenten
+- **VERPLICHT:** `await api.getDashboardEnvironments()` etc.
+
+### Lokalisatie
+- Alle gebruikersgerichte tekst, labels, knoppen in het **Nederlands**
+- Fout: `"Open Workspace"` / Goed: `"Werkruimte Openen"`
+
+### Identiteit & Context
+- Geen placeholder IDs — gebruik altijd echte IDs
+- Gebruik `useAuth()` hook, handel error/loading states expliciet af
+
+### Backend
+- **Env vars:** via `config.py` (Pydantic Settings) of `os.getenv`
+- **Python:** Type hints op alle functiesignaturen
+- **Testing:** Altijd een virtual environment (venv) gebruiken
+
 ## Key Conventions
 
 - **Route placement:** Most API routes live directly in `main.py` (not in routers). Only proposals, threads, sessions, and deliberation have dedicated router files.
