@@ -69,7 +69,9 @@ from app.db.themes import (
 
 from app.db.knowledge import (
     get_project_id_by_factor,
+    get_version_id_by_factor,
     get_project_id_by_claim,
+    get_version_id_by_claim,
     get_factors_for_version,
     get_factors_for_theme,
     create_factor_manual,

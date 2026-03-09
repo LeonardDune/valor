@@ -27,6 +27,23 @@ async def get_project_id_by_factor(factor_id: str) -> Optional[str]:
         return None
 
 
+async def get_version_id_by_factor(factor_id: str) -> Optional[str]:
+    driver = get_driver()
+    query = """
+    MATCH (tv:ThemeVersion)-[:HAS_FACTOR]->(fv:FactorVersion {base_id: $fid})
+    WHERE tv.status = 'active' AND tv.valid_to IS NULL
+    RETURN tv.id as vid
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"fid": factor_id})
+            record = result.single()
+            return record["vid"] if record else None
+    except Exception as e:
+        logger.error(f"Error resolving version for factor {factor_id}: {e}")
+        return None
+
+
 async def get_project_id_by_claim(claim_id: str) -> Optional[str]:
     driver = get_driver()
     query = """
@@ -40,6 +57,22 @@ async def get_project_id_by_claim(claim_id: str) -> Optional[str]:
             return record["pid"] if record else None
     except Exception as e:
         logger.error(f"Error resolving project for claim {claim_id}: {e}")
+        return None
+
+
+async def get_version_id_by_claim(claim_id: str) -> Optional[str]:
+    driver = get_driver()
+    query = """
+    MATCH (tv:ThemeVersion)-[:HAS_FACTOR]->(fv:FactorVersion)-[:CLAIMS]->(cv:ClaimVersion)<-[:HAS_VERSION]-(cb:ClaimBase {id: $id})
+    RETURN tv.id as vid
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"id": claim_id})
+            record = result.single()
+            return record["vid"] if record else None
+    except Exception as e:
+        logger.error(f"Error resolving version for claim {claim_id}: {e}")
         return None
 
 

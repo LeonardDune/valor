@@ -7,8 +7,8 @@ from app.auth import get_current_user
 from app.models.domain import Role
 from app.db.crud import (
     create_claim_manual, update_claim_manual, delete_claim_manual,
-    get_project_id_by_claim, get_project_id_by_theme,
-    get_claims_for_theme, check_permission,
+    get_project_id_by_claim, get_version_id_by_claim, get_project_id_by_theme,
+    get_active_version_id_if_theme, get_claims_for_theme, check_permission,
 )
 from app.services.connection_manager import manager
 
@@ -52,6 +52,11 @@ async def list_version_claims(version_id: str):
 @router.post("/claims_manual")
 async def create_claim(claim: ClaimManualCreate, user: dict = Depends(get_current_user)):
     logger.info(f"Creating claim: {claim} by {user['id']}")
+    version_id = await get_active_version_id_if_theme(claim.theme_id) if claim.theme_id else None
+    project_id = await get_project_id_by_theme(claim.theme_id) if claim.theme_id else None
+    check_entity = version_id or project_id
+    if not check_entity or not await check_permission(user["id"], check_entity, Role.MEMBER):
+        raise HTTPException(status_code=403, detail="Geen toegang om een claim aan te maken")
     cid = await create_claim_manual(
         claim.theme_id,
         claim.source_id,
@@ -63,13 +68,11 @@ async def create_claim(claim: ClaimManualCreate, user: dict = Depends(get_curren
         claim.evidence_text,
         claim.evidence_url
     )
-    if claim.theme_id:
-        project_id = await get_project_id_by_theme(claim.theme_id)
-        if project_id:
-            await manager.broadcast_data(project_id, {
-                "type": "CLAIM_CREATED",
-                "payload": {"id": cid, "source_id": claim.source_id, "target_id": claim.target_id, "theme_id": claim.theme_id, "statement": claim.statement, "evidence_text": claim.evidence_text, "evidence_url": claim.evidence_url}
-            })
+    if project_id:
+        await manager.broadcast_data(project_id, {
+            "type": "CLAIM_CREATED",
+            "payload": {"id": cid, "source_id": claim.source_id, "target_id": claim.target_id, "theme_id": claim.theme_id, "statement": claim.statement, "evidence_text": claim.evidence_text, "evidence_url": claim.evidence_url}
+        })
 
     return {"status": "created", "id": cid}
 
@@ -77,7 +80,9 @@ async def create_claim(claim: ClaimManualCreate, user: dict = Depends(get_curren
 @router.patch("/claims/{claim_id}")
 async def update_claim_route(claim_id: str, claim: ClaimUpdate, user: dict = Depends(get_current_user)):
     project_id = await get_project_id_by_claim(claim_id)
-    if not project_id or not await check_permission(user["id"], project_id, Role.MEMBER):
+    version_id = await get_version_id_by_claim(claim_id)
+    check_entity = version_id or project_id
+    if not check_entity or not await check_permission(user["id"], check_entity, Role.MEMBER):
         raise HTTPException(status_code=403, detail="Geen toegang om deze claim te wijzigen")
     await update_claim_manual(
         claim_id,
@@ -100,7 +105,9 @@ async def update_claim_route(claim_id: str, claim: ClaimUpdate, user: dict = Dep
 @router.delete("/claims/{claim_id}")
 async def delete_claim_route(claim_id: str, user: dict = Depends(get_current_user)):
     project_id = await get_project_id_by_claim(claim_id)
-    if not project_id or not await check_permission(user["id"], project_id, Role.MEMBER):
+    version_id = await get_version_id_by_claim(claim_id)
+    check_entity = version_id or project_id
+    if not check_entity or not await check_permission(user["id"], check_entity, Role.MEMBER):
         raise HTTPException(status_code=403, detail="Geen toegang om deze claim te verwijderen")
     await delete_claim_manual(claim_id)
     if project_id:

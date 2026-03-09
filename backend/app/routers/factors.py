@@ -7,8 +7,8 @@ from app.auth import get_current_user
 from app.models.domain import Role
 from app.db.crud import (
     create_factor_manual, update_factor_manual, delete_factor_manual,
-    get_project_id_by_factor, get_project_id_by_theme,
-    get_factors_for_theme, check_permission,
+    get_project_id_by_factor, get_version_id_by_factor, get_project_id_by_theme,
+    get_active_version_id_if_theme, get_factors_for_theme, check_permission,
 )
 from app.services.connection_manager import manager
 
@@ -45,15 +45,18 @@ async def list_version_factors(version_id: str):
 @router.post("/factors")
 async def create_factor(factor: FactorManualCreate, user: dict = Depends(get_current_user)):
     logger.info(f"Creating factor: {factor} by {user['id']}")
+    version_id = await get_active_version_id_if_theme(factor.theme_id) if factor.theme_id else None
+    project_id_check = await get_project_id_by_theme(factor.theme_id) if factor.theme_id else None
+    check_entity = version_id or project_id_check
+    if not check_entity or not await check_permission(user["id"], check_entity, Role.MEMBER):
+        raise HTTPException(status_code=403, detail="Geen toegang om een factor aan te maken")
     fid = await create_factor_manual(factor.name, factor.description, factor.type or "systeemelement", factor.theme_id, author_id=user["id"])
 
-    if factor.theme_id:
-        project_id = await get_project_id_by_theme(factor.theme_id)
-        if project_id:
-            await manager.broadcast_data(project_id, {
-                "type": "FACTOR_CREATED",
-                "payload": {"id": fid, "name": factor.name, "description": factor.description, "type": factor.type, "theme_id": factor.theme_id}
-            })
+    if project_id_check:
+        await manager.broadcast_data(project_id_check, {
+            "type": "FACTOR_CREATED",
+            "payload": {"id": fid, "name": factor.name, "description": factor.description, "type": factor.type, "theme_id": factor.theme_id}
+        })
 
     return {"id": fid, "name": factor.name}
 
@@ -61,7 +64,9 @@ async def create_factor(factor: FactorManualCreate, user: dict = Depends(get_cur
 @router.patch("/factors/{factor_id}")
 async def update_factor_route(factor_id: str, factor: FactorUpdate, user: dict = Depends(get_current_user)):
     project_id = await get_project_id_by_factor(factor_id)
-    if not project_id or not await check_permission(user["id"], project_id, Role.MEMBER):
+    version_id = await get_version_id_by_factor(factor_id)
+    check_entity = version_id or project_id
+    if not check_entity or not await check_permission(user["id"], check_entity, Role.MEMBER):
         raise HTTPException(status_code=403, detail="Geen toegang om deze factor te wijzigen")
     await update_factor_manual(factor_id, factor.name, factor.description, factor.type, factor.theme_id)
     if project_id:
@@ -75,7 +80,9 @@ async def update_factor_route(factor_id: str, factor: FactorUpdate, user: dict =
 @router.delete("/factors/{factor_id}")
 async def delete_factor_route(factor_id: str, user: dict = Depends(get_current_user)):
     project_id = await get_project_id_by_factor(factor_id)
-    if not project_id or not await check_permission(user["id"], project_id, Role.MEMBER):
+    version_id = await get_version_id_by_factor(factor_id)
+    check_entity = version_id or project_id
+    if not check_entity or not await check_permission(user["id"], check_entity, Role.MEMBER):
         raise HTTPException(status_code=403, detail="Geen toegang om deze factor te verwijderen")
     await delete_factor_manual(factor_id)
     if project_id:
