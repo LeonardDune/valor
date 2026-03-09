@@ -756,9 +756,11 @@ async def update_factor_route(factor_id: str, factor: FactorUpdate, user: dict =
     return {"status": "updated"}
 
 @app.delete("/factors/{factor_id}")
-async def delete_factor_route(factor_id: str):
+async def delete_factor_route(factor_id: str, user: dict = Depends(get_current_user)):
     # Get project ID before deletion!
     project_id = await get_project_id_by_factor(factor_id)
+    if not project_id or not await check_permission(user["id"], project_id, Role.MEMBER):
+        raise HTTPException(status_code=403, detail="Geen toegang om deze factor te verwijderen")
     await delete_factor_manual(factor_id)
     if project_id:
          await manager.broadcast_data(project_id, {
