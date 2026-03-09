@@ -742,10 +742,12 @@ async def create_factor(factor: FactorManualCreate, user: dict = Depends(get_cur
     return {"id": fid, "name": factor.name}
 
 @app.patch("/factors/{factor_id}")
-async def update_factor_route(factor_id: str, factor: FactorUpdate):
+async def update_factor_route(factor_id: str, factor: FactorUpdate, user: dict = Depends(get_current_user)):
+    project_id = await get_project_id_by_factor(factor_id)
+    if not project_id or not await check_permission(user["id"], project_id, Role.MEMBER):
+        raise HTTPException(status_code=403, detail="Geen toegang om deze factor te wijzigen")
     await update_factor_manual(factor_id, factor.name, factor.description, factor.type, factor.theme_id)
     # Broadcast
-    project_id = await get_project_id_by_factor(factor_id)
     if project_id:
          await manager.broadcast_data(project_id, {
                 "type": "FACTOR_UPDATED",
