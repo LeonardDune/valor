@@ -9,7 +9,11 @@ SENTINEL_GRAPH="urn:valor:ontology-loaded"
 AUTH="-u admin:${FUSEKI_ADMIN_PASSWORD}"
 
 echo "[fuseki-loader] Benodigde tools installeren..."
-apk add --no-cache curl git > /dev/null 2>&1
+if command -v apk > /dev/null 2>&1; then
+  apk add --no-cache curl git > /dev/null 2>&1
+elif command -v apt-get > /dev/null 2>&1; then
+  apt-get update -qq && apt-get install -y --no-install-recommends curl git > /dev/null 2>&1
+fi
 
 echo "[fuseki-loader] Wachten op Fuseki..."
 until curl -sf "${FUSEKI_URL}/\$/ping" > /dev/null; do

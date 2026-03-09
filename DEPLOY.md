@@ -24,7 +24,27 @@ Dit is de primaire deployment methode voor de Valor applicatie op een eigen VPS 
    - Voeg `https://valor-ecosystem.nl` toe aan de **Redirect URLs** (zodat invites en login werken).
    - Voeg ook `https://valor-ecosystem.nl/update-password` toe voor wachtwoord resets.
 
-## 3. Frontend Setup (valor-ecosystem.nl)
+## 3. Fuseki Setup (intern netwerk — geen publiek domein)
+
+Fuseki draait als interne service — alleen bereikbaar voor de backend via het interne Coolify-netwerk.
+
+1. **Service:** Maak een nieuwe "Application" aan in Coolify.
+2. **Context:** Zet de `Base Directory` op `/fuseki`.
+3. **Dockerfile:** Coolify detecteert automatisch de `Dockerfile` in `/fuseki`.
+4. **Domeinen:** Geen publiek domein instellen.
+5. **Poort:** Intern op `3030` — niet exposen naar buiten.
+6. **Environment Variables:**
+   - `ADMIN_PASSWORD`: (sterk wachtwoord — gebruik hetzelfde als `FUSEKI_ADMIN_PASSWORD` in de backend)
+   - `FUSEKI_DATASET_1`: `valor`
+   - `FUSEKI_ADMIN_PASSWORD`: (zelfde wachtwoord als `ADMIN_PASSWORD`)
+   - `ONTOLOGY_REPO`: `https://github.com/LeonardDune/valor-ontology.git`
+7. **Volume:** Voeg een persistent volume toe met mount path `/fuseki` (TDB2-persistentie).
+8. **Backend koppelen:** Voeg aan de backend-service toe:
+   - `FUSEKI_URL`: `http://<coolify-interne-naam>:3030` (de interne Coolify-hostnaam van deze service)
+
+> De `entrypoint.sh` laadt bij eerste opstart automatisch de VALOR-O ontologie vanuit GitHub. Volgende starts slaan dit over via een sentinel graph.
+
+## 4. Frontend Setup (valor-ecosystem.nl)
 1. **Service:** Maak een nieuwe "Application" aan in Coolify.
 2. **Context:** Zet de `Base Directory` op `/frontend`.
 3. **Dockerfile:** Coolify gebruikt de `Dockerfile` in `/frontend` (multi-stage build met Nginx).
