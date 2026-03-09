@@ -795,19 +795,21 @@ async def create_claim(claim: ClaimManualCreate, user: dict = Depends(get_curren
     return {"status": "created", "id": cid}
 
 @app.patch("/claims/{claim_id}")
-async def update_claim_route(claim_id: str, claim: ClaimUpdate):
+async def update_claim_route(claim_id: str, claim: ClaimUpdate, user: dict = Depends(get_current_user)):
+    project_id = await get_project_id_by_claim(claim_id)
+    if not project_id or not await check_permission(user["id"], project_id, Role.MEMBER):
+        raise HTTPException(status_code=403, detail="Geen toegang om deze claim te wijzigen")
     await update_claim_manual(
-        claim_id, 
-        claim.statement, 
-        claim.polarity, 
-        claim.confidence, 
-        claim.source_id, 
+        claim_id,
+        claim.statement,
+        claim.polarity,
+        claim.confidence,
+        claim.source_id,
         claim.target_id,
         claim.evidence_text,
         claim.evidence_url
     )
     # Broadcast
-    project_id = await get_project_id_by_claim(claim_id)
     if project_id:
          await manager.broadcast_data(project_id, {
                 "type": "CLAIM_UPDATED",
@@ -816,8 +818,10 @@ async def update_claim_route(claim_id: str, claim: ClaimUpdate):
     return {"status": "updated"}
 
 @app.delete("/claims/{claim_id}")
-async def delete_claim_route(claim_id: str):
+async def delete_claim_route(claim_id: str, user: dict = Depends(get_current_user)):
     project_id = await get_project_id_by_claim(claim_id)
+    if not project_id or not await check_permission(user["id"], project_id, Role.MEMBER):
+        raise HTTPException(status_code=403, detail="Geen toegang om deze claim te verwijderen")
     await delete_claim_manual(claim_id)
     if project_id:
          await manager.broadcast_data(project_id, {
