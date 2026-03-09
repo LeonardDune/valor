@@ -23,6 +23,8 @@ playwright/
 *.yml
 !.agent/*.yaml
 !.agent/*.yml
+!docker-compose*.yml
+!docker-compose*.yaml
 docs/.env-prod
 backend/.env.production
 frontend/lint_output*.txt
