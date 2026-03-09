@@ -10,7 +10,9 @@ _bmad
 .env.local
 **/node_modules/
 **/venv/
-**/__pycache__
+**/__pycache__/
+**/*.pyc
+**/*.pyo
 
 # App specific ignores
 exports/
@@ -33,3 +35,4 @@ frontend/lint_output*.txt
 # Debug scripts (use scripts/ instead)
 backend/debug_*.py
 backend/deduplicate_db.py
+
