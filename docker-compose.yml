@@ -16,3 +16,39 @@ services:
       - WATCHFILES_FORCE_POLLING=true # Often needed for hot reload in Docker on some systems
     # Neo4j is cloud-hosted (AuraDB)
     # See backend/.env for connection details
+
+  fuseki:
+    image: stain/jena-fuseki
+    container_name: valor-fuseki
+    ports:
+      - "3030:3030"
+    volumes:
+      - fuseki_data:/fuseki
+    environment:
+      - ADMIN_PASSWORD=admin
+      - FUSEKI_DATASET_1=valor
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3030/$/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  fuseki-loader:
+    image: alpine
+    container_name: valor-fuseki-loader
+    volumes:
+      - ./fuseki/load-ontology.sh:/load-ontology.sh:ro
+    command: sh /load-ontology.sh
+    environment:
+      - FUSEKI_URL=http://fuseki:3030
+      - FUSEKI_ADMIN_PASSWORD=admin
+      - DATASET=valor
+      - ONTOLOGY_REPO=https://github.com/LeonardDune/valor-ontology.git
+    depends_on:
+      fuseki:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  fuseki_data:
