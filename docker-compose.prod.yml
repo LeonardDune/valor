@@ -1,0 +1,66 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: valor-backend-prod
+    restart: always
+    environment:
+      - PORT=8000
+    # Env variables like NEO4J_URI are managed in Coolify UI
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  fuseki:
+    image: stain/jena-fuseki
+    container_name: valor-fuseki-prod
+    restart: always
+    # Geen publieke poort — alleen bereikbaar via intern Coolify-netwerk
+    volumes:
+      - fuseki_data:/fuseki
+    environment:
+      # ADMIN_PASSWORD en FUSEKI_DATASET_1 worden ingesteld via Coolify UI
+      - ADMIN_PASSWORD=${FUSEKI_ADMIN_PASSWORD}
+      - FUSEKI_DATASET_1=valor
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3030/$/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  fuseki-loader:
+    image: alpine
+    container_name: valor-fuseki-loader-prod
+    volumes:
+      - ./fuseki/load-ontology.sh:/load-ontology.sh:ro
+    command: sh /load-ontology.sh
+    environment:
+      - FUSEKI_URL=http://fuseki:3030
+      - FUSEKI_ADMIN_PASSWORD=${FUSEKI_ADMIN_PASSWORD}
+      - DATASET=valor
+      - ONTOLOGY_REPO=https://github.com/LeonardDune/valor-ontology.git
+    depends_on:
+      fuseki:
+        condition: service_healthy
+    restart: "no"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=https://api.valor-ecosystem.nl
+    container_name: valor-frontend-prod
+    restart: always
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  fuseki_data:
