@@ -221,7 +221,6 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
         if (effectiveIsReadOnly) return;
         try {
             await api.createFactor(themeId, name, description, type);
-            await api.createFactor(themeId, name, description, type);
             // Force refresh to bypass cache check and show new factor immediately
             await refresh(true);
         } catch (error) {
