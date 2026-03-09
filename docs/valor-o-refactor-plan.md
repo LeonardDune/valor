@@ -131,6 +131,8 @@ Epic 0 (Security fix)
 | US-0.2 | Als platformbeheerder wil ik dat `DELETE /factors/{id}` hetzelfde vereist | Idem |
 | US-0.3 | Als platformbeheerder wil ik dat `PATCH /claims/{id}` en `DELETE /claims/{id}` eigendom verifiëren | Claim-eigendom gecontroleerd via theme_id → check_permission |
 | US-0.4 | Als developer wil ik een integratietest die afdwingt dat alle schrijfroutes een auth-dependency hebben zodat deze gap niet terugkeert | Test faalt als een POST/PATCH/DELETE route geen `Depends(get_current_user)` heeft |
+| US-0.5 | Als developer wil ik de 820-regel monoliet `main.py` opsplitsen in router-modules zodat nieuwe routes (Tessera, DesignSpace, SPARQL) overzichtelijk toegevoegd kunnen worden | `main.py` bevat alleen app-initialisatie, middleware en router-includes; factor/claim/organisatie/hierarchy routes zijn verplaatst naar respectievelijk `routers/factors.py`, `routers/claims.py`, `routers/organizations.py`, `routers/hierarchy.py`; alle bestaande endpoints werken ongewijzigd |
+| US-0.6 | Als developer wil ik `crud.py` opsplitsen in domein-modules zodat de 1667-regel monoliet beheersbaar wordt voor de Fuseki-migratiefase | Agent/conversation functies → `db/conversations.py`; organisation/user/member functies → `db/organizations.py`; project/theme/version functies → `db/themes.py`; factor/claim functies → `db/knowledge.py`; `crud.py` wordt een re-export module voor backwards-compatibility tijdens transitie; alle bestaande imports blijven werken |
 
 ---
 
