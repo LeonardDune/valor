@@ -14,6 +14,7 @@ from app.db.crud import set_conversation_topic
 from app.services.connection_manager import manager
 from app.routers import proposals, dashboard, threads, sessions, deliberation
 from app.routers import factors, claims, organizations, hierarchy
+from app.routers import tessera
 
 load_dotenv()
 
@@ -89,6 +90,7 @@ app.include_router(organizations.router)
 app.include_router(hierarchy.router)
 app.include_router(factors.router)
 app.include_router(claims.router)
+app.include_router(tessera.router)
 
 
 @app.get("/")
