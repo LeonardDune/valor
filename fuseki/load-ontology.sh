@@ -16,7 +16,7 @@ elif command -v apt-get > /dev/null 2>&1; then
 fi
 
 echo "[fuseki-loader] Wachten op Fuseki..."
-until curl -sf "${FUSEKI_URL}/\$/ping" > /dev/null; do
+until curl -sf -u "admin:${FUSEKI_ADMIN_PASSWORD}" "${FUSEKI_URL}/\$/ping" > /dev/null; do
   sleep 2
 done
 echo "[fuseki-loader] Fuseki is bereikbaar."
