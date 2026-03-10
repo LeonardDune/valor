@@ -9,3 +9,4 @@ COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /load-ontology.sh /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/jena-fuseki/fuseki-server"]
