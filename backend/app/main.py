@@ -27,6 +27,8 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up...")
     await verify_connectivity()
     await startup_migration()
+    from app.services.ontology_cache import load_ontology_cache
+    await load_ontology_cache()
     yield
     logger.info("Shutting down...")
     close_driver()
