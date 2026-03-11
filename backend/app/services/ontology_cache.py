@@ -21,11 +21,13 @@ _status_label_to_uri: dict[str, str] = {}
 _status_uri_to_label: dict[str, str] = {}
 _valid_transitions: dict[str, set[str]] = {}
 _requires_decision_episode: set[str] = set()
+_argue_label_to_uri: dict[str, str] = {}   # "undermines" → URI
+_shacl_shapes_graph = "https://valor-ecosystem.nl/shacl/tessera"
 
 
 async def load_ontology_cache() -> None:
     global _evidence_label_to_uri, _status_label_to_uri, _status_uri_to_label
-    global _valid_transitions, _requires_decision_episode
+    global _valid_transitions, _requires_decision_episode, _argue_label_to_uri
 
     logger.info("[ontology-cache] Ontologie-data laden van Fuseki...")
 
@@ -85,6 +87,25 @@ async def load_ontology_cache() -> None:
     _requires_decision_episode = {row["uri"] for row in req_rows}
     logger.info("[ontology-cache] Vereist DecisionEpisode: %s", _requires_decision_episode)
 
+    # Argumentatierelaties (ObjectProperties met domain én range valor:Tessera)
+    PREFIX_OWL = "http://www.w3.org/2002/07/owl#"
+    argue_rows = await sparql_select_global(f"""
+        PREFIX valor: <{_VALOR_NS}>
+        PREFIX owl:   <{PREFIX_OWL}>
+        PREFIX rdfs:  <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?uri ?label WHERE {{
+          GRAPH <{_TESSERA_GRAPH}> {{
+            ?uri a owl:ObjectProperty ;
+                 rdfs:domain valor:Tessera ;
+                 rdfs:range  valor:Tessera ;
+                 rdfs:label ?label .
+            FILTER(lang(?label) = "en")
+          }}
+        }}
+    """)
+    _argue_label_to_uri = {row["label"]: row["uri"] for row in argue_rows}
+    logger.info("[ontology-cache] Argumentatierelaties: %s", list(_argue_label_to_uri.keys()))
+
     if not _evidence_label_to_uri or not _status_label_to_uri or not _valid_transitions:
         logger.warning(
             "[ontology-cache] Ontologie-cache onvolledig. "
@@ -110,3 +131,11 @@ def get_valid_transitions() -> dict[str, set[str]]:
 
 def requires_decision_episode(status_uri: str) -> bool:
     return status_uri in _requires_decision_episode
+
+
+def get_argue_label_to_uri() -> dict[str, str]:
+    return _argue_label_to_uri
+
+
+def get_shacl_shapes_graph() -> str:
+    return _shacl_shapes_graph
