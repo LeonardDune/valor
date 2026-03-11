@@ -47,6 +47,8 @@ VALID_TRANSITIONS: dict[str, set[str]] = {
 
 REQUIRES_DECISION_EPISODE = {"Accepted", "Rejected"}
 
+EVIDENCE_TYPES = {"Empirical", "Theoretical", "Expert", "Experiential"}
+
 
 def _normalize_status(raw: str) -> str:
     """Vertaalt een URI of legacy string-literal naar de canonieke statusnaam."""
@@ -70,6 +72,25 @@ class TesseraResponse(BaseModel):
     epistemic_status: str
     claimed_by: str
     claimed_at: str
+
+
+class CreateEvidenceRequest(BaseModel):
+    design_space_id: str
+    evidence_type: str  # Empirical | Theoretical | Expert | Experiential
+    strength: str
+    source: str
+
+
+class EvidenceResponse(BaseModel):
+    evidence_id: str
+    evidence_uri: str
+    tessera_id: str
+    tessera_uri: str
+    evidence_type: str
+    strength: str
+    source: str
+    added_by: str
+    added_at: str
 
 
 class PatchTesseraStatusRequest(BaseModel):
@@ -251,4 +272,81 @@ WHERE {{
         tessera_uri=tessera_uri,
         previous_status=current_status,
         new_status=request.new_status,
+    )
+
+
+@router.post("/{tessera_id}/evidence", response_model=EvidenceResponse, status_code=201)
+async def add_evidence(
+    tessera_id: str,
+    request: CreateEvidenceRequest,
+    user: dict = Depends(get_current_user),
+):
+    if request.evidence_type not in EVIDENCE_TYPES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Ongeldig evidentietype '{request.evidence_type}'. Geldige waarden: {sorted(EVIDENCE_TYPES)}.",
+        )
+
+    user_id = user["id"]
+
+    has_permission = await check_permission(user_id, request.design_space_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(
+            status_code=403,
+            detail="Onvoldoende rechten voor deze DesignSpace.",
+        )
+
+    tessera_uri = f"urn:valor:tessera:{tessera_id}"
+    graph_uri = named_graph_uri(request.design_space_id)
+
+    # Controleer of Tessera bestaat
+    rows = await sparql_select(
+        f"""SELECT ?t WHERE {{
+          GRAPH <{graph_uri}> {{
+            <{tessera_uri}> a <{VALOR_NS}Tessera> .
+            BIND(<{tessera_uri}> AS ?t)
+          }}
+        }}""",
+        request.design_space_id,
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Tessera niet gevonden in deze DesignSpace.")
+
+    evidence_id = str(uuid.uuid4())
+    evidence_uri = f"urn:valor:evidence:{evidence_id}"
+    user_uri = f"urn:valor:user:{user_id}"
+    added_at = datetime.now(timezone.utc).isoformat()
+
+    escaped_strength = request.strength.replace("\\", "\\\\").replace('"', '\\"')
+    escaped_source = request.source.replace("\\", "\\\\").replace('"', '\\"')
+
+    sparql = f"""PREFIX valor: <{VALOR_NS}>
+PREFIX xsd: <{XSD_NS}>
+
+INSERT DATA {{
+  GRAPH <{graph_uri}> {{
+    <{evidence_uri}> a valor:Evidence ;
+      valor:evidenceType "{request.evidence_type}" ;
+      valor:strength "{escaped_strength}" ;
+      valor:source "{escaped_source}" ;
+      valor:addedBy <{user_uri}> ;
+      valor:addedAt "{added_at}"^^xsd:dateTime .
+    <{tessera_uri}> valor:hasEvidence <{evidence_uri}> .
+  }}
+}}"""
+
+    await sparql_update(sparql, request.design_space_id)
+
+    logger.info("Evidence %s toegevoegd aan Tessera %s door %s", evidence_uri, tessera_uri, user_id)
+
+    return EvidenceResponse(
+        evidence_id=evidence_id,
+        evidence_uri=evidence_uri,
+        tessera_id=tessera_id,
+        tessera_uri=tessera_uri,
+        evidence_type=request.evidence_type,
+        strength=request.strength,
+        source=request.source,
+        added_by=user_id,
+        added_at=added_at,
     )
