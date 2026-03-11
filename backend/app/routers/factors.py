@@ -11,6 +11,7 @@ from app.db.crud import (
     get_active_version_id_if_theme, get_factors_for_theme, check_permission,
 )
 from app.services.connection_manager import manager
+from app.services.fuseki_sync import try_write_factor
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ async def create_factor(factor: FactorManualCreate, user: dict = Depends(get_cur
     if not check_entity or not await check_permission(user["id"], check_entity, Role.MEMBER):
         raise HTTPException(status_code=403, detail="Geen toegang om een factor aan te maken")
     fid = await create_factor_manual(factor.name, factor.description, factor.type or "systeemelement", factor.theme_id, author_id=user["id"])
+    await try_write_factor(fid, factor.name, factor.theme_id or "", user["id"])
 
     if project_id_check:
         await manager.broadcast_data(project_id_check, {
