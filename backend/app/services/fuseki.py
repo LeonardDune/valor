@@ -78,6 +78,31 @@ async def sparql_update(update: str, named_graph: str) -> None:
     _raise_for_fuseki_error(response)
 
 
+async def sparql_select_global(query: str) -> list[dict[str, Any]]:
+    """Voert een SPARQL SELECT uit op het gehele Fuseki-dataset (alle named graphs).
+
+    Gebruik voor ontologie-queries zonder design space scope.
+    """
+    headers = {"Accept": "application/sparql-results+json"}
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            _SPARQL_ENDPOINT,
+            data={"query": query},
+            headers=headers,
+            timeout=30,
+        )
+
+    _raise_for_fuseki_error(response)
+
+    data = response.json()
+    bindings = data.get("results", {}).get("bindings", [])
+    return [
+        {k: v["value"] for k, v in row.items()}
+        for row in bindings
+    ]
+
+
 async def sparql_construct(query: str, named_graph: str) -> str:
     """Voert een SPARQL CONSTRUCT uit binnen de named graph van een DesignSpace.
 

@@ -1,4 +1,3 @@
-import os
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -11,6 +10,13 @@ from app.auth import get_current_user
 from app.db.permissions import check_permission
 from app.models.domain import Role
 from app.services.fuseki import sparql_select, sparql_update, named_graph_uri
+from app.services.ontology_cache import (
+    get_evidence_label_to_uri,
+    get_status_label_to_uri,
+    get_status_uri_to_label,
+    get_valid_transitions,
+    requires_decision_episode,
+)
 from app.ontology import VALOR_NS
 
 logger = logging.getLogger(__name__)
@@ -22,37 +28,10 @@ router = APIRouter(
 
 XSD_NS = "http://www.w3.org/2001/XMLSchema#"
 
-# Ontologie-base voor named individuals (valor:ProposedStatus etc.)
-# Dit is de `valor:` prefix zoals gedefinieerd in de VALOR-O ontologie.
-_ONTOLOGY_BASE = os.getenv("VALOR_ONTOLOGY_BASE_URL", "https://valor-ecosystem.nl/ontology/")
-
-EPISTEMIC_STATUS_URIS: dict[str, str] = {
-    "Proposed":     f"{_ONTOLOGY_BASE}ProposedStatus",
-    "Contested":    f"{_ONTOLOGY_BASE}ContestedStatus",
-    "Accepted":     f"{_ONTOLOGY_BASE}AcceptedStatus",
-    "Rejected":     f"{_ONTOLOGY_BASE}RejectedStatus",
-    "Reconsidered": f"{_ONTOLOGY_BASE}ReconsideredStatus",
-}
-
-_STATUS_URI_TO_NAME: dict[str, str] = {v: k for k, v in EPISTEMIC_STATUS_URIS.items()}
-
-# Statusmachine conform DD-065
-VALID_TRANSITIONS: dict[str, set[str]] = {
-    "Proposed":     {"Contested", "Accepted", "Rejected"},
-    "Contested":    {"Accepted", "Rejected"},
-    "Accepted":     {"Reconsidered"},
-    "Rejected":     {"Reconsidered"},
-    "Reconsidered": {"Proposed"},
-}
-
-REQUIRES_DECISION_EPISODE = {"Accepted", "Rejected"}
-
-EVIDENCE_TYPES = {"Empirical", "Theoretical", "Expert", "Experiential"}
-
 
 def _normalize_status(raw: str) -> str:
-    """Vertaalt een URI of legacy string-literal naar de canonieke statusnaam."""
-    return _STATUS_URI_TO_NAME.get(raw, raw)
+    """Vertaalt een URI naar de canonieke statusnaam (English label)."""
+    return get_status_uri_to_label().get(raw, raw)
 
 
 class CreateTesseraRequest(BaseModel):
@@ -76,9 +55,9 @@ class TesseraResponse(BaseModel):
 
 class CreateEvidenceRequest(BaseModel):
     design_space_id: str
-    evidence_type: str  # Empirical | Theoretical | Expert | Experiential
-    strength: str
-    source: str
+    evidence_type: str  # English label as defined in ontology (e.g. "Empirical", "Expert Judgement")
+    strength: float    # xsd:decimal (0.0–1.0)
+    source: str        # URI van het brondocument
 
 
 class EvidenceResponse(BaseModel):
@@ -87,7 +66,8 @@ class EvidenceResponse(BaseModel):
     tessera_id: str
     tessera_uri: str
     evidence_type: str
-    strength: str
+    evidence_type_uri: str
+    strength: float
     source: str
     added_by: str
     added_at: str
@@ -131,7 +111,9 @@ async def create_tessera(
     user_uri = f"urn:valor:user:{user_id}"
     graph_uri = named_graph_uri(request.design_space_id)
     claimed_at = datetime.now(timezone.utc).isoformat()
-    proposed_uri = EPISTEMIC_STATUS_URIS["Proposed"]
+
+    status_label_to_uri = get_status_label_to_uri()
+    proposed_uri = status_label_to_uri.get("Proposed", f"{VALOR_NS}ProposedStatus")
 
     optional_triples = ""
     if request.in_alternative:
@@ -180,10 +162,11 @@ async def patch_tessera_status(
     request: PatchTesseraStatusRequest,
     user: dict = Depends(get_current_user),
 ):
-    if request.new_status not in VALID_TRANSITIONS:
+    valid_transitions = get_valid_transitions()
+    if request.new_status not in valid_transitions:
         raise HTTPException(
             status_code=422,
-            detail=f"Ongeldig doelstatus '{request.new_status}'. Geldige waarden: {sorted(VALID_TRANSITIONS)}.",
+            detail=f"Ongeldig doelstatus '{request.new_status}'. Geldige waarden: {sorted(valid_transitions)}.",
         )
 
     user_id = user["id"]
@@ -198,7 +181,6 @@ async def patch_tessera_status(
     tessera_uri = f"urn:valor:tessera:{tessera_id}"
     graph_uri = named_graph_uri(request.design_space_id)
 
-    # Huidige status ophalen (ondersteunt zowel URI als legacy string-literal)
     rows = await sparql_select(
         f"""SELECT ?status WHERE {{
           <{tessera_uri}> <{VALOR_NS}epistemicStatus> ?status .
@@ -212,24 +194,26 @@ async def patch_tessera_status(
     current_raw = rows[0]["status"]
     current_status = _normalize_status(current_raw)
 
-    if request.new_status not in VALID_TRANSITIONS.get(current_status, set()):
+    if request.new_status not in valid_transitions.get(current_status, set()):
         raise HTTPException(
             status_code=422,
             detail=(
                 f"Ongeldige transitie: {current_status} → {request.new_status}. "
-                f"Toegestaan vanuit '{current_status}': {sorted(VALID_TRANSITIONS.get(current_status, set()))}."
+                f"Toegestaan vanuit '{current_status}': {sorted(valid_transitions.get(current_status, set()))}."
             ),
         )
 
-    if request.new_status in REQUIRES_DECISION_EPISODE and not request.decision_episode_uri:
+    status_label_to_uri = get_status_label_to_uri()
+    new_status_uri = status_label_to_uri.get(request.new_status)
+    if not new_status_uri:
+        raise HTTPException(status_code=422, detail=f"Status '{request.new_status}' niet gevonden in ontologie.")
+
+    if requires_decision_episode(new_status_uri) and not request.decision_episode_uri:
         raise HTTPException(
             status_code=422,
             detail=f"Status '{request.new_status}' vereist een decision_episode_uri.",
         )
 
-    new_status_uri = EPISTEMIC_STATUS_URIS[request.new_status]
-
-    # Bepaal de waarde om te verwijderen (URI of literal, afhankelijk van wat er staat)
     if current_raw.startswith("http") or current_raw.startswith("urn"):
         old_status_sparql = f"<{current_raw}>"
     else:
@@ -253,7 +237,6 @@ WHERE {{
 
     await sparql_update(update, request.design_space_id)
 
-    # Koppel DecisionEpisode indien vereist
     if request.decision_episode_uri:
         episode_update = f"""INSERT DATA {{
   GRAPH <{graph_uri}> {{
@@ -281,10 +264,12 @@ async def add_evidence(
     request: CreateEvidenceRequest,
     user: dict = Depends(get_current_user),
 ):
-    if request.evidence_type not in EVIDENCE_TYPES:
+    evidence_label_to_uri = get_evidence_label_to_uri()
+    evidence_type_uri = evidence_label_to_uri.get(request.evidence_type)
+    if not evidence_type_uri:
         raise HTTPException(
             status_code=422,
-            detail=f"Ongeldig evidentietype '{request.evidence_type}'. Geldige waarden: {sorted(EVIDENCE_TYPES)}.",
+            detail=f"Ongeldig evidentietype '{request.evidence_type}'. Geldige waarden: {sorted(evidence_label_to_uri)}.",
         )
 
     user_id = user["id"]
@@ -299,7 +284,6 @@ async def add_evidence(
     tessera_uri = f"urn:valor:tessera:{tessera_id}"
     graph_uri = named_graph_uri(request.design_space_id)
 
-    # Controleer of Tessera bestaat
     rows = await sparql_select(
         f"""SELECT ?t WHERE {{
           GRAPH <{graph_uri}> {{
@@ -317,7 +301,6 @@ async def add_evidence(
     user_uri = f"urn:valor:user:{user_id}"
     added_at = datetime.now(timezone.utc).isoformat()
 
-    escaped_strength = request.strength.replace("\\", "\\\\").replace('"', '\\"')
     escaped_source = request.source.replace("\\", "\\\\").replace('"', '\\"')
 
     sparql = f"""PREFIX valor: <{VALOR_NS}>
@@ -326,9 +309,9 @@ PREFIX xsd: <{XSD_NS}>
 INSERT DATA {{
   GRAPH <{graph_uri}> {{
     <{evidence_uri}> a valor:Evidence ;
-      valor:evidenceType "{request.evidence_type}" ;
-      valor:strength "{escaped_strength}" ;
-      valor:source "{escaped_source}" ;
+      valor:evidenceType <{evidence_type_uri}> ;
+      valor:evidenceStrength "{request.strength}"^^xsd:decimal ;
+      valor:evidenceSource "{escaped_source}"^^xsd:anyURI ;
       valor:addedBy <{user_uri}> ;
       valor:addedAt "{added_at}"^^xsd:dateTime .
     <{tessera_uri}> valor:hasEvidence <{evidence_uri}> .
@@ -345,6 +328,7 @@ INSERT DATA {{
         tessera_id=tessera_id,
         tessera_uri=tessera_uri,
         evidence_type=request.evidence_type,
+        evidence_type_uri=evidence_type_uri,
         strength=request.strength,
         source=request.source,
         added_by=user_id,
