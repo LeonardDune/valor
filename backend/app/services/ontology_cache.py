@@ -9,28 +9,30 @@ Queryt de VALOR-O ontologie-graphs in Fuseki voor:
 """
 import logging
 
+from app.ontology import VALOR_NS, VALOR_SITE_BASE
 from app.services.fuseki import sparql_select_global
 
 logger = logging.getLogger(__name__)
 
-_TESSERA_GRAPH = "https://valor-ecosystem.nl/ontology/tessera"
-_VALOR_NS = "https://valor-ecosystem.nl/ontology/"
+_TESSERA_GRAPH = f"{VALOR_NS}tessera"
+_shacl_shapes_graph = f"{VALOR_SITE_BASE}shacl/tessera"
 
 _evidence_label_to_uri: dict[str, str] = {}
 _status_label_to_uri: dict[str, str] = {}
 _status_uri_to_label: dict[str, str] = {}
 _valid_transitions: dict[str, set[str]] = {}
 _requires_decision_episode: set[str] = set()
+_argue_label_to_uri: dict[str, str] = {}   # "undermines" → URI
 
 
 async def load_ontology_cache() -> None:
     global _evidence_label_to_uri, _status_label_to_uri, _status_uri_to_label
-    global _valid_transitions, _requires_decision_episode
+    global _valid_transitions, _requires_decision_episode, _argue_label_to_uri
 
     logger.info("[ontology-cache] Ontologie-data laden van Fuseki...")
 
     evidence_rows = await sparql_select_global(f"""
-        PREFIX valor: <{_VALOR_NS}>
+        PREFIX valor: <{VALOR_NS}>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         SELECT ?uri ?label WHERE {{
           GRAPH <{_TESSERA_GRAPH}> {{
@@ -44,7 +46,7 @@ async def load_ontology_cache() -> None:
     logger.info("[ontology-cache] Evidence types: %s", list(_evidence_label_to_uri.keys()))
 
     status_rows = await sparql_select_global(f"""
-        PREFIX valor: <{_VALOR_NS}>
+        PREFIX valor: <{VALOR_NS}>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         SELECT ?uri ?label WHERE {{
           GRAPH <{_TESSERA_GRAPH}> {{
@@ -59,7 +61,7 @@ async def load_ontology_cache() -> None:
     logger.info("[ontology-cache] Epistemic statuses: %s", list(_status_label_to_uri.keys()))
 
     transition_rows = await sparql_select_global(f"""
-        PREFIX valor: <{_VALOR_NS}>
+        PREFIX valor: <{VALOR_NS}>
         SELECT ?from ?to WHERE {{
           GRAPH <{_TESSERA_GRAPH}> {{
             ?from valor:allowedTransitionTo ?to .
@@ -74,7 +76,7 @@ async def load_ontology_cache() -> None:
     logger.info("[ontology-cache] Transities: %s", {k: list(v) for k, v in _valid_transitions.items()})
 
     req_rows = await sparql_select_global(f"""
-        PREFIX valor: <{_VALOR_NS}>
+        PREFIX valor: <{VALOR_NS}>
         PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
         SELECT ?uri WHERE {{
           GRAPH <{_TESSERA_GRAPH}> {{
@@ -84,6 +86,25 @@ async def load_ontology_cache() -> None:
     """)
     _requires_decision_episode = {row["uri"] for row in req_rows}
     logger.info("[ontology-cache] Vereist DecisionEpisode: %s", _requires_decision_episode)
+
+    # Argumentatierelaties (ObjectProperties met domain én range valor:Tessera)
+    PREFIX_OWL = "http://www.w3.org/2002/07/owl#"
+    argue_rows = await sparql_select_global(f"""
+        PREFIX valor: <{VALOR_NS}>
+        PREFIX owl:   <{PREFIX_OWL}>
+        PREFIX rdfs:  <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?uri ?label WHERE {{
+          GRAPH <{_TESSERA_GRAPH}> {{
+            ?uri a owl:ObjectProperty ;
+                 rdfs:domain valor:Tessera ;
+                 rdfs:range  valor:Tessera ;
+                 rdfs:label ?label .
+            FILTER(lang(?label) = "en")
+          }}
+        }}
+    """)
+    _argue_label_to_uri = {row["label"]: row["uri"] for row in argue_rows}
+    logger.info("[ontology-cache] Argumentatierelaties: %s", list(_argue_label_to_uri.keys()))
 
     if not _evidence_label_to_uri or not _status_label_to_uri or not _valid_transitions:
         logger.warning(
@@ -110,3 +131,11 @@ def get_valid_transitions() -> dict[str, set[str]]:
 
 def requires_decision_episode(status_uri: str) -> bool:
     return status_uri in _requires_decision_episode
+
+
+def get_argue_label_to_uri() -> dict[str, str]:
+    return _argue_label_to_uri
+
+
+def get_shacl_shapes_graph() -> str:
+    return _shacl_shapes_graph

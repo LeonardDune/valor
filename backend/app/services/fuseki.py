@@ -78,6 +78,62 @@ async def sparql_update(update: str, named_graph: str) -> None:
     _raise_for_fuseki_error(response)
 
 
+_SHACL_ENDPOINT = f"{FUSEKI_URL}/{FUSEKI_DATASET}/shacl"
+
+_SH_VALIDATION_REPORT = "http://www.w3.org/ns/shacl#ValidationReport"
+_SH_CONFORMS = "http://www.w3.org/ns/shacl#conforms"
+_SH_RESULT = "http://www.w3.org/ns/shacl#result"
+_SH_RESULT_MESSAGE = "http://www.w3.org/ns/shacl#resultMessage"
+_SH_SEVERITY = "http://www.w3.org/ns/shacl#resultSeverity"
+_SH_VIOLATION = "http://www.w3.org/ns/shacl#Violation"
+
+
+async def sparql_shacl_validate(named_graph: str, shapes_graph: str) -> list[str]:
+    """Valideert een named graph met SHACL-shapes uit het dataset.
+
+    Retourneert een lijst van violation-messages (leeg = geldig).
+    Gebruikt de Fuseki fuseki:shacl endpoint met shapegraph= parameter.
+    """
+    graph_uri = named_graph_uri(named_graph)
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            _SHACL_ENDPOINT,
+            params={"graph": graph_uri, "shapegraph": shapes_graph},
+            headers={"Accept": "application/ld+json"},
+            auth=("admin", FUSEKI_ADMIN_PASSWORD),
+            timeout=30,
+        )
+
+    if response.status_code >= 400:
+        logger.error("SHACL-endpoint fout %s: %s", response.status_code, response.text[:300])
+        return []  # Fail open: SHACL-endpoint niet beschikbaar
+
+    try:
+        report = response.json()
+    except Exception:
+        logger.error("SHACL-rapport niet parseerbaar: %s", response.text[:300])
+        return []
+
+    violations: list[str] = []
+    for node in report:
+        if _SH_VALIDATION_REPORT not in node.get("@type", []):
+            continue
+        conforms_entries = node.get(_SH_CONFORMS, [{}])
+        if conforms_entries[0].get("@value", True):
+            return []
+        for result in node.get(_SH_RESULT, []):
+            severity = result.get(_SH_SEVERITY, [{}])[0].get("@id", "")
+            if severity != _SH_VIOLATION:
+                continue
+            for msg_entry in result.get(_SH_RESULT_MESSAGE, []):
+                msg = msg_entry.get("@value", "")
+                if msg:
+                    violations.append(msg)
+
+    return violations if violations else ([] if not report else ["SHACL-validatie mislukt (geen details)"])
+
+
 async def sparql_select_global(query: str) -> list[dict[str, Any]]:
     """Voert een SPARQL SELECT uit op het gehele Fuseki-dataset (alle named graphs).
 
