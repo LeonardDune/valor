@@ -72,6 +72,8 @@ class TesseraResponse(BaseModel):
     claimed_by: str
     claimed_at: str
     uncertainty_level: Optional[str] = None
+    in_alternative: Optional[str] = None
+    in_phase: Optional[str] = None
 
 
 class CreateEvidenceRequest(BaseModel):
@@ -190,6 +192,8 @@ INSERT DATA {{
         claimed_by=user_id,
         claimed_at=claimed_at,
         uncertainty_level=request.uncertainty_level,
+        in_alternative=request.in_alternative,
+        in_phase=request.in_phase,
     )
 
 
@@ -209,7 +213,7 @@ async def get_tessera(
     graph_uri = named_graph_uri(design_space_id)
 
     rows = await sparql_select(
-        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt WHERE {{
+        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase WHERE {{
           GRAPH <{graph_uri}> {{
             <{tessera_uri}> a <{VALOR_NS}Tessera> ;
               <{VALOR_NS}claimContent> ?content ;
@@ -218,6 +222,8 @@ async def get_tessera(
               <{VALOR_NS}claimedAt> ?claimedAt .
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}claimType> ?claimType . }}
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}uncertaintyLevel> ?uncertaintyLevel . }}
+            OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inAlternative> ?inAlternative . }}
+            OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inPhase> ?inPhase . }}
           }}
         }}""",
         design_space_id,
@@ -245,6 +251,8 @@ async def get_tessera(
         claimed_by=row["claimedBy"].rsplit(":", 1)[-1],
         claimed_at=row["claimedAt"],
         uncertainty_level=uncertainty_level,
+        in_alternative=row.get("inAlternative"),
+        in_phase=row.get("inPhase"),
     )
 
 
