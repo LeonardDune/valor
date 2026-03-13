@@ -6,6 +6,7 @@ Queryt de VALOR-O ontologie-graphs in Fuseki voor:
   - EpistemicStatus instanties (English label -> URI)
   - Geldige statusovergangen (valor:allowedTransitionTo)
   - Statussen die een DecisionEpisode vereisen (valor:requiresDecisionEpisode)
+  - UncertaintyLevel instanties (PAMS-taxonomie, English label -> URI)
 """
 import logging
 
@@ -22,12 +23,14 @@ _status_label_to_uri: dict[str, str] = {}
 _status_uri_to_label: dict[str, str] = {}
 _valid_transitions: dict[str, set[str]] = {}
 _requires_decision_episode: set[str] = set()
-_argue_label_to_uri: dict[str, str] = {}   # "undermines" → URI
+_argue_label_to_uri: dict[str, str] = {}        # "undermines" → URI
+_uncertainty_label_to_uri: dict[str, str] = {}  # "StatisticalRisk" → URI
 
 
 async def load_ontology_cache() -> None:
     global _evidence_label_to_uri, _status_label_to_uri, _status_uri_to_label
     global _valid_transitions, _requires_decision_episode, _argue_label_to_uri
+    global _uncertainty_label_to_uri
 
     logger.info("[ontology-cache] Ontologie-data laden van Fuseki...")
 
@@ -106,6 +109,20 @@ async def load_ontology_cache() -> None:
     _argue_label_to_uri = {row["label"]: row["uri"] for row in argue_rows}
     logger.info("[ontology-cache] Argumentatierelaties: %s", list(_argue_label_to_uri.keys()))
 
+    uncertainty_rows = await sparql_select_global(f"""
+        PREFIX valor: <{VALOR_NS}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?uri ?label WHERE {{
+          GRAPH <{_TESSERA_GRAPH}> {{
+            ?uri a valor:UncertaintyLevel ;
+                 rdfs:label ?label .
+            FILTER(lang(?label) = "en")
+          }}
+        }}
+    """)
+    _uncertainty_label_to_uri = {row["label"]: row["uri"] for row in uncertainty_rows}
+    logger.info("[ontology-cache] Uncertainty levels (PAMS): %s", list(_uncertainty_label_to_uri.keys()))
+
     if not _evidence_label_to_uri or not _status_label_to_uri or not _valid_transitions:
         logger.warning(
             "[ontology-cache] Ontologie-cache onvolledig. "
@@ -135,6 +152,10 @@ def requires_decision_episode(status_uri: str) -> bool:
 
 def get_argue_label_to_uri() -> dict[str, str]:
     return _argue_label_to_uri
+
+
+def get_uncertainty_label_to_uri() -> dict[str, str]:
+    return _uncertainty_label_to_uri
 
 
 def get_shacl_shapes_graph() -> str:

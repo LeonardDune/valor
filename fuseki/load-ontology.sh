@@ -7,8 +7,9 @@
 #            Gebruik bij een full reset of dev-omgeving cleanup.
 #
 # Per-module versie-tracking in named graph urn:valor:ontology-modules.
-# Modules worden alleen geladen als ze nieuw zijn of een andere versie hebben.
-# Bij een versiewijziging wordt de oude graph gearchiveerd als {graph}/v{versie}.
+# De versie van een module is de Git commit SHA van het bestand in de ontologie-repo.
+# Elke wijziging in de repo — ongeacht owl:versionInfo — triggert automatisch een herlaad.
+# Bij een versiewijziging wordt de oude graph gearchiveerd als {graph}/v{git-sha}.
 set -e
 
 FUSEKI_URL="${FUSEKI_URL:-http://fuseki:3030}"
@@ -76,16 +77,9 @@ extract_graph_uri() {
   grep -m1 '^<' "$1" | sed 's/[[:space:]]*{.*//' | tr -d '<>' || echo ""
 }
 
-extract_version() {
-  # owl:versionInfo "0.1"
-  grep -m1 'versionInfo' "$1" | grep -o '"[^"]*"' | head -1 | tr -d '"' || echo ""
-}
-
-file_fingerprint() {
-  # Fallback voor bestanden zonder owl:versionInfo (bv. SHACL-files)
-  md5sum "$1" 2>/dev/null | cut -c1-8 || \
-  sha256sum "$1" 2>/dev/null | cut -c1-8 || \
-  echo "unversioned"
+git_file_sha() {
+  # Git commit SHA van de laatste commit die dit bestand aanraakte (eerste 12 tekens)
+  git -C "${TMPDIR}/ontology" log --format='%H' -n 1 -- "$1" | cut -c1-12
 }
 
 # ── --force: reset alle ontologie-graphs ────────────────────────────────────
@@ -125,11 +119,7 @@ for f in "${TMPDIR}/ontology/"*.trig; do
   MODULE_NAME=$(basename "$f" .trig)
   MODULE_URI="urn:valor:module:${MODULE_NAME}"
   GRAPH_URI=$(extract_graph_uri "$f")
-  VERSION=$(extract_version "$f")
-
-  if [ -z "$VERSION" ]; then
-    VERSION=$(file_fingerprint "$f")
-  fi
+  VERSION=$(git_file_sha "${FNAME}")
 
   # Al geladen met deze versie?
   CHECK="ASK { GRAPH <${MODULES_GRAPH}> { <${MODULE_URI}> <urn:valor:version> \"${VERSION}\" } }"
