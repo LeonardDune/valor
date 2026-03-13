@@ -18,6 +18,7 @@ from app.services.ontology_cache import (
     requires_decision_episode,
     get_argue_label_to_uri,
     get_shacl_shapes_graph,
+    get_uncertainty_label_to_uri,
 )
 from app.ontology import VALOR_NS
 
@@ -36,10 +37,27 @@ def _normalize_status(raw: str) -> str:
     return get_status_uri_to_label().get(raw, raw)
 
 
+_CLAIM_TYPE_LABELS = {"AsIs": "AsIsType", "ToBe": "ToBeType"}
+_CLAIM_TYPE_SUFFIX_TO_LABEL = {v: k for k, v in _CLAIM_TYPE_LABELS.items()}
+
+
+def _claim_type_uri(label: str) -> str:
+    return f"{VALOR_NS}{_CLAIM_TYPE_LABELS[label]}"
+
+
+def _claim_type_label_from_raw(raw: str) -> str:
+    """Vertaalt URI of string-literal naar de canonieke label ('AsIs'/'ToBe')."""
+    if raw.startswith("http") or raw.startswith("urn"):
+        suffix = raw.rsplit("/", 1)[-1].rsplit("#", 1)[-1]
+        return _CLAIM_TYPE_SUFFIX_TO_LABEL.get(suffix, raw)
+    return raw
+
+
 class CreateTesseraRequest(BaseModel):
     design_space_id: str
     claim_content: str
-    claim_type: str  # "AsIs" | "ToBe"
+    claim_type: Optional[str] = "AsIs"  # "AsIs" | "ToBe", default AsIs
+    uncertainty_level: Optional[str] = None  # PAMS: "StatisticalRisk" | "Scenario" | "DeepUncertainty" | "Ignorance"
     in_alternative: Optional[str] = None
     in_phase: Optional[str] = None
 
@@ -53,6 +71,9 @@ class TesseraResponse(BaseModel):
     epistemic_status: str
     claimed_by: str
     claimed_at: str
+    uncertainty_level: Optional[str] = None
+    in_alternative: Optional[str] = None
+    in_phase: Optional[str] = None
 
 
 class CreateEvidenceRequest(BaseModel):
@@ -93,11 +114,24 @@ async def create_tessera(
     request: CreateTesseraRequest,
     user: dict = Depends(get_current_user),
 ):
-    if request.claim_type not in ("AsIs", "ToBe"):
+    claim_type = request.claim_type or "AsIs"
+    if claim_type not in _CLAIM_TYPE_LABELS:
         raise HTTPException(
             status_code=422,
             detail="claim_type moet 'AsIs' of 'ToBe' zijn.",
         )
+    claim_type_uri = _claim_type_uri(claim_type)
+
+    uncertainty_level_uri = None
+    if request.uncertainty_level:
+        uncertainty_label_to_uri = get_uncertainty_label_to_uri()
+        uncertainty_level_uri = uncertainty_label_to_uri.get(request.uncertainty_level)
+        if not uncertainty_level_uri:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Ongeldig uncertainty_level '{request.uncertainty_level}'. "
+                       f"Geldige waarden: {sorted(uncertainty_label_to_uri)}.",
+            )
 
     user_id = user["id"]
 
@@ -118,6 +152,8 @@ async def create_tessera(
     proposed_uri = status_label_to_uri.get("Proposed", f"{VALOR_NS}ProposedStatus")
 
     optional_triples = ""
+    if uncertainty_level_uri:
+        optional_triples += f"      <{tessera_uri}> <{VALOR_NS}uncertaintyLevel> <{uncertainty_level_uri}> .\n"
     if request.in_alternative:
         alt_uri = f"urn:valor:alternative:{request.in_alternative}"
         optional_triples += f"      <{tessera_uri}> <{VALOR_NS}inAlternative> <{alt_uri}> .\n"
@@ -135,7 +171,7 @@ INSERT DATA {{
     <{tessera_uri}> a valor:Tessera ;
       valor:claimContent "{escaped_content}"@nl ;
       valor:epistemicStatus <{proposed_uri}> ;
-      valor:claimType "{request.claim_type}" ;
+      valor:claimType <{claim_type_uri}> ;
       valor:claimedBy <{user_uri}> ;
       valor:claimedAt "{claimed_at}"^^xsd:dateTime ;
       valor:inDesignSpace <{graph_uri}> .
@@ -151,10 +187,72 @@ INSERT DATA {{
         tessera_uri=tessera_uri,
         design_space_id=request.design_space_id,
         claim_content=request.claim_content,
-        claim_type=request.claim_type,
+        claim_type=claim_type,
         epistemic_status="Proposed",
         claimed_by=user_id,
         claimed_at=claimed_at,
+        uncertainty_level=request.uncertainty_level,
+        in_alternative=request.in_alternative,
+        in_phase=request.in_phase,
+    )
+
+
+@router.get("/{tessera_id}", response_model=TesseraResponse)
+async def get_tessera(
+    tessera_id: str,
+    design_space_id: str,
+    user: dict = Depends(get_current_user),
+):
+    user_id = user["id"]
+
+    has_permission = await check_permission(user_id, design_space_id, Role.VIEWER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    tessera_uri = f"urn:valor:tessera:{tessera_id}"
+    graph_uri = named_graph_uri(design_space_id)
+
+    rows = await sparql_select(
+        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase WHERE {{
+          GRAPH <{graph_uri}> {{
+            <{tessera_uri}> a <{VALOR_NS}Tessera> ;
+              <{VALOR_NS}claimContent> ?content ;
+              <{VALOR_NS}epistemicStatus> ?status ;
+              <{VALOR_NS}claimedBy> ?claimedBy ;
+              <{VALOR_NS}claimedAt> ?claimedAt .
+            OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}claimType> ?claimType . }}
+            OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}uncertaintyLevel> ?uncertaintyLevel . }}
+            OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inAlternative> ?inAlternative . }}
+            OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inPhase> ?inPhase . }}
+          }}
+        }}""",
+        design_space_id,
+    )
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="Tessera niet gevonden in deze DesignSpace.")
+
+    row = rows[0]
+    raw_claim_type = row.get("claimType", "")
+    claim_type = _claim_type_label_from_raw(raw_claim_type) if raw_claim_type else "AsIs"
+
+    raw_uncertainty = row.get("uncertaintyLevel", "")
+    uncertainty_label_to_uri = get_uncertainty_label_to_uri()
+    uncertainty_uri_to_label = {v: k for k, v in uncertainty_label_to_uri.items()}
+    uncertainty_level = uncertainty_uri_to_label.get(raw_uncertainty) if raw_uncertainty else None
+
+    return TesseraResponse(
+        tessera_id=tessera_id,
+        tessera_uri=tessera_uri,
+        design_space_id=design_space_id,
+        claim_content=row["content"],
+        claim_type=claim_type,
+        epistemic_status=_normalize_status(row["status"]),
+        claimed_by=row["claimedBy"].rsplit(":", 1)[-1],
+        claimed_at=row["claimedAt"],
+        uncertainty_level=uncertainty_level,
+        in_alternative=row.get("inAlternative"),
+        in_phase=row.get("inPhase"),
     )
 
 
