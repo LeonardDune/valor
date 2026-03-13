@@ -18,6 +18,7 @@ from app.services.ontology_cache import (
     requires_decision_episode,
     get_argue_label_to_uri,
     get_shacl_shapes_graph,
+    get_uncertainty_label_to_uri,
 )
 from app.ontology import VALOR_NS
 
@@ -36,7 +37,7 @@ def _normalize_status(raw: str) -> str:
     return get_status_uri_to_label().get(raw, raw)
 
 
-_CLAIM_TYPE_LABELS = {"AsIs": "AsIsStatus", "ToBe": "ToBeStatus"}
+_CLAIM_TYPE_LABELS = {"AsIs": "AsIsType", "ToBe": "ToBeType"}
 _CLAIM_TYPE_SUFFIX_TO_LABEL = {v: k for k, v in _CLAIM_TYPE_LABELS.items()}
 
 
@@ -56,6 +57,7 @@ class CreateTesseraRequest(BaseModel):
     design_space_id: str
     claim_content: str
     claim_type: Optional[str] = "AsIs"  # "AsIs" | "ToBe", default AsIs
+    uncertainty_level: Optional[str] = None  # PAMS: "StatisticalRisk" | "Scenario" | "DeepUncertainty" | "Ignorance"
     in_alternative: Optional[str] = None
     in_phase: Optional[str] = None
 
@@ -69,6 +71,7 @@ class TesseraResponse(BaseModel):
     epistemic_status: str
     claimed_by: str
     claimed_at: str
+    uncertainty_level: Optional[str] = None
 
 
 class CreateEvidenceRequest(BaseModel):
@@ -117,6 +120,17 @@ async def create_tessera(
         )
     claim_type_uri = _claim_type_uri(claim_type)
 
+    uncertainty_level_uri = None
+    if request.uncertainty_level:
+        uncertainty_label_to_uri = get_uncertainty_label_to_uri()
+        uncertainty_level_uri = uncertainty_label_to_uri.get(request.uncertainty_level)
+        if not uncertainty_level_uri:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Ongeldig uncertainty_level '{request.uncertainty_level}'. "
+                       f"Geldige waarden: {sorted(uncertainty_label_to_uri)}.",
+            )
+
     user_id = user["id"]
 
     has_permission = await check_permission(user_id, request.design_space_id, Role.MEMBER)
@@ -136,6 +150,8 @@ async def create_tessera(
     proposed_uri = status_label_to_uri.get("Proposed", f"{VALOR_NS}ProposedStatus")
 
     optional_triples = ""
+    if uncertainty_level_uri:
+        optional_triples += f"      <{tessera_uri}> <{VALOR_NS}uncertaintyLevel> <{uncertainty_level_uri}> .\n"
     if request.in_alternative:
         alt_uri = f"urn:valor:alternative:{request.in_alternative}"
         optional_triples += f"      <{tessera_uri}> <{VALOR_NS}inAlternative> <{alt_uri}> .\n"
@@ -173,6 +189,7 @@ INSERT DATA {{
         epistemic_status="Proposed",
         claimed_by=user_id,
         claimed_at=claimed_at,
+        uncertainty_level=request.uncertainty_level,
     )
 
 
@@ -192,7 +209,7 @@ async def get_tessera(
     graph_uri = named_graph_uri(design_space_id)
 
     rows = await sparql_select(
-        f"""SELECT ?content ?claimType ?status ?claimedBy ?claimedAt WHERE {{
+        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt WHERE {{
           GRAPH <{graph_uri}> {{
             <{tessera_uri}> a <{VALOR_NS}Tessera> ;
               <{VALOR_NS}claimContent> ?content ;
@@ -200,6 +217,7 @@ async def get_tessera(
               <{VALOR_NS}claimedBy> ?claimedBy ;
               <{VALOR_NS}claimedAt> ?claimedAt .
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}claimType> ?claimType . }}
+            OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}uncertaintyLevel> ?uncertaintyLevel . }}
           }}
         }}""",
         design_space_id,
@@ -212,6 +230,11 @@ async def get_tessera(
     raw_claim_type = row.get("claimType", "")
     claim_type = _claim_type_label_from_raw(raw_claim_type) if raw_claim_type else "AsIs"
 
+    raw_uncertainty = row.get("uncertaintyLevel", "")
+    uncertainty_label_to_uri = get_uncertainty_label_to_uri()
+    uncertainty_uri_to_label = {v: k for k, v in uncertainty_label_to_uri.items()}
+    uncertainty_level = uncertainty_uri_to_label.get(raw_uncertainty) if raw_uncertainty else None
+
     return TesseraResponse(
         tessera_id=tessera_id,
         tessera_uri=tessera_uri,
@@ -221,6 +244,7 @@ async def get_tessera(
         epistemic_status=_normalize_status(row["status"]),
         claimed_by=row["claimedBy"].rsplit(":", 1)[-1],
         claimed_at=row["claimedAt"],
+        uncertainty_level=uncertainty_level,
     )
 
 
