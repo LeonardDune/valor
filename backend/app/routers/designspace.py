@@ -15,10 +15,14 @@ from app.db.designspace import (
 from app.db.permissions import check_permission
 from app.models.domain import (
     DesignSpaceCreate, DesignSpaceResponse, Role,
+    DesignAlternativeCreate, DesignAlternativeResponse,
     PhaseTransitionRequest, PhaseTransitionResponse,
 )
 from app.ontology import VALOR_NS
-from app.services.fuseki import initialize_design_space_graphs, sparql_proxy_query, sparql_select, sparql_update
+from app.services.fuseki import (
+    initialize_design_space_graphs, initialize_alternative_graph,
+    sparql_proxy_query, sparql_select, sparql_update,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +64,95 @@ async def create_design_space(
         named_graphs=named_graphs,
         created_at=datetime.now(timezone.utc).isoformat(),
     )
+
+
+@router.post("/{design_space_id}/alternative/", response_model=DesignAlternativeResponse, status_code=201)
+async def create_alternative(
+    design_space_id: str,
+    request: DesignAlternativeCreate,
+    user: dict = Depends(get_current_user),
+) -> DesignAlternativeResponse:
+    user_id = user["id"]
+
+    if not await check_permission(user_id, design_space_id, Role.MEMBER):
+        raise HTTPException(
+            status_code=403,
+            detail="Onvoldoende rechten voor deze DesignSpace.",
+        )
+
+    alt_id = str(uuid.uuid4())
+    creator_uri = f"urn:valor:user:{user_id}"
+    created_at = datetime.now(timezone.utc).isoformat()
+
+    alt_uri = await initialize_alternative_graph(
+        ds_id=design_space_id,
+        alt_id=alt_id,
+        name=request.name,
+        description=request.description or "",
+        creator_uri=creator_uri,
+        created_at=created_at,
+    )
+
+    logger.info("DesignAlternative aangemaakt: %s in DesignSpace %s door %s", alt_uri, design_space_id, user_id)
+
+    return DesignAlternativeResponse(
+        alternative_id=alt_id,
+        alternative_uri=alt_uri,
+        graph_uri=alt_uri,
+        design_space_id=design_space_id,
+        name=request.name,
+        description=request.description,
+        status="active",
+        created_at=created_at,
+    )
+
+
+@router.get("/{design_space_id}/alternatives", response_model=list[DesignAlternativeResponse])
+async def list_alternatives(
+    design_space_id: str,
+    user: dict = Depends(get_current_user),
+) -> list[DesignAlternativeResponse]:
+    user_id = user["id"]
+
+    if not await check_permission(user_id, design_space_id, Role.VIEWER):
+        raise HTTPException(
+            status_code=403,
+            detail="Onvoldoende rechten voor deze DesignSpace.",
+        )
+
+    base_graph = f"urn:valor:ds:{design_space_id}/base"
+    rows = await sparql_select(
+        f"""SELECT ?alt ?name ?desc ?status ?createdBy ?createdAt WHERE {{
+          GRAPH <{base_graph}> {{
+            ?alt a <{VALOR_NS}DesignAlternative> ;
+              <{VALOR_NS}inDesignSpace> <urn:valor:ds:{design_space_id}> ;
+              <{VALOR_NS}alternativeName> ?name ;
+              <{VALOR_NS}alternativeStatus> ?status .
+            OPTIONAL {{ ?alt <{VALOR_NS}alternativeDescription> ?desc . }}
+            OPTIONAL {{ ?alt <{VALOR_NS}createdBy> ?createdBy . }}
+            OPTIONAL {{ ?alt <{VALOR_NS}createdAt> ?createdAt . }}
+          }}
+        }}""",
+        f"{design_space_id}/base",
+    )
+
+    result = []
+    for row in rows:
+        alt_uri = row["alt"]
+        alt_id = alt_uri.rsplit("/", 1)[-1]
+        status_uri = row.get("status", "")
+        status = "archived" if status_uri.endswith("Archived") else "active"
+        result.append(DesignAlternativeResponse(
+            alternative_id=alt_id,
+            alternative_uri=alt_uri,
+            graph_uri=alt_uri,
+            design_space_id=design_space_id,
+            name=row.get("name", ""),
+            description=row.get("desc"),
+            status=status,
+            created_at=row.get("createdAt", ""),
+        ))
+    return result
 
 
 @router.get("/{design_space_id}/sparql")
