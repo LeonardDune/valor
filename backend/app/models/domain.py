@@ -211,6 +211,22 @@ class DesignSpaceResponse(BaseModel):
     created_at: str
 
 
+class DesignAlternativeCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class DesignAlternativeResponse(BaseModel):
+    alternative_id: str
+    alternative_uri: str
+    graph_uri: str
+    design_space_id: str
+    name: str
+    description: Optional[str] = None
+    status: str
+    created_at: str
+
+
 class PhaseTransitionRequest(BaseModel):
     target_phase: Optional[str] = None  # None = auto-advance naar volgende fase
 

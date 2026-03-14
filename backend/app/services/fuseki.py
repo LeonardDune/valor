@@ -251,6 +251,41 @@ INSERT DATA {{
     }
 
 
+async def initialize_alternative_graph(
+    ds_id: str, alt_id: str, name: str, description: str, creator_uri: str, created_at: str
+) -> str:
+    """Initialiseert een named graph voor een DesignAlternative in Fuseki.
+
+    Schrijft een marker-triple in de graph en registreert de alternative in de base-graph.
+    Retourneert de graph URI.
+    """
+    from app.ontology import VALOR_NS
+
+    alt_uri = f"urn:valor:ds:{ds_id}/alternative/{alt_id}"
+    base_graph = f"urn:valor:ds:{ds_id}/base"
+    ds_uri = f"urn:valor:ds:{ds_id}"
+
+    escaped_name = name.replace("\\", "\\\\").replace('"', '\\"')
+    escaped_desc = (description or "").replace("\\", "\\\\").replace('"', '\\"')
+
+    update = f"""INSERT DATA {{
+  GRAPH <{alt_uri}> {{
+    <{alt_uri}> <{VALOR_NS}graphType> "alternative" .
+  }}
+  GRAPH <{base_graph}> {{
+    <{alt_uri}> a <{VALOR_NS}DesignAlternative> ;
+      <{VALOR_NS}inDesignSpace> <{ds_uri}> ;
+      <{VALOR_NS}alternativeName> "{escaped_name}"@nl ;
+      <{VALOR_NS}alternativeDescription> "{escaped_desc}"@nl ;
+      <{VALOR_NS}alternativeStatus> <{VALOR_NS}Active> ;
+      <{VALOR_NS}createdBy> <{creator_uri}> ;
+      <{VALOR_NS}createdAt> "{created_at}"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+  }}
+}}"""
+    await sparql_update(update, ds_id)
+    return alt_uri
+
+
 async def sparql_construct(query: str, named_graph: str) -> str:
     """Voert een SPARQL CONSTRUCT uit binnen de named graph van een DesignSpace.
 

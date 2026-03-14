@@ -145,8 +145,13 @@ async def create_tessera(
     tessera_id = str(uuid.uuid4())
     tessera_uri = f"urn:valor:tessera:{tessera_id}"
     user_uri = f"urn:valor:user:{user_id}"
-    graph_uri = named_graph_uri(request.design_space_id)
     claimed_at = datetime.now(timezone.utc).isoformat()
+
+    # ToBe Tesserae met in_alternative → eigen alternatief-graph
+    if claim_type == "ToBe" and request.in_alternative:
+        graph_uri = f"urn:valor:ds:{request.design_space_id}/alternative/{request.in_alternative}"
+    else:
+        graph_uri = named_graph_uri(request.design_space_id)
 
     status_label_to_uri = get_status_label_to_uri()
     proposed_uri = status_label_to_uri.get("Proposed", f"{VALOR_NS}ProposedStatus")
