@@ -60,6 +60,43 @@ async def sparql_select(query: str, named_graph: str) -> list[dict[str, Any]]:
     ]
 
 
+_READONLY_QUERY_TYPES = ("select", "construct", "ask", "describe")
+
+
+async def sparql_proxy_query(query: str, ds_id: str) -> dict[str, Any]:
+    """Voert een read-only SPARQL query uit binnen de scope van een DesignSpace.
+
+    Alle 5 named graphs van de DesignSpace worden als default graph toegevoegd,
+    zodat de query alleen data van die DesignSpace kan zien (isolatie gegarandeerd).
+    UPDATE/INSERT/DELETE queries worden geweigerd.
+    """
+    query_type = query.strip().split()[0].lower() if query.strip() else ""
+    if query_type not in _READONLY_QUERY_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Alleen read-only SPARQL queries toegestaan (SELECT, CONSTRUCT, ASK, DESCRIBE). Ontvangen: '{query_type}'.",
+        )
+
+    graph_names = ["base", "asis", "decisions", "agents", "provenance"]
+    params = [
+        ("default-graph-uri", f"urn:valor:ds:{ds_id}/{g}")
+        for g in graph_names
+    ]
+    headers = {"Accept": "application/sparql-results+json, application/ld+json;q=0.9, text/turtle;q=0.8"}
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            _SPARQL_ENDPOINT,
+            params=params,
+            data={"query": query},
+            headers=headers,
+            timeout=30,
+        )
+
+    _raise_for_fuseki_error(response)
+    return response.json()
+
+
 async def sparql_update(update: str, named_graph: str) -> None:
     """Voert een SPARQL UPDATE uit.
 
