@@ -1,13 +1,14 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from app.auth import get_current_user
 from app.db.designspace import create_design_space as db_create_design_space
 from app.db.permissions import check_permission
 from app.models.domain import DesignSpaceCreate, DesignSpaceResponse, Role
-from app.services.fuseki import initialize_design_space_graphs
+from app.services.fuseki import initialize_design_space_graphs, sparql_proxy_query
 
 logger = logging.getLogger(__name__)
 
@@ -49,3 +50,24 @@ async def create_design_space(
         named_graphs=named_graphs,
         created_at=datetime.now(timezone.utc).isoformat(),
     )
+
+
+@router.get("/{design_space_id}/sparql")
+async def sparql_query(
+    design_space_id: str,
+    query: str = Query(..., description="SPARQL SELECT/CONSTRUCT/ASK/DESCRIBE query"),
+    user: dict = Depends(get_current_user),
+) -> JSONResponse:
+    user_id = user["id"]
+
+    if not await check_permission(user_id, design_space_id, Role.VIEWER):
+        raise HTTPException(
+            status_code=403,
+            detail="Onvoldoende rechten voor deze DesignSpace.",
+        )
+
+    result = await sparql_proxy_query(query, design_space_id)
+
+    logger.info("SPARQL proxy: DesignSpace %s bevraagd door gebruiker %s", design_space_id, user_id)
+
+    return JSONResponse(content=result)
