@@ -159,6 +159,61 @@ async def sparql_select_global(query: str) -> list[dict[str, Any]]:
     ]
 
 
+async def initialize_design_space_graphs(ds_id: str, issue_uri: str) -> dict[str, str]:
+    """Initialiseert de 5 named graphs voor een DesignSpace in Fuseki.
+
+    Maakt de volgende named graphs aan via SPARQL CREATE:
+    - base      : VALOR-O ontologie-referentie (read-only)
+    - asis      : gedeelde as-is Tesserae
+    - decisions : DecisionEpisodes + stemhistorie
+    - agents    : AgentTesserae
+    - provenance: PROV-O provenance trail
+    """
+    from app.ontology import VALOR_NS
+
+    base = f"urn:valor:ds:{ds_id}/base"
+    asis = f"urn:valor:ds:{ds_id}/asis"
+    decisions = f"urn:valor:ds:{ds_id}/decisions"
+    agents = f"urn:valor:ds:{ds_id}/agents"
+    provenance = f"urn:valor:ds:{ds_id}/provenance"
+    ds_uri = f"urn:valor:ds:{ds_id}"
+
+    update = f"""
+INSERT DATA {{
+  GRAPH <{base}> {{
+    <{ds_uri}> a <{VALOR_NS}DesignSpace> ;
+      <{VALOR_NS}isAddressedInDesignSpace> <{issue_uri}> ;
+      <{VALOR_NS}hasGraph> <{asis}> ;
+      <{VALOR_NS}hasGraph> <{decisions}> ;
+      <{VALOR_NS}hasGraph> <{agents}> ;
+      <{VALOR_NS}hasGraph> <{provenance}> .
+  }}
+  GRAPH <{asis}> {{
+    <{ds_uri}> <{VALOR_NS}graphType> "asis" .
+  }}
+  GRAPH <{decisions}> {{
+    <{ds_uri}> <{VALOR_NS}graphType> "decisions" .
+  }}
+  GRAPH <{agents}> {{
+    <{ds_uri}> <{VALOR_NS}graphType> "agents" .
+  }}
+  GRAPH <{provenance}> {{
+    <{ds_uri}> <{VALOR_NS}graphType> "provenance" .
+  }}
+}}
+"""
+
+    await sparql_update(update, ds_id)
+
+    return {
+        "base": base,
+        "asis": asis,
+        "decisions": decisions,
+        "agents": agents,
+        "provenance": provenance,
+    }
+
+
 async def sparql_construct(query: str, named_graph: str) -> str:
     """Voert een SPARQL CONSTRUCT uit binnen de named graph van een DesignSpace.
 
