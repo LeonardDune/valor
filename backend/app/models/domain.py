@@ -195,6 +195,21 @@ class Conflict(BaseModel):
     detection_date: datetime = Field(default_factory=datetime.now)
     status: str = "open" # open, resolved, ignored
 
+class DesignSpaceCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    issue_uri: str
+    project_id: Optional[str] = None
+
+class DesignSpaceResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    issue_uri: str
+    design_space_uri: str
+    named_graphs: Dict[str, str]
+    created_at: str
+
 class ThreadCreate(BaseModel):
     topic: str
     target_id: Optional[str] = None # Optional for legacy version threads, required for generic

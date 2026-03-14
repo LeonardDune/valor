@@ -98,7 +98,7 @@ Alle perspectieven bevragen en beschrijven dezelfde VALOR-O graph via SPARQL-pro
 
 De OWL 2 punning-conventie — waarbij een klasse tegelijkertijd een `owl:Class` (subklasse-hiërarchie) en een `rdf:type gufo:Kind` (type-hiërarchie) is — wordt door VALOR-O als standaardpatroon gehanteerd voor alle domeinconcepten.
 
-**SYSONT — Systemistische grondlaag.** Aanvullend op gUFO voorziet VALOR-O in een systemistische ontologie (module `00m-sysont`) gebaseerd op Bunge (1979) en Calhau et al. (2023). Deze laag fundeert het emergence-fenomeen dat in CAPAX en NEXUS wordt benut: de ontologische verklaring van waarom sommige capabilities van organisaties en ecosystemen niet reduceerbaar zijn naar de som van de capabilities van hun leden.
+**SYSONT — Systemistische grondlaag.** Aanvullend op gUFO voorziet VALOR-O in een systemistische ontologie (module `00r-sysont`) gebaseerd op Bunge (1979) en Calhau et al. (2023). Deze laag fundeert het emergence-fenomeen dat in CAPAX en NEXUS wordt benut: de ontologische verklaring van waarom sommige capabilities van organisaties en ecosystemen niet reduceerbaar zijn naar de som van de capabilities van hun leden.
 
 SYSONT introduceert vier kernconcepten:
 
@@ -131,7 +131,7 @@ De derde laag is ontologisch het meest productief voor VALOR: ontwerpalternatiev
 
 Commitments zijn `gufo:Relator`-instanties die normatieve verwachtingen uitdrukken tussen agents. Normen zijn sociale objecten die inhereren aan SocialAgents. Fundeert Socia en Delibera.
 
-**VALOR-CORE — CollectiveIntentionalCommunity en IssueCommunity (module 00n).** Bovenop UFO-C introduceert VALOR-O een patroon dat centraal staat in de architectuur van publieke waardecreatie: `valor:CollectiveIntentionalCommunity`. Dit is een abstracte `«category»` die twee structureel verwante maar fundamenteel onderscheiden concepten gemeenschappelijk grondvest:
+**VALOR-CORE — CollectiveIntentionalCommunity en IssueCommunity (module 00s).** Bovenop UFO-C introduceert VALOR-O een patroon dat centraal staat in de architectuur van publieke waardecreatie: `valor:CollectiveIntentionalCommunity`. Dit is een abstracte `«category»` die twee structureel verwante maar fundamenteel onderscheiden concepten gemeenschappelijk grondvest:
 
 - **`valor:IssueCommunity`** (`«subkind»`, *cognitieve modus*) — Een CollectiveSocialAgent geconstitueerd door gedeeld `ufoc:Concern`: agents die gezamenlijk een situatie als problematisch erkennen. Het Concern is een `gufo:IntrinsicMode` van elk lid afzonderlijk; gedeeldheid constitueert het `valor:Issue` als SocialObject. De IssueCommunity hoeft niets te *doen* — ze bestaat zodra de wederzijdse erkenning van zorg aanwezig is.
 
@@ -161,7 +161,7 @@ De `nexus:addressesIssue`-relatie formaliseert de **legitimeringspijl**: een Eco
 
 Laag 3 bevat de perspectief-ontologieën die de inhoudelijke perspectieven funderen, plus twee modules die samen de geïntegreerde haalbaarheidslaag vormen: CAPAX en NEXUS.
 
-**CAPAX — Capabilities en haalbaarheid.** Module `00j-capax` formaliseert de capability-dimensie die nodig is om de uitvoerbaarheid van ontwerpalternatieven te beoordelen. CAPAX is geen achtste perspectief met een eigen canvas, maar een **geïntegreerde haalbaarheidslaag** die als overlay zichtbaar is binnen de bestaande perspectieven — met name Acta (bij elk TransactionType is zichtbaar welke capabilities vereist zijn en of er gaps zijn) en Socia (bij elke actor zijn aanwezige en ontbrekende capabilities zichtbaar). De `capax:FeasibilityAssessment` — het geaggregeerde haalbaarheidsordeel over een alternatief — is een verplichte Tessera in Delibera bij elke faseovergang. Zie §4.9 voor de architectuurmotivatie van deze keuze.
+**CAPAX — Capabilities en haalbaarheid.** Module `00o-capax` formaliseert de capability-dimensie die nodig is om de uitvoerbaarheid van ontwerpalternatieven te beoordelen. CAPAX is geen achtste perspectief met een eigen canvas, maar een **geïntegreerde haalbaarheidslaag** die als overlay zichtbaar is binnen de bestaande perspectieven — met name Acta (bij elk TransactionType is zichtbaar welke capabilities vereist zijn en of er gaps zijn) en Socia (bij elke actor zijn aanwezige en ontbrekende capabilities zichtbaar). De `capax:FeasibilityAssessment` — het geaggregeerde haalbaarheidsordeel over een alternatief — is een verplichte Tessera in Delibera bij elke faseovergang. Zie §4.9 voor de architectuurmotivatie van deze keuze.
 
 CAPAX bevat vijf kernconcepten:
 
@@ -179,7 +179,7 @@ CAPAX bevat daarnaast de **emergentielaag** voor disposities, gebaseerd op Bunge
 
 - **`capax:DispositionRelation`** (`gufo:Relator`, stereotype `relator`) — Een relator die de onderlinge afhankelijkheid tussen twee of meer disposities (capabilities) formaliseert die samen bijdragen aan een emergente OrganizationalCapability. Drie typen via `capax:dispositionRelationType`: `Reciprocal` (wederzijdse activering), `Additional` (additief noodzakelijk; alle betrokken capabilities vereist voor emergentie), en `Enabling` (één capability maakt manifestatie van een andere mogelijk of blokkeert haar). Dit onderscheid heeft directe praktische implicaties: bij een Additional-relatie moet een CapabilityDevelopmentNeed alle betrokken capabilities adresseren; bij Enabling is de enabling-capability de kritische schakel.
 
-**NEXUS — Ecosysteem capabilities.** Module `00l-nexus` formaliseert capabilities die emergeren uit samenwerking tussen autonome, onafhankelijke organisaties. NEXUS is de inter-organisationele extensie van CAPAX: de bearer van een `nexus:CollaborativeCapability` is geen enkele organisatie maar het `nexus:EcosystemAgent` als geheel.
+**NEXUS — Ecosysteem capabilities.** Module `00q-nexus` formaliseert capabilities die emergeren uit samenwerking tussen autonome, onafhankelijke organisaties. NEXUS is de inter-organisationele extensie van CAPAX: de bearer van een `nexus:CollaborativeCapability` is geen enkele organisatie maar het `nexus:EcosystemAgent` als geheel.
 
 NEXUS bevat zes kernconcepten:
 
@@ -850,13 +850,23 @@ Integratie van gedeeltelijk geformaliseerde bronnen als coherente modules in VAL
 
 *(6) `00g` ACTA — DEMO transactiepatroon* — `LegalRelator` grondvest transacties; `TransactionResult` is het `ValueObject` dat `ValueExperience`s mogelijk maakt.
 
-*(7) `00j` CAPAX — Capabilities en haalbaarheid (v0.2)* — emergentielaag met `emergenceNature`, `DispositionRelation` (Reciprocal/Additional/Enabling).
+*(7) `00j` TESSERA — Epistemische claim-module* — formaliseert `valor:Tessera` als kerneenheid van VALOR: een epistemische claim met auteur, tijdstempel, `valor:EpistemicStatus`-statusmachine, bewijs-relaties (`valor:Evidence`) en argumentatierelaties (support/rebut). Fundeert de hele Tessera-engine en het PROV-O audit trail.
 
-*(8) `00k` AXIA-VSD — Ontwerpvereisten* — waardeketen naar `CapabilityRequirement`.
+*(8) `00k` APPLICATION — VALOR applicatieprofiel* — bindingslaag die de perspectief-ontologieën (Causa, Lexa, Acta, Socia, Axia, Delibera, Forma) verbindt met het VALOR platform; bevat gemeenschappelijke SHACL-profielen en perspectief-registratie.
 
-*(9) `00l` NEXUS — Ecosysteem capabilities (v0.4)* — `EcosystemAgent` herschreven als specialisatie van `valor:CollectiveIntentionalCommunity` (conatieve modus); `nexus:addressesIssue` als legitimeringspijl.
+*(9) `00l` AXIA — Waardeperspectief* — perspectief-ontologie voor Axia; formaliseert `axia:ValueCriterion`, `axia:ValueBasedDesignRequirement`, `axia:ValueTension` en `axia:DesignImplication` als perspectief-specifieke types bovenop COVER en VALOR-CORE.
 
-*(10) `00n` VALOR-CORE — Toepassingsontologie kernlaag (v0.1)* — `CollectiveIntentionalCommunity` als abstracte `«category»`; `IssueCommunity` (cognitieve modus, Concern-gegrond); `valor:Issue` als SocialObject; `hasConcernAbout`, `concernedWithSituation`, `addressesIssue`, `hasRespondingEcosystem`, `isAddressedInDesignSpace`; SPARQL-legitimiteitsquery-patroon (DD-091).
+*(10) `00m` DELIBERA — Besluitvormingsmodule* — formaliseert `delibera:DecisionEpisode`, `delibera:VoteRecord`, `delibera:ConsensusStatement` en de gate-check infrastructuur (FeasibilityAssessment + ClaimCoverageAssessment) die faseovergangen bewaken.
+
+*(11) `00n` FORMA — Ontologisch modelleererperspectief* — perspectief-ontologie voor Forma; formaliseert de OntoUML-modelleringslaag en SHACL-validatieprofielen voor het ontologische perspectief; grondvest de SHACL-gate bij faseovergangen.
+
+*(12) `00o` CAPAX — Capabilities en haalbaarheid (v0.3)* — emergentielaag met `emergenceNature`, `DispositionRelation` (Reciprocal/Additional/Enabling).
+
+*(13) `00p` AXIA-VSD — Ontwerpvereisten* — waardeketen naar `CapabilityRequirement`.
+
+*(14) `00q` NEXUS — Ecosysteem capabilities (v0.4)* — `EcosystemAgent` herschreven als specialisatie van `valor:CollectiveIntentionalCommunity` (conatieve modus); `nexus:addressesIssue` als legitimeringspijl.
+
+*(15) `00s` VALOR-CORE — Toepassingsontologie kernlaag (v0.1)* — `CollectiveIntentionalCommunity` als abstracte `«category»`; `IssueCommunity` (cognitieve modus, Concern-gegrond); `valor:Issue` als SocialObject; `hasConcernAbout`, `concernedWithSituation`, `addressesIssue`, `hasRespondingEcosystem`, `isAddressedInDesignSpace`; SPARQL-legitimiteitsquery-patroon (DD-091).
 
 ### 12.4 Fase -1c: Formalisering niet-eerder-geformaliseerde theorieën (6 maanden) — GROTENDEELS AFGEROND
 
@@ -864,13 +874,13 @@ Integratie van gedeeltelijk geformaliseerde bronnen als coherente modules in VAL
 
 **Actor Analysis (i*-framework)** (`00i` SOCIA) — intentionele afhankelijkheden als `ufoc:SocialCommitment`-specialisaties, onderscheiden door propositioneel inhoudstype (Goal/Task/Resource/SoftGoal).
 
-**Systemistische grondlaag** (`00m` SYSONT) — nieuw toegevoegd op basis van Bunge (1977, 1979) en Calhau et al. (2023): `System`, `BondingRelation`, `SystemSituation`, `SystemMoment` (Emergent/Resultant), `EmergencePattern`. Fundeert de emergence-laag in CAPAX en NEXUS.
+**Systemistische grondlaag** (`00r` SYSONT) — nieuw toegevoegd op basis van Bunge (1977, 1979) en Calhau et al. (2023): `System`, `BondingRelation`, `SystemSituation`, `SystemMoment` (Emergent/Resultant), `EmergencePattern`. Fundeert de emergence-laag in CAPAX en NEXUS.
 
 *VSD als aparte formaliseringsopgave is vervallen: de waarde-ontologie is volledig afgedekt door COVER + AXIA-VSD.*
 
 ### 12.5 Fase -1d: Integratie en validatie (3 maanden) — GEPLAND
 
-Integratie van alle modules (00a t/m 00m) tot VALOR-O v1.0. Consistentiecheck via HermiT. Validatie via ten minste drie representatieve casussen. Aanpassing op basis van bevindingen. Output: VALOR-O v1.0 als publiek OWL/TTL repository.
+Integratie van alle modules (00a t/m 00s) tot VALOR-O v1.0. Consistentiecheck via HermiT. Validatie via ten minste drie representatieve casussen. Aanpassing op basis van bevindingen. Output: VALOR-O v1.0 als publiek OWL/TTL repository.
 
 Aanvullende integratiepunten voor Fase -1d: (a) cross-module SPARQL-queries voor emergentiepatroon-detectie, gap-keten-traversal en Tessera-audit trail; (b) DEMOSL-analyse voor verdieping van ACTA op basis van het DEMO Specification Language document; (c) instantiëring van SYSONT met een validatie-voorbeeld (het Spotify-patroon uit Calhau et al. 2023 §6).
 
@@ -902,8 +912,8 @@ SOFTWARE   │          │          Fase 0 ██ │ Fase 1-3 █████�
 | Fase | Naam | Status | Deliverables |
 |---|---|---|---|
 | **-1a** | Inventarisatie | Afgerond | Inventaris + prioritering + NEMO-contact |
-| **-1b** | Integratie bestaande formaliseringen | Grotendeels afgerond | Modules 00b–00l (UFO-C v2, ACTA, CAUSA, SOCIA, CAPAX v0.2, AXIA-VSD, NEXUS v0.3) |
-| **-1c** | Formalisering niet-geformaliseerde theorieën | Grotendeels afgerond | Modules 00h (CAUSA/CLD), 00i (SOCIA/i*), 00m (SYSONT) |
+| **-1b** | Integratie bestaande formaliseringen | Grotendeels afgerond | Modules 00b–00s (UFO-C v2, ACTA, TESSERA, APPLICATION, AXIA, DELIBERA, FORMA, CAUSA, SOCIA, CAPAX v0.3, AXIA-VSD, NEXUS v0.4, SYSONT, VALOR-CORE) |
+| **-1c** | Formalisering niet-geformaliseerde theorieën | Grotendeels afgerond | Modules 00h (CAUSA/CLD), 00i (SOCIA/i*), 00r (SYSONT) |
 | **-1d** | Integratie VALOR-O | Gepland | VALOR-O v1.0 + cross-module SPARQL + casusvalidatie + publiek repository |
 
 ### 13.3 Softwareontwikkeling
@@ -958,9 +968,9 @@ SOFTWARE   │          │          Fase 0 ██ │ Fase 1-3 █████�
 
 | # | Vraag | Type | Eigenaar | Deadline | Status |
 |---|---|---|---|---|---|
-| 1 | Welke UFO-extensies zijn al als OWL beschikbaar? Welke moeten worden geformaliseerd? | Onderzoek | Ontologie-onderzoeker | Fase -1a | **Gesloten** — geïnventariseerd; modules 00a–00m gerealiseerd |
+| 1 | Welke UFO-extensies zijn al als OWL beschikbaar? Welke moeten worden geformaliseerd? | Onderzoek | Ontologie-onderzoeker | Fase -1a | **Gesloten** — geïnventariseerd; modules 00a–00s gerealiseerd |
 | 2 | Is samenwerking met NEMO/LabES haalbaar en op welke voorwaarden? | Governance | Projectleider | Fase -1a mnd 1 | Open |
-| 3 | Is de COVER-waarde-ontologie voldoende als fundering voor Axia, of zijn aanvullingen nodig? | Ontologisch | Ontologie-onderzoeker | Fase -1b | **Gesloten** — COVER is voldoende; VSD als aparte formaliseringsopgave vervallen; AXIA-VSD (00k) grondvest de waardeketen |
+| 3 | Is de COVER-waarde-ontologie voldoende als fundering voor Axia, of zijn aanvullingen nodig? | Ontologisch | Ontologie-onderzoeker | Fase -1b | **Gesloten** — COVER is voldoende; VSD als aparte formaliseringsopgave vervallen; AXIA-VSD (00p) grondvest de waardeketen |
 | 4 | Hoe worden dynamische CLD-variabelen uitgedrukt in een statische OWL-ontologie? | Ontologisch | Ontologie-onderzoeker | Fase -1c | **Gesloten** — opgelost via `causa:CausalVariable` als Quality-type met temporele kwalificatie; SPARQL property paths voor feedback loop detectie |
 | 4b | Is het bestaande DEMO-UFO bridge-paper (Almeida 2013) voldoende als basis voor ACTA? | Ontologisch | Ontologie-engineer | Fase -1b | **Gedeeltelijk gesloten** — ACTA geformaliseerd; resterende verdieping via DEMOSL-analyse (gepland in Fase -1d) |
 | 5 | Welk fasemodel is het meest geschikt als standaard voor VALOR? | Product | Product Owner | Fase 0 | Open |
@@ -975,7 +985,7 @@ SOFTWARE   │          │          Fase 0 ██ │ Fase 1-3 █████�
 | 14 | Hoe wordt het agent-invloedrapport berekend, en wat zijn de drempelwaarden voor interventie? | UX + Ethiek | UX Lead | Fase 5 | Open |
 | 15 | Welke bestaande participatie- en deliberatiemethoden zijn integreerbaar als sessiemodus? | Product | Product Owner + Facilitator | Fase 8 | Open |
 | 16 | Hoe wordt VALOR-O geversioneerd en wat zijn de migratieconsequenties bij een VALOR-O update? | Technisch | Architect | Fase 0 | Open |
-| 17 | Is `00m-sysont` los publiceerbaar als bijdrage aan de UFO-literatuur, los van VALOR? | Strategisch | Ontologie-onderzoeker | Fase -1d | Open |
+| 17 | Is `00r-sysont` los publiceerbaar als bijdrage aan de UFO-literatuur, los van VALOR? | Strategisch | Ontologie-onderzoeker | Fase -1d | Open |
 | 18 | Hoe verhoudt `sysont:EmergencePattern` zich tot het uitnodigingsmodel voor ecosysteem-Design Spaces — moet een facilitator een EmergencePattern kunnen kiezen als configuratie-artefact voor een Design Space? | Ontologisch + Product | Architect + Product Owner | Fase 0 | Open |
 | 19 | Hoe wordt strategisch stemgedrag bij FeasibilityAssessment-gates gedetecteerd en welke procedurele waarborgen zijn daarvoor vereist? | Governance | Product Owner + Facilitator | Fase 3 | Open |
 | 20 | Moet de SPARQL-legitimiteitsaudit (overlap IssueCommunity ↔ EcosystemAgent-leden) verplicht worden als gate-check bij de aanmaak van een DesignSpace, of blijft het een optioneel diagnostisch instrument? | Governance + Technisch | Product Owner + Architect | Fase 0 | Open |
@@ -1010,8 +1020,8 @@ flowchart TB
   classDef sysont      fill:#1a1a2e,stroke:#7c3aed,color:#ede9fe,font-size:11px,stroke-dasharray:6 3
   classDef overlay     fill:#0d1117,stroke:#f59e0b,color:#fde68a,font-size:10px,stroke-dasharray:3 3
 
-  %% ─── VALOR-CORE (00n) — CollectiveIntentionalCommunity ─────────────────
-  subgraph VALORCORE["00n-VALOR-CORE — Collectieve intentionaliteit (DD-091 / Searle 1995)"]
+  %% ─── VALOR-CORE (00s) — CollectiveIntentionalCommunity ─────────────────
+  subgraph VALORCORE["00s-VALOR-CORE — Collectieve intentionaliteit (DD-091 / Searle 1995)"]
     CIC["CollectiveIntentionalCommunity\n«category»\ngedeelde intentionele toestand\n→ externe Situation"]:::foundation
     IssueCom["IssueCommunity\n«subkind»\nCOGNITIEVE MODUS\nconstitutief moment:\ngedeeld Concern\n(IntrinsicMode)"]:::foundation
     IssueNode["Issue\n«kind» ← SocialObject\ngedeeld Concern over\nonderliggende Situation"]:::foundation
@@ -1028,7 +1038,7 @@ flowchart TB
   end
 
   %% ─── SYSONT (grondlaag) ──────────────────────────────────────────────────
-  subgraph SYSONT["00m-SYSONT — Systemistische grondlaag (Bunge / Calhau 2023)"]
+  subgraph SYSONT["00r-SYSONT — Systemistische grondlaag (Bunge / Calhau 2023)"]
     SystemNode["System\n«category» / FunctionalComplex\n4 criteria: complexiteit,\nbonding, heterogene rollen,\nemergentie"]:::sysont
     FunctionalRole["FunctionalRole\n«role»\nanti-rigide positie\nvan Component"]:::sysont
     BondingRelation["BondingRelation\n«material»\ncausale beïnvloeding;\nvereist mediator"]:::sysont
@@ -1300,7 +1310,7 @@ flowchart TB
 - W3C OWL 2 Web Ontology Language: https://www.w3.org/TR/owl2-overview/
 - W3C SHACL Shapes Constraint Language: https://www.w3.org/TR/shacl/
 - W3C PROV-O Provenance Ontology: https://www.w3.org/TR/prov-o/
-- Apache Jena Fuseki: https://jena.apache.org/documentation/fuseki2/
+- Ontotext GraphDB: https://graphdb.ontotext.com/
 - React Flow: https://reactflow.dev/
 
 ---
