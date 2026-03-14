@@ -210,6 +210,19 @@ class DesignSpaceResponse(BaseModel):
     named_graphs: Dict[str, str]
     created_at: str
 
+
+class PhaseTransitionRequest(BaseModel):
+    target_phase: Optional[str] = None  # None = auto-advance naar volgende fase
+
+
+class PhaseTransitionResponse(BaseModel):
+    design_space_id: str
+    from_phase: str
+    to_phase: str
+    archived_alternatives: List[str]
+    decision_episode_uri: str
+    transitioned_at: str
+
 class ThreadCreate(BaseModel):
     topic: str
     target_id: Optional[str] = None # Optional for legacy version threads, required for generic

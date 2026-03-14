@@ -6,6 +6,37 @@ from app.db.utils import get_driver
 
 logger = logging.getLogger(__name__)
 
+PHASE_SEQUENCE = ["exploration", "definition", "evaluation", "decision"]
+
+
+def get_design_space_meta(ds_id: str) -> dict | None:
+    """Geeft current_phase en project_id voor een DesignSpace."""
+    driver = get_driver()
+    query = """
+    MATCH (ds:DesignSpace {id: $id})
+    OPTIONAL MATCH (p:Project)-[:HAS_DESIGN_SPACE]->(ds)
+    RETURN ds.current_phase AS current_phase, p.id AS project_id
+    """
+    with driver.session() as session:
+        result = session.run(query, {"id": ds_id}).single()
+        if not result:
+            return None
+        return {
+            "current_phase": result["current_phase"] or "exploration",
+            "project_id": result["project_id"],
+        }
+
+
+def set_design_space_phase(ds_id: str, phase: str) -> None:
+    """Werkt current_phase bij op de DesignSpace node."""
+    driver = get_driver()
+    query = """
+    MATCH (ds:DesignSpace {id: $id})
+    SET ds.current_phase = $phase
+    """
+    with driver.session() as session:
+        session.run(query, {"id": ds_id, "phase": phase})
+
 
 async def create_design_space(
     name: str,
