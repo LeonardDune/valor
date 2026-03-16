@@ -1,6 +1,8 @@
 import os
 import logging
-from typing import Any
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Optional
 
 import httpx
 from fastapi import HTTPException
@@ -58,6 +60,43 @@ async def sparql_select(query: str, named_graph: str) -> list[dict[str, Any]]:
         {k: v["value"] for k, v in row.items()}
         for row in bindings
     ]
+
+
+_READONLY_QUERY_TYPES = ("select", "construct", "ask", "describe")
+
+
+async def sparql_proxy_query(query: str, ds_id: str) -> dict[str, Any]:
+    """Voert een read-only SPARQL query uit binnen de scope van een DesignSpace.
+
+    Alle 5 named graphs van de DesignSpace worden als default graph toegevoegd,
+    zodat de query alleen data van die DesignSpace kan zien (isolatie gegarandeerd).
+    UPDATE/INSERT/DELETE queries worden geweigerd.
+    """
+    query_type = query.strip().split()[0].lower() if query.strip() else ""
+    if query_type not in _READONLY_QUERY_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Alleen read-only SPARQL queries toegestaan (SELECT, CONSTRUCT, ASK, DESCRIBE). Ontvangen: '{query_type}'.",
+        )
+
+    graph_names = ["base", "asis", "decisions", "agents", "provenance"]
+    params = [
+        ("default-graph-uri", f"urn:valor:ds:{ds_id}/{g}")
+        for g in graph_names
+    ]
+    headers = {"Accept": "application/sparql-results+json, application/ld+json;q=0.9, text/turtle;q=0.8"}
+
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            _SPARQL_ENDPOINT,
+            params=params,
+            data={"query": query},
+            headers=headers,
+            timeout=30,
+        )
+
+    _raise_for_fuseki_error(response)
+    return response.json()
 
 
 async def sparql_update(update: str, named_graph: str) -> None:
@@ -157,6 +196,158 @@ async def sparql_select_global(query: str) -> list[dict[str, Any]]:
         {k: v["value"] for k, v in row.items()}
         for row in bindings
     ]
+
+
+async def initialize_design_space_graphs(ds_id: str, issue_uri: str) -> dict[str, str]:
+    """Initialiseert de 5 named graphs voor een DesignSpace in Fuseki.
+
+    Maakt de volgende named graphs aan via SPARQL CREATE:
+    - base      : VALOR-O ontologie-referentie (read-only)
+    - asis      : gedeelde as-is Tesserae
+    - decisions : DecisionEpisodes + stemhistorie
+    - agents    : AgentTesserae
+    - provenance: PROV-O provenance trail
+    """
+    from app.ontology import VALOR_NS
+
+    base = f"urn:valor:ds:{ds_id}/base"
+    asis = f"urn:valor:ds:{ds_id}/asis"
+    decisions = f"urn:valor:ds:{ds_id}/decisions"
+    agents = f"urn:valor:ds:{ds_id}/agents"
+    provenance = f"urn:valor:ds:{ds_id}/provenance"
+    ds_uri = f"urn:valor:ds:{ds_id}"
+
+    update = f"""
+INSERT DATA {{
+  GRAPH <{base}> {{
+    <{ds_uri}> a <{VALOR_NS}DesignSpace> ;
+      <{VALOR_NS}isAddressedInDesignSpace> <{issue_uri}> ;
+      <{VALOR_NS}hasGraph> <{asis}> ;
+      <{VALOR_NS}hasGraph> <{decisions}> ;
+      <{VALOR_NS}hasGraph> <{agents}> ;
+      <{VALOR_NS}hasGraph> <{provenance}> .
+  }}
+  GRAPH <{asis}> {{
+    <{ds_uri}> <{VALOR_NS}graphType> "asis" .
+  }}
+  GRAPH <{decisions}> {{
+    <{ds_uri}> <{VALOR_NS}graphType> "decisions" .
+  }}
+  GRAPH <{agents}> {{
+    <{ds_uri}> <{VALOR_NS}graphType> "agents" .
+  }}
+  GRAPH <{provenance}> {{
+    <{ds_uri}> <{VALOR_NS}graphType> "provenance" .
+  }}
+}}
+"""
+
+    await sparql_update(update, ds_id)
+
+    return {
+        "base": base,
+        "asis": asis,
+        "decisions": decisions,
+        "agents": agents,
+        "provenance": provenance,
+    }
+
+
+async def initialize_alternative_graph(
+    ds_id: str, alt_id: str, name: str, description: str, creator_uri: str, created_at: str
+) -> str:
+    """Initialiseert een named graph voor een DesignAlternative in Fuseki.
+
+    Schrijft een marker-triple in de graph en registreert de alternative in de base-graph.
+    Retourneert de graph URI.
+    """
+    from app.ontology import VALOR_NS
+
+    alt_uri = f"urn:valor:ds:{ds_id}/alternative/{alt_id}"
+    base_graph = f"urn:valor:ds:{ds_id}/base"
+    ds_uri = f"urn:valor:ds:{ds_id}"
+
+    escaped_name = name.replace("\\", "\\\\").replace('"', '\\"')
+    escaped_desc = (description or "").replace("\\", "\\\\").replace('"', '\\"')
+
+    update = f"""INSERT DATA {{
+  GRAPH <{alt_uri}> {{
+    <{alt_uri}> <{VALOR_NS}graphType> "alternative" .
+  }}
+  GRAPH <{base_graph}> {{
+    <{alt_uri}> a <{VALOR_NS}DesignAlternative> ;
+      <{VALOR_NS}inDesignSpace> <{ds_uri}> ;
+      <{VALOR_NS}alternativeName> "{escaped_name}"@nl ;
+      <{VALOR_NS}alternativeDescription> "{escaped_desc}"@nl ;
+      <{VALOR_NS}alternativeStatus> <{VALOR_NS}Active> ;
+      <{VALOR_NS}createdBy> <{creator_uri}> ;
+      <{VALOR_NS}createdAt> "{created_at}"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
+  }}
+}}"""
+    await sparql_update(update, ds_id)
+    return alt_uri
+
+
+PROV_NS = "https://www.w3.org/ns/prov#"
+XSD_NS = "http://www.w3.org/2001/XMLSchema#"
+
+_OPERATION_TYPE_URI = {
+    "TesseraCreated": "urn:valor:op:TesseraCreated",
+    "StatusChanged":  "urn:valor:op:StatusChanged",
+    "ArgumentAdded":  "urn:valor:op:ArgumentAdded",
+}
+
+
+async def record_provenance_activity(
+    ds_id: str,
+    operation_type: str,
+    user_uri: str,
+    *,
+    generated: Optional[str] = None,
+    used: Optional[list[str]] = None,
+    extra_props: Optional[list[tuple[str, str]]] = None,
+) -> str:
+    """Schrijft een prov:Activity naar de provenance-graph van de DesignSpace.
+
+    Args:
+        ds_id:          DesignSpace-ID (gebruikt voor de provenance-graph URI).
+        operation_type: "TesseraCreated" | "StatusChanged" | "ArgumentAdded"
+        user_uri:       URI van de uitvoerende gebruiker.
+        generated:      URI van het gemaakte object (bv. tessera_uri bij aanmaak).
+        used:           Lijst van gebruikte object-URIs.
+        extra_props:    Lijst van (predicate_uri, object_uri) tuples voor extra triples
+                        op de activity. Beide als volledige URIs (geen literals).
+
+    Returns:
+        activity_uri
+    """
+    prov_graph = f"urn:valor:ds:{ds_id}/provenance"
+    activity_id = str(uuid.uuid4())
+    activity_uri = f"urn:valor:activity:{activity_id}"
+    op_uri = _OPERATION_TYPE_URI.get(operation_type, f"urn:valor:op:{operation_type}")
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    lines = [
+        f"<{activity_uri}> a <{PROV_NS}Activity> ;",
+        f'  <{PROV_NS}wasAttributedTo> <{user_uri}> ;',
+        f'  <{PROV_NS}startedAtTime> "{timestamp}"^^<{XSD_NS}dateTime> ;',
+        f"  <urn:valor:operationType> <{op_uri}> .",
+    ]
+    if generated:
+        lines.append(f"<{activity_uri}> <{PROV_NS}generated> <{generated}> .")
+    for u in (used or []):
+        lines.append(f"<{activity_uri}> <{PROV_NS}used> <{u}> .")
+    for pred_uri, obj_uri in (extra_props or []):
+        lines.append(f"<{activity_uri}> <{pred_uri}> <{obj_uri}> .")
+
+    body = "\n    ".join(lines)
+    update = f"""INSERT DATA {{
+  GRAPH <{prov_graph}> {{
+    {body}
+  }}
+}}"""
+    await sparql_update(update, ds_id)
+    return activity_uri
 
 
 async def sparql_construct(query: str, named_graph: str) -> str:

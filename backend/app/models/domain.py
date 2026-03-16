@@ -195,6 +195,64 @@ class Conflict(BaseModel):
     detection_date: datetime = Field(default_factory=datetime.now)
     status: str = "open" # open, resolved, ignored
 
+class DesignSpaceCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    issue_uri: str
+    project_id: Optional[str] = None
+
+class DesignSpaceResponse(BaseModel):
+    id: str
+    name: str
+    description: Optional[str] = None
+    issue_uri: str
+    design_space_uri: str
+    named_graphs: Dict[str, str]
+    created_at: str
+
+
+class DesignAlternativeCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class DesignAlternativeResponse(BaseModel):
+    alternative_id: str
+    alternative_uri: str
+    graph_uri: str
+    design_space_id: str
+    name: str
+    description: Optional[str] = None
+    status: str
+    created_at: str
+
+
+class PhaseTransitionRequest(BaseModel):
+    target_phase: Optional[str] = None  # None = auto-advance naar volgende fase
+
+
+class PhaseTransitionResponse(BaseModel):
+    design_space_id: str
+    from_phase: str
+    to_phase: str
+    archived_alternatives: List[str]
+    decision_episode_uri: str
+    transitioned_at: str
+
+class ParticipantAdd(BaseModel):
+    user_id: str
+    valor_role: str  # "Initiator", "Facilitator", "Contributor", "Expert", "Observer", "Engineer"
+
+
+class ParticipantResponse(BaseModel):
+    participant_uri: str
+    user_id: str
+    valor_role: str
+    rbac_role: str
+    has_voting_right: bool
+    added_at: str
+
+
 class ThreadCreate(BaseModel):
     topic: str
     target_id: Optional[str] = None # Optional for legacy version threads, required for generic

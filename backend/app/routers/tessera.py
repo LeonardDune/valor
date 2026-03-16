@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from app.auth import get_current_user
 from app.db.permissions import check_permission
 from app.models.domain import Role
-from app.services.fuseki import sparql_select, sparql_update, sparql_shacl_validate, named_graph_uri
+from app.services.fuseki import sparql_select, sparql_update, sparql_shacl_validate, named_graph_uri, record_provenance_activity
 from app.services.ontology_cache import (
     get_evidence_label_to_uri,
     get_status_label_to_uri,
@@ -145,8 +145,13 @@ async def create_tessera(
     tessera_id = str(uuid.uuid4())
     tessera_uri = f"urn:valor:tessera:{tessera_id}"
     user_uri = f"urn:valor:user:{user_id}"
-    graph_uri = named_graph_uri(request.design_space_id)
     claimed_at = datetime.now(timezone.utc).isoformat()
+
+    # ToBe Tesserae met in_alternative → eigen alternatief-graph
+    if claim_type == "ToBe" and request.in_alternative:
+        graph_uri = f"urn:valor:ds:{request.design_space_id}/alternative/{request.in_alternative}"
+    else:
+        graph_uri = named_graph_uri(request.design_space_id)
 
     status_label_to_uri = get_status_label_to_uri()
     proposed_uri = status_label_to_uri.get("Proposed", f"{VALOR_NS}ProposedStatus")
@@ -179,6 +184,13 @@ INSERT DATA {{
 }}"""
 
     await sparql_update(sparql, request.design_space_id)
+
+    await record_provenance_activity(
+        request.design_space_id,
+        "TesseraCreated",
+        user_uri,
+        generated=tessera_uri,
+    )
 
     logger.info("Tessera aangemaakt: %s in DesignSpace %s door %s", tessera_uri, request.design_space_id, user_id)
 
@@ -344,6 +356,19 @@ WHERE {{
   }}
 }}"""
         await sparql_update(episode_update, request.design_space_id)
+
+    status_label_to_uri_map = get_status_label_to_uri()
+    old_status_uri = status_label_to_uri_map.get(current_status, current_raw)
+    await record_provenance_activity(
+        request.design_space_id,
+        "StatusChanged",
+        f"urn:valor:user:{user_id}",
+        used=[tessera_uri],
+        extra_props=[
+            (f"{VALOR_NS}previousStatus", old_status_uri),
+            (f"{VALOR_NS}newStatus", new_status_uri),
+        ],
+    )
 
     logger.info(
         "Tessera %s status: %s → %s (door %s)",
@@ -559,6 +584,14 @@ WHERE {{
                     contested_triggered = True
                     logger.info("Tessera %s naar Contested door undermines van %s", target_uri, source_uri)
 
+    await record_provenance_activity(
+        request.design_space_id,
+        "ArgumentAdded",
+        f"urn:valor:user:{user_id}",
+        used=[source_uri, target_uri],
+        extra_props=[(relation_uri, target_uri)],
+    )
+
     logger.info(
         "Argumentatierelatie: %s -[%s]-> %s (door %s)",
         source_uri, request.relation_type, target_uri, user_id,
@@ -574,3 +607,88 @@ WHERE {{
         relation_type_uri=relation_uri,
         contested_triggered=contested_triggered,
     )
+
+
+class ProvenanceActivity(BaseModel):
+    activity_uri: str
+    operation_type: str
+    attributed_to: str
+    started_at: str
+    generated: Optional[str] = None
+    used: list[str] = []
+
+
+@router.get("/{tessera_id}/provenance", response_model=list[ProvenanceActivity])
+async def get_tessera_provenance(
+    tessera_id: str,
+    design_space_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Geeft de PROV-O provenance-keten terug voor een Tessera."""
+    user_id = user["id"]
+
+    if not await check_permission(user_id, design_space_id, Role.VIEWER):
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    tessera_uri = f"urn:valor:tessera:{tessera_id}"
+    prov_graph = f"urn:valor:ds:{design_space_id}/provenance"
+    PROV_NS = "https://www.w3.org/ns/prov#"
+
+    rows = await sparql_select(
+        f"""PREFIX prov: <{PROV_NS}>
+SELECT ?activity ?opType ?agent ?startedAt ?generated WHERE {{
+  GRAPH <{prov_graph}> {{
+    ?activity a prov:Activity ;
+      <urn:valor:operationType> ?opType ;
+      prov:wasAttributedTo ?agent ;
+      prov:startedAtTime ?startedAt .
+    OPTIONAL {{ ?activity prov:generated ?generated . }}
+    FILTER(
+      ?activity = ?activity &&
+      (
+        EXISTS {{ ?activity prov:generated <{tessera_uri}> . }}
+        || EXISTS {{ ?activity prov:used <{tessera_uri}> . }}
+      )
+    )
+  }}
+}}
+ORDER BY ?startedAt""",
+        design_space_id,
+    )
+
+    # Haal ook `used` op per activity
+    used_rows = await sparql_select(
+        f"""PREFIX prov: <{PROV_NS}>
+SELECT ?activity ?used WHERE {{
+  GRAPH <{prov_graph}> {{
+    ?activity a prov:Activity ;
+      prov:used ?used .
+    FILTER(
+      EXISTS {{ ?activity prov:generated <{tessera_uri}> . }}
+      || ?used = <{tessera_uri}>
+    )
+  }}
+}}""",
+        design_space_id,
+    )
+
+    used_by_activity: dict[str, list[str]] = {}
+    for r in used_rows:
+        used_by_activity.setdefault(r["activity"], []).append(r["used"])
+
+    results = []
+    for row in rows:
+        activity_uri = row["activity"]
+        op_uri = row["opType"]
+        op_label = op_uri.rsplit(":", 1)[-1]
+        agent = row["agent"].rsplit(":", 1)[-1]
+        results.append(ProvenanceActivity(
+            activity_uri=activity_uri,
+            operation_type=op_label,
+            attributed_to=agent,
+            started_at=row["startedAt"],
+            generated=row.get("generated"),
+            used=used_by_activity.get(activity_uri, []),
+        ))
+
+    return results
