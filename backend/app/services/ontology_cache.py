@@ -7,6 +7,7 @@ Queryt de VALOR-O ontologie-graphs in Fuseki voor:
   - Geldige statusovergangen (valor:allowedTransitionTo)
   - Statussen die een DecisionEpisode vereisen (valor:requiresDecisionEpisode)
   - UncertaintyLevel instanties (PAMS-taxonomie, English label -> URI)
+  - disc:ContributionType instanties (Dutch label -> URI)
 """
 import logging
 
@@ -29,12 +30,17 @@ _uncertainty_label_to_uri: dict[str, str] = {}  # "StatisticalRisk" → URI
 _participant_role_data: dict[str, dict] = {}
 # RBAC role weights derived from ontology: "admin" → 30
 _rbac_role_weights: dict[str, int] = {}
+_disc_contribution_type_label_to_uri: dict[str, str] = {}  # "Vraag" → URI
+
+
+_DISC_GRAPH = f"{VALOR_NS}disc"
 
 
 async def load_ontology_cache() -> None:
     global _evidence_label_to_uri, _status_label_to_uri, _status_uri_to_label
     global _valid_transitions, _requires_decision_episode, _argue_label_to_uri
     global _uncertainty_label_to_uri, _participant_role_data, _rbac_role_weights
+    global _disc_contribution_type_label_to_uri
 
     logger.info("[ontology-cache] Ontologie-data laden van Fuseki...")
 
@@ -161,6 +167,20 @@ async def load_ontology_cache() -> None:
     logger.info("[ontology-cache] ParticipantRoles: %s", list(_participant_role_data.keys()))
     logger.info("[ontology-cache] RBAC gewichten: %s", _rbac_role_weights)
 
+    disc_type_rows = await sparql_select_global(f"""
+        PREFIX disc: <{VALOR_NS}disc#>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?uri ?label WHERE {{
+          GRAPH <{_DISC_GRAPH}> {{
+            ?uri a disc:ContributionType ;
+                 rdfs:label ?label .
+            FILTER(lang(?label) = "nl")
+          }}
+        }}
+    """)
+    _disc_contribution_type_label_to_uri = {row["label"]: row["uri"] for row in disc_type_rows}
+    logger.info("[ontology-cache] Bijdragetypes (disc): %s", list(_disc_contribution_type_label_to_uri.keys()))
+
     if not _evidence_label_to_uri or not _status_label_to_uri or not _valid_transitions:
         logger.warning(
             "[ontology-cache] Ontologie-cache onvolledig. "
@@ -213,6 +233,10 @@ def get_rbac_role_weights() -> dict[str, int]:
 def has_voting_right(valor_role_label: str) -> bool:
     """True als de VALOR-O rol stemrecht heeft (uit ontologie)."""
     return _participant_role_data.get(valor_role_label, {}).get("voting_right", False)
+
+
+def get_disc_contribution_type_label_to_uri() -> dict[str, str]:
+    return _disc_contribution_type_label_to_uri
 
 
 def rbac_to_valor_role(rbac_role: str) -> str:

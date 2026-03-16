@@ -88,6 +88,16 @@ def _seed_ontology_cache() -> None:
         v: k for k, v in ontology_cache._status_label_to_uri.items()
     }
 
+    DISC_NS = f"{VALOR_NS}disc#"
+    ontology_cache._disc_contribution_type_label_to_uri = {
+        "Vraag":       f"{DISC_NS}Vraag",
+        "Stelling":    f"{DISC_NS}Stelling",
+        "Bewijs":      f"{DISC_NS}Bewijs",
+        "Bezwaar":     f"{DISC_NS}Bezwaar",
+        "Toelichting": f"{DISC_NS}Toelichting",
+        "Akkoord":     f"{DISC_NS}Akkoord",
+    }
+
 
 # ---------------------------------------------------------------------------
 # Sessie-scoped fixtures
