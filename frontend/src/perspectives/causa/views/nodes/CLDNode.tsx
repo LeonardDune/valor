@@ -5,6 +5,15 @@ import { Wrench, Cloud, Cpu, Target, HelpCircle, MessageSquare, type LucideProps
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import type { EpistemicStatus } from '../../types';
+
+const epistemicStatusStyles: Record<EpistemicStatus, { borderLeft: string; dot: string; label: string }> = {
+    Proposed:     { borderLeft: 'border-l-slate-400',  dot: 'bg-slate-400',   label: 'Voorgesteld' },
+    Contested:    { borderLeft: 'border-l-orange-400', dot: 'bg-orange-400',  label: 'Betwist' },
+    Accepted:     { borderLeft: 'border-l-green-500',  dot: 'bg-green-500',   label: 'Geaccepteerd' },
+    Rejected:     { borderLeft: 'border-l-red-500',    dot: 'bg-red-500',     label: 'Afgewezen' },
+    Reconsidered: { borderLeft: 'border-l-purple-500', dot: 'bg-purple-500',  label: 'Heroverwogen' },
+};
 
 // Use strict Lucide types
 const iconMap: Record<string, FunctionComponent<LucideProps>> = {
@@ -50,17 +59,20 @@ const CARD_HEIGHT = '100px';
 const CLDNode: FunctionComponent<NodeProps> = ({ id, data, selected }) => {
     const role = (data.role || 'systeemelement').toLowerCase() as keyof typeof iconMap;
     const isReadOnly = data.isReadOnly || false;
+    const epistemicStatus = (data.epistemicStatus || 'Proposed') as EpistemicStatus;
 
     const Icon = iconMap[role] || iconMap.unknown;
     const styles = roleStyles[role] || roleStyles.unknown;
+    const statusStyle = epistemicStatusStyles[epistemicStatus] || epistemicStatusStyles.Proposed;
 
     return (
         <div
-            className={`
-                group bg-white rounded-panel relative hover:shadow-lg transition-all
-                flex flex-col border border-border-standard
-                ${selected ? 'ring-2 ring-blue-500 border-transparent' : ''}
-            `}
+            className={cn(
+                'group bg-white rounded-panel relative hover:shadow-lg transition-all',
+                'flex flex-col border border-border-standard border-l-4',
+                statusStyle.borderLeft,
+                selected ? 'ring-2 ring-blue-500 border-transparent' : ''
+            )}
             style={{
                 width: CARD_WIDTH,
                 height: CARD_HEIGHT,
@@ -119,9 +131,15 @@ const CLDNode: FunctionComponent<NodeProps> = ({ id, data, selected }) => {
                 </span>
             </div>
 
-            {/* Footer Icon */}
-            <div className={`absolute bottom-2 right-2 opacity-50 ${styles.icon}`}>
-                <Icon size={16} />
+            {/* Footer: rol-icoon + status-badge */}
+            <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                <span
+                    className={cn('w-2 h-2 rounded-full', statusStyle.dot)}
+                    title={statusStyle.label}
+                />
+                <span className={cn('opacity-50', styles.icon)}>
+                    <Icon size={16} />
+                </span>
             </div>
         </div>
     );

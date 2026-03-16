@@ -3,6 +3,15 @@ import React from 'react';
 import { type EdgeProps, getBezierPath, EdgeLabelRenderer, BaseEdge } from 'reactflow';
 import { PlusCircle, MinusCircle, MessageSquare, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { EpistemicStatus } from '../../types';
+
+const epistemicStrokeColor: Record<EpistemicStatus, string> = {
+    Proposed:     '#94a3b8', // slate-400
+    Contested:    '#fb923c', // orange-400
+    Accepted:     '#22c55e', // green-500
+    Rejected:     '#ef4444', // red-500
+    Reconsidered: '#a855f7', // purple-500
+};
 
 const CLDEdge = ({
     id,
@@ -31,9 +40,13 @@ const CLDEdge = ({
     // Use global CSS variable for causal colors
     const color = isPositive ? 'var(--color-causal-positive)' : 'var(--color-causal-negative)';
 
+    const epistemicStatus = (data?.epistemicStatus || 'Proposed') as EpistemicStatus;
+    const strokeColor = epistemicStrokeColor[epistemicStatus] || epistemicStrokeColor.Proposed;
+    const strokeOpacity = epistemicStatus === 'Rejected' ? 0.4 : 1;
+
     return (
         <>
-            <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={style} />
+            <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={{ ...style, stroke: strokeColor, strokeOpacity }} />
             <EdgeLabelRenderer>
                 <div
                     style={{
