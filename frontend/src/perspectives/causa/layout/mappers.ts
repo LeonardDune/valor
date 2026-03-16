@@ -1,5 +1,13 @@
 import type { Factor, Claim } from '../../../services/api';
-import type { CausalNode, CausalLink } from '../types';
+import type { CausalNode, CausalLink, EpistemicStatus } from '../types';
+
+const VALID_EPISTEMIC_STATUSES: EpistemicStatus[] = ['Proposed', 'Contested', 'Accepted', 'Rejected', 'Reconsidered'];
+
+function normalizeEpistemicStatus(raw?: string): EpistemicStatus {
+    if (!raw) return 'Proposed';
+    const normalized = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase() as EpistemicStatus;
+    return VALID_EPISTEMIC_STATUSES.includes(normalized) ? normalized : 'Proposed';
+}
 
 /**
  * Maps API Factor to Internal CausalNode
@@ -11,6 +19,7 @@ export const mapFactorToNode = (factor: Factor): CausalNode => {
         type: factor.type === 'systeemelement' ? 'system' : 'factor',
         role: factor.type,
         description: factor.description,
+        epistemicStatus: normalizeEpistemicStatus(factor.epistemic_status),
         version_id: factor.version_id
     };
 };
@@ -29,8 +38,7 @@ export const mapClaimToLink = (claim: Claim): CausalLink => {
         source: claim.source_id || '',
         target: claim.target_id || '',
         polarity: polarity,
-        // Using US-CAUSA-05 default logic for now until backend supports it
-        status: 'validated',
+        epistemicStatus: normalizeEpistemicStatus(claim.status),
         certainty: claim.confidence || 1.0,
         statement: claim.statement,
         version_id: claim.version_id,

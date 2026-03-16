@@ -102,6 +102,7 @@ export interface Factor {
     type: FactorType;
     version_id?: string;
     thread_id?: string;
+    epistemic_status?: string;
 }
 
 export interface Organization {

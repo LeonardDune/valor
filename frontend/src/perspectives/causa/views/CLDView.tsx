@@ -164,6 +164,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                         type: cn.type,
                         role: cn.role,
                         description: cn.description,
+                        epistemicStatus: cn.epistemicStatus,
                         threadCount: (cn.version_id && threadStats[cn.version_id]) || 0,
                         version_id: cn.version_id,
                         onOpenThread: handleOpenThread,
@@ -247,7 +248,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                     },
                     data: {
                         polarity: cl.polarity,
-                        status: cl.status || 'validated',
+                        epistemicStatus: cl.epistemicStatus,
                         certainty: cl.certainty,
                         statement: cl.statement, // Include statement/claim text
                         source: cl.source, // redundancy for data access
