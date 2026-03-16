@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { type EdgeProps, getBezierPath, EdgeLabelRenderer, BaseEdge } from 'reactflow';
 import { PlusCircle, MinusCircle, MessageSquare, FileText, ShieldAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -25,6 +25,8 @@ const CLDEdge = ({
     markerEnd,
     data,
 }: EdgeProps) => {
+    const [hovered, setHovered] = useState(false);
+
     const [edgePath, labelX, labelY] = getBezierPath({
         sourceX,
         sourceY,
@@ -60,6 +62,8 @@ const CLDEdge = ({
                         gap: '4px'
                     }}
                     className="nodrag nopan"
+                    onMouseEnter={() => setHovered(true)}
+                    onMouseLeave={() => setHovered(false)}
                 >
                     {/* Polarity Icon */}
                     <div className="bg-white rounded-full p-[2px] shadow-sm ring-1 ring-slate-200">
@@ -104,7 +108,10 @@ const CLDEdge = ({
                     {/* Betwist Button */}
                     {data?.onArgue && !data?.isReadOnly && (
                         <div
-                            className="flex items-center justify-center w-5 h-5 rounded-full bg-white border border-orange-200 text-orange-500 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:bg-orange-50"
+                            className={cn(
+                                "flex items-center justify-center w-5 h-5 rounded-full bg-white border border-orange-200 text-orange-500 shadow-sm transition-opacity cursor-pointer hover:bg-orange-50",
+                                hovered ? "opacity-100" : "opacity-0"
+                            )}
                             title="Claim betwisten"
                             onClick={(e) => {
                                 e.stopPropagation();
