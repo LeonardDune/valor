@@ -585,6 +585,20 @@ export const api = {
     completePhase: async (sessionId: string, phase: 'refine' | 'ranking' | 'consent') => {
         const response = await apiClient.post(`/sessions/${sessionId}/complete-phase`, { phase });
         return response.data;
+    },
+
+    argueTessera: async (sourceTesseraId: string, request: { design_space_id: string; relation_type: string; target_tessera_id: string }) => {
+        const response = await apiClient.post<{
+            relation_uri: string;
+            source_tessera_id: string;
+            source_tessera_uri: string;
+            target_tessera_id: string;
+            target_tessera_uri: string;
+            relation_type: string;
+            relation_type_uri: string;
+            contested_triggered: boolean;
+        }>(`/tessera/${sourceTesseraId}/argue`, request);
+        return response.data;
     }
 };
 

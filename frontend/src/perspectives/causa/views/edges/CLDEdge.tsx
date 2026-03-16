@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { type EdgeProps, getBezierPath, EdgeLabelRenderer, BaseEdge } from 'reactflow';
-import { PlusCircle, MinusCircle, MessageSquare, FileText } from 'lucide-react';
+import { PlusCircle, MinusCircle, MessageSquare, FileText, ShieldAlert } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { EpistemicStatus } from '../../types';
 
@@ -98,6 +98,20 @@ const CLDEdge = ({
                         >
                             <MessageSquare className="w-3 h-3" />
                             {data.threadCount > 0 && <span>{data.threadCount}</span>}
+                        </div>
+                    )}
+
+                    {/* Betwist Button */}
+                    {data?.onArgue && !data?.isReadOnly && (
+                        <div
+                            className="flex items-center justify-center w-5 h-5 rounded-full bg-white border border-orange-200 text-orange-500 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:bg-orange-50"
+                            title="Claim betwisten"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                data.onArgue?.({ source: data.source, target: data.target, statement: data.statement });
+                            }}
+                        >
+                            <ShieldAlert size={11} strokeWidth={2.5} />
                         </div>
                     )}
                 </div>

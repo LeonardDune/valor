@@ -320,6 +320,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                 links={links}
                 session={session}
                 runner={runner}
+                themeId={themeId}
                 onSelect={handleSelect}
                 selection={localSelection}
                 layoutMode={layoutMode}

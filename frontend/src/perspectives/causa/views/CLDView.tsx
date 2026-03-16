@@ -21,6 +21,7 @@ import { ViewControls } from '@/components/shell/ViewControls';
 import type { ConversationContext } from '@/types/conversation';
 import { api } from '@/services/api';
 import { FloatingThreadPanel } from '@/components/Chat/FloatingThreadPanel';
+import { ContestClaimDialog } from './modals/ContestClaimDialog';
 
 // Correct path if types are in parent/parent
 import type { CausalNode, CausalLink } from '../types';
@@ -30,6 +31,7 @@ interface CLDViewProps {
     links: CausalLink[];
     session: LayoutSession;
     runner: LayoutRunner;
+    themeId?: string;
     onSelect?: (selection: { type: 'node' | 'link'; data: any } | null) => void;
     selection?: { type: 'node' | 'link'; data: any } | null;
     layoutMode?: 'free' | 'system';
@@ -58,6 +60,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     links: causalLinks,
     session,
     runner,
+    themeId,
     onSelect,
     layoutMode,
     onOpenConversation,
@@ -74,6 +77,9 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
 
     // thread stats
     const [threadStats, setThreadStats] = useState<Record<string, number>>({});
+
+    // contest claim state
+    const [contestingEdge, setContestingEdge] = useState<{ source: string; target: string; statement: string } | null>(null);
     const [floatingThread, setFloatingThread] = useState<{ targetId: string; label: string; position?: { x: number; y: number } } | null>(null);
 
     const fetchThreadStats = async () => {
@@ -101,6 +107,20 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     const handleOpenThread = (targetId: string, label: string, position?: { x: number; y: number }) => {
         console.log("Opening thread panel for targetId:", targetId, "label:", label);
         setFloatingThread({ targetId, label, position });
+    };
+
+    const handleArgue = (edgeData: { source: string; target: string; statement: string }) => {
+        setContestingEdge(edgeData);
+    };
+
+    const handleContestSubmit = async (relationType: string, _toelichting: string) => {
+        if (!contestingEdge || !themeId) return;
+        await api.argueTessera(contestingEdge.source, {
+            design_space_id: themeId,
+            relation_type: relationType,
+            target_tessera_id: contestingEdge.target,
+        });
+        setContestingEdge(null);
     };
 
     // Context Menu State
@@ -257,7 +277,9 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                         version_id: cl.version_id,
                         evidence_text: cl.evidence_text,
                         evidence_url: cl.evidence_url,
-                        onOpenThread: handleOpenThread
+                        onOpenThread: handleOpenThread,
+                        onArgue: !isReadOnly ? handleArgue : undefined,
+                        isReadOnly
                     }
                 };
             });
@@ -449,6 +471,15 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                     />
                 )
             }
+
+            {contestingEdge && (
+                <ContestClaimDialog
+                    open={!!contestingEdge}
+                    onOpenChange={(open) => { if (!open) setContestingEdge(null); }}
+                    claimLabel={contestingEdge.statement || 'Causaliteitsrelatie'}
+                    onSubmit={handleContestSubmit}
+                />
+            )}
 
             {floatingThread && (
                 <FloatingThreadPanel
