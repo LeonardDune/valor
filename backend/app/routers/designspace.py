@@ -17,6 +17,7 @@ from app.models.domain import (
     DesignSpaceCreate, DesignSpaceResponse, Role,
     DesignAlternativeCreate, DesignAlternativeResponse,
     PhaseTransitionRequest, PhaseTransitionResponse,
+    ParticipantAdd, ParticipantResponse,
 )
 from app.ontology import VALOR_NS
 from app.services.fuseki import (
@@ -343,3 +344,121 @@ async def phase_transition(
         decision_episode_uri=episode_uri,
         transitioned_at=transitioned_at,
     )
+
+
+# ── Participant endpoints ─────────────────────────────────────────────────────
+
+@router.post("/{design_space_id}/participants", response_model=ParticipantResponse, status_code=201)
+async def add_participant(
+    design_space_id: str,
+    request: ParticipantAdd,
+    user: dict = Depends(get_current_user),
+) -> ParticipantResponse:
+    """Voeg een deelnemer toe aan een DesignSpace met een VALOR-O Participant-rol.
+
+    Vereist MEMBER-rechten. Slaat de rol op in Neo4j (HAS_ROLE) en registreert
+    een app:Participant triple in de base-graph van de DesignSpace in Fuseki.
+    """
+    from app.services.ontology_cache import get_participant_role_data
+    from app.db.permissions import assign_role
+
+    user_id = user["id"]
+
+    if not await check_permission(user_id, design_space_id, Role.MEMBER):
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    role_data = get_participant_role_data()
+    if request.valor_role not in role_data:
+        valid = list(role_data.keys()) or ["Initiator", "Facilitator", "Contributor", "Expert", "Observer", "Engineer"]
+        raise HTTPException(
+            status_code=422,
+            detail=f"Ongeldige VALOR-O rol '{request.valor_role}'. Geldige waarden: {valid}",
+        )
+
+    rol = role_data[request.valor_role]
+    rbac_role_str = rol["rbac_role"]
+    rbac_role = Role(rbac_role_str)
+
+    # Neo4j: HAS_ROLE relatie aanmaken
+    await assign_role(request.user_id, design_space_id, rbac_role)
+
+    # Fuseki: app:Participant triple in base-graph
+    APP_NS = f"{VALOR_NS}application#"
+    base_graph = f"urn:valor:ds:{design_space_id}/base"
+    participant_uri = f"urn:valor:participant:{design_space_id}:{request.user_id}"
+    role_uri = rol["uri"]
+    added_at = datetime.now(timezone.utc).isoformat()
+
+    sparql = f"""PREFIX app: <{APP_NS}>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+INSERT DATA {{
+  GRAPH <{base_graph}> {{
+    <{participant_uri}> a app:Participant ;
+      app:hasRole <{role_uri}> ;
+      app:participatesIn <urn:valor:ds:{design_space_id}> ;
+      app:participantInvitedAt "{added_at}"^^xsd:dateTime ;
+      app:participantInvitedBy <urn:valor:user:{user_id}> .
+  }}
+}}"""
+    await sparql_update(sparql, design_space_id)
+
+    logger.info("Participant %s toegevoegd aan DS %s als %s", request.user_id, design_space_id, request.valor_role)
+
+    return ParticipantResponse(
+        participant_uri=participant_uri,
+        user_id=request.user_id,
+        valor_role=request.valor_role,
+        rbac_role=rbac_role_str,
+        has_voting_right=rol["voting_right"],
+        added_at=added_at,
+    )
+
+
+@router.get("/{design_space_id}/participants", response_model=list[ParticipantResponse])
+async def list_participants(
+    design_space_id: str,
+    user: dict = Depends(get_current_user),
+) -> list[ParticipantResponse]:
+    """Geeft alle deelnemers van een DesignSpace terug."""
+    from app.services.ontology_cache import get_participant_role_data
+
+    user_id = user["id"]
+    if not await check_permission(user_id, design_space_id, Role.VIEWER):
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    APP_NS = f"{VALOR_NS}application#"
+    base_graph = f"urn:valor:ds:{design_space_id}/base"
+
+    rows = await sparql_select(f"""
+        PREFIX app: <{APP_NS}>
+        SELECT ?participant ?role ?invitedAt ?invitedBy WHERE {{
+          GRAPH <{base_graph}> {{
+            ?participant a app:Participant ;
+              app:hasRole ?role ;
+              app:participatesIn <urn:valor:ds:{design_space_id}> .
+            OPTIONAL {{ ?participant app:participantInvitedAt ?invitedAt . }}
+            OPTIONAL {{ ?participant app:participantInvitedBy ?invitedBy . }}
+          }}
+        }}
+    """, design_space_id)
+
+    role_data = get_participant_role_data()
+    uri_to_label = {d["uri"]: label for label, d in role_data.items()}
+
+    results = []
+    for row in rows:
+        p_uri = row["participant"]
+        role_uri = row["role"]
+        valor_role = uri_to_label.get(role_uri, role_uri.split("#")[-1])
+        rol = role_data.get(valor_role, {})
+        user_part = p_uri.split(":")[-1] if ":" in p_uri else p_uri
+        results.append(ParticipantResponse(
+            participant_uri=p_uri,
+            user_id=user_part,
+            valor_role=valor_role,
+            rbac_role=rol.get("rbac_role", "viewer"),
+            has_voting_right=rol.get("voting_right", False),
+            added_at=row.get("invitedAt", ""),
+        ))
+
+    return results

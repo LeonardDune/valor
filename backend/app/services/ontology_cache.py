@@ -25,12 +25,16 @@ _valid_transitions: dict[str, set[str]] = {}
 _requires_decision_episode: set[str] = set()
 _argue_label_to_uri: dict[str, str] = {}        # "undermines" → URI
 _uncertainty_label_to_uri: dict[str, str] = {}  # "StatisticalRisk" → URI
+# Participant roles: label → {uri, rbac_role, weight, voting_right}
+_participant_role_data: dict[str, dict] = {}
+# RBAC role weights derived from ontology: "admin" → 30
+_rbac_role_weights: dict[str, int] = {}
 
 
 async def load_ontology_cache() -> None:
     global _evidence_label_to_uri, _status_label_to_uri, _status_uri_to_label
     global _valid_transitions, _requires_decision_episode, _argue_label_to_uri
-    global _uncertainty_label_to_uri
+    global _uncertainty_label_to_uri, _participant_role_data, _rbac_role_weights
 
     logger.info("[ontology-cache] Ontologie-data laden van Fuseki...")
 
@@ -123,6 +127,40 @@ async def load_ontology_cache() -> None:
     _uncertainty_label_to_uri = {row["label"]: row["uri"] for row in uncertainty_rows}
     logger.info("[ontology-cache] Uncertainty levels (PAMS): %s", list(_uncertainty_label_to_uri.keys()))
 
+    APP_NS = f"{VALOR_NS}application#"
+    APP_GRAPH = f"{VALOR_NS}application"
+    role_rows = await sparql_select_global(f"""
+        PREFIX app: <{APP_NS}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+        SELECT ?uri ?label ?rbac ?weight ?voting WHERE {{
+          GRAPH <{APP_GRAPH}> {{
+            ?uri app:mapsToRBACRole ?rbac ;
+                 app:roleWeight ?weight ;
+                 app:hasVotingRight ?voting ;
+                 rdfs:label ?label .
+            FILTER(lang(?label) = "en")
+          }}
+        }}
+    """)
+    _participant_role_data = {}
+    _rbac_role_weights = {}
+    for row in role_rows:
+        label = row["label"]
+        rbac = row["rbac"]
+        weight = int(row["weight"])
+        voting = str(row["voting"]).lower() == "true"
+        _participant_role_data[label] = {
+            "uri": row["uri"],
+            "rbac_role": rbac,
+            "weight": weight,
+            "voting_right": voting,
+        }
+        if rbac not in _rbac_role_weights or weight > _rbac_role_weights[rbac]:
+            _rbac_role_weights[rbac] = weight
+    logger.info("[ontology-cache] ParticipantRoles: %s", list(_participant_role_data.keys()))
+    logger.info("[ontology-cache] RBAC gewichten: %s", _rbac_role_weights)
+
     if not _evidence_label_to_uri or not _status_label_to_uri or not _valid_transitions:
         logger.warning(
             "[ontology-cache] Ontologie-cache onvolledig. "
@@ -160,3 +198,30 @@ def get_uncertainty_label_to_uri() -> dict[str, str]:
 
 def get_shacl_shapes_graph() -> str:
     return _shacl_shapes_graph
+
+
+def get_participant_role_data() -> dict[str, dict]:
+    """label → {uri, rbac_role, weight, voting_right}"""
+    return _participant_role_data
+
+
+def get_rbac_role_weights() -> dict[str, int]:
+    """rbac_role → max weight (derived from ontology ParticipantRole instances)"""
+    return _rbac_role_weights
+
+
+def has_voting_right(valor_role_label: str) -> bool:
+    """True als de VALOR-O rol stemrecht heeft (uit ontologie)."""
+    return _participant_role_data.get(valor_role_label, {}).get("voting_right", False)
+
+
+def rbac_to_valor_role(rbac_role: str) -> str:
+    """Geeft de primaire VALOR-O rol-label voor een Neo4j RBAC-rol.
+    Kiest de rol met het hoogste gewicht als er meerdere mappen."""
+    best_label = "Observer"
+    best_weight = -1
+    for label, data in _participant_role_data.items():
+        if data["rbac_role"] == rbac_role and data["weight"] > best_weight:
+            best_label = label
+            best_weight = data["weight"]
+    return best_label
