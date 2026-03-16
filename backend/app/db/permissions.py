@@ -42,12 +42,12 @@ async def check_permission(user_id: str, entity_id: str, required_role: Role) ->
     # We need to traverse UP from the entity to find if the user has a role on it or any parent.
     # We also need to check role hierarchy (Admin allows everything).
     
-    # Role Hierarchy Map integer for comparison
-    role_weights = {
-        Role.ADMIN.value: 30,
-        Role.MEMBER.value: 20,
-        Role.VIEWER.value: 10
-    }
+    from app.services.ontology_cache import get_rbac_role_weights
+    role_weights = get_rbac_role_weights()
+    if not role_weights:
+        # Fallback tijdens startup vóór ontologie geladen is
+        role_weights = {Role.ADMIN.value: 30, Role.MODERATOR.value: 25,
+                        Role.MEMBER.value: 20, Role.VIEWER.value: 10}
     required_weight = role_weights.get(required_role.value, 0)
 
     query = """

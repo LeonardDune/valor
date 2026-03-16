@@ -239,6 +239,20 @@ class PhaseTransitionResponse(BaseModel):
     decision_episode_uri: str
     transitioned_at: str
 
+class ParticipantAdd(BaseModel):
+    user_id: str
+    valor_role: str  # "Initiator", "Facilitator", "Contributor", "Expert", "Observer", "Engineer"
+
+
+class ParticipantResponse(BaseModel):
+    participant_uri: str
+    user_id: str
+    valor_role: str
+    rbac_role: str
+    has_voting_right: bool
+    added_at: str
+
+
 class ThreadCreate(BaseModel):
     topic: str
     target_id: Optional[str] = None # Optional for legacy version threads, required for generic
