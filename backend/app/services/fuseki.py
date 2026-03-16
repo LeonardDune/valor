@@ -1,6 +1,8 @@
 import os
 import logging
-from typing import Any
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Optional
 
 import httpx
 from fastapi import HTTPException
@@ -284,6 +286,68 @@ async def initialize_alternative_graph(
 }}"""
     await sparql_update(update, ds_id)
     return alt_uri
+
+
+PROV_NS = "https://www.w3.org/ns/prov#"
+XSD_NS = "http://www.w3.org/2001/XMLSchema#"
+
+_OPERATION_TYPE_URI = {
+    "TesseraCreated": "urn:valor:op:TesseraCreated",
+    "StatusChanged":  "urn:valor:op:StatusChanged",
+    "ArgumentAdded":  "urn:valor:op:ArgumentAdded",
+}
+
+
+async def record_provenance_activity(
+    ds_id: str,
+    operation_type: str,
+    user_uri: str,
+    *,
+    generated: Optional[str] = None,
+    used: Optional[list[str]] = None,
+    extra_props: Optional[list[tuple[str, str]]] = None,
+) -> str:
+    """Schrijft een prov:Activity naar de provenance-graph van de DesignSpace.
+
+    Args:
+        ds_id:          DesignSpace-ID (gebruikt voor de provenance-graph URI).
+        operation_type: "TesseraCreated" | "StatusChanged" | "ArgumentAdded"
+        user_uri:       URI van de uitvoerende gebruiker.
+        generated:      URI van het gemaakte object (bv. tessera_uri bij aanmaak).
+        used:           Lijst van gebruikte object-URIs.
+        extra_props:    Lijst van (predicate_uri, object_uri) tuples voor extra triples
+                        op de activity. Beide als volledige URIs (geen literals).
+
+    Returns:
+        activity_uri
+    """
+    prov_graph = f"urn:valor:ds:{ds_id}/provenance"
+    activity_id = str(uuid.uuid4())
+    activity_uri = f"urn:valor:activity:{activity_id}"
+    op_uri = _OPERATION_TYPE_URI.get(operation_type, f"urn:valor:op:{operation_type}")
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    lines = [
+        f"<{activity_uri}> a <{PROV_NS}Activity> ;",
+        f'  <{PROV_NS}wasAttributedTo> <{user_uri}> ;',
+        f'  <{PROV_NS}startedAtTime> "{timestamp}"^^<{XSD_NS}dateTime> ;',
+        f"  <urn:valor:operationType> <{op_uri}> .",
+    ]
+    if generated:
+        lines.append(f"<{activity_uri}> <{PROV_NS}generated> <{generated}> .")
+    for u in (used or []):
+        lines.append(f"<{activity_uri}> <{PROV_NS}used> <{u}> .")
+    for pred_uri, obj_uri in (extra_props or []):
+        lines.append(f"<{activity_uri}> <{pred_uri}> <{obj_uri}> .")
+
+    body = "\n    ".join(lines)
+    update = f"""INSERT DATA {{
+  GRAPH <{prov_graph}> {{
+    {body}
+  }}
+}}"""
+    await sparql_update(update, ds_id)
+    return activity_uri
 
 
 async def sparql_construct(query: str, named_graph: str) -> str:
