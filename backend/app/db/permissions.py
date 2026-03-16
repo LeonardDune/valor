@@ -24,9 +24,9 @@ async def assign_role(user_id: str, entity_id: str, role: Role):
             result = session.run(query, {"uid": user_id, "entity_id": entity_id, "role": role.value})
             info = result.consume()
             if info.counters.relationships_created > 0 or info.counters.properties_set > 0:
-                logger.info(f"Assigned role {role.value} to user {user_email} on entity {entity_id}")
+                logger.info(f"Assigned role {role.value} to user {user_id} on entity {entity_id}")
             else:
-                 logger.warning(f"Role assignment check: User {user_email} or Entity {entity_id} might not exist.")
+                logger.warning(f"Role assignment check: User {user_id} or Entity {entity_id} might not exist.")
     except Exception as e:
         logger.error(f"Failed to assign role: {e}")
         raise e
