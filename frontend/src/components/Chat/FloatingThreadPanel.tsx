@@ -46,7 +46,7 @@ function shortUri(uri: string): string {
 
 interface FloatingThreadPanelProps {
     tesseraId: string;
-    designSpaceId: string;
+    designSpaceId?: string;
     targetLabel?: string;
     onClose: () => void;
     onThreadCreated?: () => void;
@@ -72,13 +72,14 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        loadThreads();
+        if (designSpaceId) loadThreads();
     }, [tesseraId, designSpaceId]);
 
     const loadThreads = async () => {
+        if (!designSpaceId) return;
         setLoading(true);
         try {
-            const data = await api.getDiscThreads(tesseraId, designSpaceId);
+            const data = await api.getDiscThreads(tesseraId, designSpaceId!);
             setThreads(data);
             if (data.length === 1) {
                 await openThread(data[0]);
@@ -94,7 +95,7 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
         setActiveThread(thread);
         setLoading(true);
         try {
-            const data = await api.getDiscContributions(thread.thread_id, designSpaceId);
+            const data = await api.getDiscContributions(thread.thread_id, designSpaceId!);
             setContributions(data);
             setView('contributions');
         } catch (e) {
@@ -108,7 +109,7 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
         if (readOnly) return;
         setLoading(true);
         try {
-            await api.createDiscThread(tesseraId, designSpaceId);
+            await api.createDiscThread(tesseraId, designSpaceId!);
             onThreadCreated?.();
             await loadThreads();
         } catch (e) {
@@ -124,12 +125,12 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
 
         try {
             await api.createDiscContribution(activeThread.thread_id, {
-                design_space_id: designSpaceId,
+                design_space_id: designSpaceId!,
                 contribution_type: newType,
                 message_content: newMessage.trim(),
             });
             setNewMessage('');
-            const data = await api.getDiscContributions(activeThread.thread_id, designSpaceId);
+            const data = await api.getDiscContributions(activeThread.thread_id, designSpaceId!);
             setContributions(data);
         } catch (e) {
             console.error('[FloatingThreadPanel] handleSendContribution:', e);
@@ -175,12 +176,19 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
 
             {/* Content */}
             <CardContent className="flex-1 overflow-hidden flex flex-col p-0">
-                {loading && (
+                {!designSpaceId && (
+                    <div className="p-6 text-center text-xs text-muted-foreground">
+                        <MessageSquare className="h-6 w-6 mx-auto mb-2 opacity-20" />
+                        <p>Geen DesignSpace gekoppeld.</p>
+                        <p className="mt-1 opacity-70">Discussies zijn beschikbaar in een actieve DesignSpace.</p>
+                    </div>
+                )}
+                {designSpaceId && loading && (
                     <div className="p-4 text-center text-xs text-muted-foreground">Laden...</div>
                 )}
 
                 {/* Thread list */}
-                {!loading && view === 'list' && (
+                {designSpaceId && !loading && view === 'list' && (
                     <ScrollArea className="flex-1">
                         {threads.length === 0 ? (
                             <div className="p-8 text-center text-muted-foreground">
@@ -232,7 +240,7 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
                 )}
 
                 {/* Contributions view */}
-                {!loading && view === 'contributions' && (
+                {designSpaceId && !loading && view === 'contributions' && (
                     <>
                         <ScrollArea className="flex-1 p-3">
                             <div className="space-y-3">

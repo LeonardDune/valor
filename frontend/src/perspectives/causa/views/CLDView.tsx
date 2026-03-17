@@ -438,7 +438,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                 )
             }
 
-            {floatingThread && designSpaceId && (
+            {floatingThread && (
                 <FloatingThreadPanel
                     tesseraId={floatingThread.targetId}
                     designSpaceId={designSpaceId}
