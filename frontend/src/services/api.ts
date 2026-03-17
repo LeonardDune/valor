@@ -546,33 +546,34 @@ export const api = {
         return response.data;
     },
 
-    // Threads
-    getThreads: async (targetId: string): Promise<ConversationThread[]> => {
-        const response = await apiClient.get<ConversationThread[]>('/threads', { params: { target_id: targetId } });
+    // Threads (Fuseki-backed disc endpoints, Epic 16)
+    getDiscThreads: async (tesseraId: string, designSpaceId: string): Promise<DiscThread[]> => {
+        const response = await apiClient.get<DiscThread[]>('/threads', {
+            params: { tessera_id: tesseraId, design_space_id: designSpaceId },
+        });
         return response.data;
     },
 
-    createThread: async (targetId: string, topic: string): Promise<ConversationThread> => {
-        const response = await apiClient.post('/threads', { target_id: targetId, topic });
-        return {
-            ...response.data,
-            status: 'open',
-            created_at: new Date().toISOString()
-        } as ConversationThread;
-    },
-
-    getThreadStats: async (targetIds: string[]): Promise<Record<string, number>> => {
-        const response = await apiClient.post<Record<string, number>>('/threads/stats', targetIds);
+    createDiscThread: async (tesseraId: string, designSpaceId: string): Promise<{ thread_id: string }> => {
+        const response = await apiClient.post<{ thread_id: string }>('/threads', {
+            tessera_id: tesseraId,
+            design_space_id: designSpaceId,
+        });
         return response.data;
     },
 
-    createThreadMessage: async (threadId: string, content: string): Promise<ConversationMessage> => {
-        const response = await apiClient.post<ConversationMessage>(`/threads/${threadId}/messages`, { content });
+    getDiscContributions: async (threadId: string, designSpaceId: string): Promise<DiscContribution[]> => {
+        const response = await apiClient.get<DiscContribution[]>(`/threads/${threadId}/contributions`, {
+            params: { design_space_id: designSpaceId },
+        });
         return response.data;
     },
 
-    getThreadMessages: async (threadId: string): Promise<ConversationMessage[]> => {
-        const response = await apiClient.get<ConversationMessage[]>(`/threads/${threadId}/messages`);
+    createDiscContribution: async (
+        threadId: string,
+        body: { design_space_id: string; contribution_type: string; message_content: string; evidence_id?: string }
+    ): Promise<{ contribution_id: string }> => {
+        const response = await apiClient.post<{ contribution_id: string }>(`/threads/${threadId}/contribute`, body);
         return response.data;
     },
 
@@ -593,6 +594,28 @@ export interface ConversationMessage {
     content: string;
     role: 'user' | 'assistant';
     created_at: string;
+}
+
+// Disc (Fuseki-backed deliberation threads, Epic 16)
+export interface DiscThread {
+    thread_id: string;
+    thread_uri: string;
+    tessera_id: string;
+    design_space_id: string;
+    started_by: string;
+    started_at: string;
+}
+
+export interface DiscContribution {
+    contribution_id: string;
+    contribution_uri: string;
+    thread_id: string;
+    design_space_id: string;
+    contribution_type: string;
+    message_content: string;
+    contributed_by: string;
+    contributed_at: string;
+    evidence_id: string | null;
 }
 
 export type LifecycleStatus = 'draft' | 'proposed' | 'accepted' | 'rejected' | 'deprecated';
