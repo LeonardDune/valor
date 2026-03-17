@@ -51,6 +51,92 @@ INSERT DATA {{
     return thread_id
 
 
+async def create_thread_contribution(
+    thread_id: str,
+    design_space_id: str,
+    user_id: str,
+    contribution_type_uri: str,
+    message_content: str,
+    evidence_id: str | None = None,
+) -> str:
+    """Schrijft een disc:ThreadContribution naar de named graph van de DesignSpace.
+
+    Koppelt de bijdrage aan de thread via disc:hasContribution.
+    Retourneert het contribution_id (UUID).
+    """
+    contrib_id = str(uuid.uuid4())
+    contrib_uri = f"urn:valor:contrib:{contrib_id}"
+    thread_uri = f"urn:valor:thread:{thread_id}"
+    user_uri = f"urn:valor:user:{user_id}"
+    graph_uri = named_graph_uri(design_space_id)
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    escaped_content = message_content.replace("\\", "\\\\").replace('"', '\\"')
+
+    evidence_triple = ""
+    if evidence_id:
+        evidence_uri = f"urn:valor:evidence:{evidence_id}"
+        evidence_triple = f'\n      disc:attachesEvidence <{evidence_uri}> ;'
+
+    update = f"""PREFIX disc: <{DISC_NS}>
+PREFIX prov: <{PROV_NS}>
+PREFIX xsd:  <{XSD_NS}>
+PREFIX valor: <{VALOR_NS_BASE}>
+
+INSERT DATA {{
+  GRAPH <{graph_uri}> {{
+    <{contrib_uri}> a disc:ThreadContribution ;
+      disc:contributionType <{contribution_type_uri}> ;
+      valor:messageContent "{escaped_content}"@nl ;{evidence_triple}
+      prov:wasAssociatedWith <{user_uri}> ;
+      prov:endedAtTime "{timestamp}"^^xsd:dateTime .
+    <{thread_uri}> disc:hasContribution <{contrib_uri}> .
+  }}
+}}"""
+
+    await sparql_update(update, design_space_id)
+    logger.info("ThreadContribution %s toegevoegd aan thread %s", contrib_uri, thread_uri)
+    return contrib_id
+
+
+async def get_contributions_by_thread(
+    thread_id: str,
+    design_space_id: str,
+) -> list[dict[str, Any]]:
+    """Geeft alle disc:ThreadContributions voor een thread, gesorteerd op tijd."""
+    thread_uri = f"urn:valor:thread:{thread_id}"
+
+    query = f"""PREFIX disc: <{DISC_NS}>
+PREFIX prov: <{PROV_NS}>
+PREFIX valor: <{VALOR_NS_BASE}>
+
+SELECT ?contrib_uri ?contribution_type ?message_content ?associated_with ?ended_at ?evidence WHERE {{
+  <{thread_uri}> disc:hasContribution ?contrib_uri .
+  ?contrib_uri disc:contributionType ?contribution_type ;
+               valor:messageContent ?message_content ;
+               prov:wasAssociatedWith ?associated_with ;
+               prov:endedAtTime ?ended_at .
+  OPTIONAL {{ ?contrib_uri disc:attachesEvidence ?evidence . }}
+}}
+ORDER BY ASC(?ended_at)"""
+
+    rows = await sparql_select(query, design_space_id)
+    return [
+        {
+            "contribution_id": row["contrib_uri"].split(":")[-1],
+            "contribution_uri": row["contrib_uri"],
+            "thread_id": thread_id,
+            "design_space_id": design_space_id,
+            "contribution_type": row["contribution_type"],
+            "message_content": row["message_content"],
+            "contributed_by": row["associated_with"],
+            "contributed_at": row["ended_at"],
+            "evidence_id": row["evidence"].split(":")[-1] if row.get("evidence") else None,
+        }
+        for row in rows
+    ]
+
+
 async def get_threads_by_tessera(
     tessera_id: str,
     design_space_id: str,
