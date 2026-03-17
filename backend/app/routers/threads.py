@@ -1,58 +1,68 @@
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List, Dict, Optional
+"""Discussiethreads router — Fuseki-backed (Epic 16, US-16.2).
+
+Vervangt de Neo4j-implementatie. Threads worden opgeslagen als
+disc:DiscussionThread in de named graph van de DesignSpace.
+"""
 import logging
-from app.models.domain import ThreadCreate, ThreadMessageCreate
-from app.db.crud import (
-    create_conversation_thread, 
-    get_threads_by_target, 
-    get_thread_counts, 
-    create_thread_message, 
-    get_thread_messages
-)
-from app.auth import get_current_user, verify_token
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+
+from app.auth import get_current_user
+from app.db.disc import create_discussion_thread, get_threads_by_tessera
+from app.db.permissions import check_permission
+from app.models.domain import Role
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     tags=["threads"],
     responses={404: {"description": "Not found"}},
 )
 
-logger = logging.getLogger(__name__)
 
-@router.post("/threads")
-async def create_thread_generic(thread: ThreadCreate, user: dict = Depends(get_current_user)):
-    # Check permissions (Member access okay for creating threads? Or Admin? Intent says "Participant", so Member is likely fine.)
-    # Let's enforce Membership at least.
-    email = user.get("email")
-    # For now, relying on space existing. Ideally check `is_member`.
-    # Assuming if you can see the space, you can create a thread.
-    # Refine later if strict permissions needed.
-    
-    target_id = thread.target_id
-    if not target_id:
-         raise HTTPException(status_code=400, detail="target_id is required for generic threads")
+class CreateThreadRequest(BaseModel):
+    tessera_id: str
+    design_space_id: str
 
-    tid = await create_conversation_thread(target_id, thread.topic)
-    return {"id": tid, "topic": thread.topic}
 
-@router.get("/threads")
-async def list_threads_generic(target_id: str, user: dict = Depends(get_current_user)):
-    # target_id passed as query param
-    return await get_threads_by_target(target_id)
+class ThreadResponse(BaseModel):
+    thread_id: str
+    thread_uri: str
+    tessera_id: str
+    design_space_id: str
+    started_by: str
+    started_at: str
 
-@router.post("/threads/stats")
-async def get_thread_stats(target_ids: List[str], user: dict = Depends(get_current_user)):
-    return await get_thread_counts(target_ids)
 
-@router.post("/threads/{thread_id}/messages")
-async def add_thread_message(thread_id: str, message: ThreadMessageCreate, user: dict = Depends(get_current_user)):
-    user_id = user.get("id")
-    if not user_id:
-        logger.error(f"User from dependency missing ID field: {user}")
-        raise HTTPException(status_code=500, detail="User identity error")
-        
-    logger.info(f"Adding message to thread {thread_id} for user {user_id}")
-    return await create_thread_message(thread_id, user_id, message.content)
+@router.post("/threads", response_model=dict[str, str], status_code=201)
+async def create_thread(
+    request: CreateThreadRequest,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    user_id = user["id"]
+    has_permission = await check_permission(user_id, request.design_space_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten om een discussiethread aan te maken.")
 
-@router.get("/threads/{thread_id}/messages")
-async def list_thread_messages(thread_id: str, user: dict = Depends(get_current_user)):
-    return await get_thread_messages(thread_id)
+    thread_id = await create_discussion_thread(
+        tessera_id=request.tessera_id,
+        design_space_id=request.design_space_id,
+        user_id=user_id,
+    )
+    return {"thread_id": thread_id}
+
+
+@router.get("/threads", response_model=list[ThreadResponse])
+async def list_threads(
+    tessera_id: str = Query(..., description="ID van de Tessera"),
+    design_space_id: str = Query(..., description="ID van de DesignSpace"),
+    user: dict = Depends(get_current_user),
+) -> list[dict[str, Any]]:
+    user_id = user["id"]
+    has_permission = await check_permission(user_id, design_space_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten om threads op te halen.")
+
+    return await get_threads_by_tessera(tessera_id=tessera_id, design_space_id=design_space_id)
