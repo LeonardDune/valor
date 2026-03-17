@@ -137,6 +137,65 @@ ORDER BY ASC(?ended_at)"""
     ]
 
 
+async def get_thread_tessera(thread_id: str, design_space_id: str) -> str | None:
+    """Geeft de tessera_uri van een thread, of None als de thread niet bestaat."""
+    thread_uri = f"urn:valor:thread:{thread_id}"
+
+    query = f"""PREFIX disc: <{DISC_NS}>
+
+SELECT ?tessera WHERE {{
+  <{thread_uri}> disc:aboutTessera ?tessera .
+}}"""
+
+    rows = await sparql_select(query, design_space_id)
+    return rows[0]["tessera"] if rows else None
+
+
+async def create_thread_resolution(
+    thread_id: str,
+    design_space_id: str,
+    user_id: str,
+    resolution_outcome_uri: str,
+    resolution_rationale: str,
+    tessera_uri: str,
+) -> str:
+    """Schrijft een disc:ThreadResolution naar de named graph van de DesignSpace.
+
+    Koppelt de resolution aan de thread via disc:hasResolution en registreert
+    disc:motivatesArgue als traceerbaarheidsrelatie naar de target Tessera.
+    Retourneert resolution_id (UUID).
+    """
+    resolution_id = str(uuid.uuid4())
+    resolution_uri = f"urn:valor:resolution:{resolution_id}"
+    thread_uri = f"urn:valor:thread:{thread_id}"
+    user_uri = f"urn:valor:user:{user_id}"
+    graph_uri = named_graph_uri(design_space_id)
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    escaped_rationale = resolution_rationale.replace("\\", "\\\\").replace('"', '\\"')
+
+    update = f"""PREFIX disc: <{DISC_NS}>
+PREFIX prov: <{PROV_NS}>
+PREFIX xsd:  <{XSD_NS}>
+PREFIX valor: <{VALOR_NS_BASE}>
+
+INSERT DATA {{
+  GRAPH <{graph_uri}> {{
+    <{resolution_uri}> a disc:ThreadResolution ;
+      disc:resolutionOutcome <{resolution_outcome_uri}> ;
+      valor:resolutionRationale "{escaped_rationale}"@nl ;
+      prov:wasAttributedTo <{user_uri}> ;
+      prov:generatedAtTime "{timestamp}"^^xsd:dateTime ;
+      disc:motivatesArgue <{tessera_uri}> .
+    <{thread_uri}> disc:hasResolution <{resolution_uri}> .
+  }}
+}}"""
+
+    await sparql_update(update, design_space_id)
+    logger.info("ThreadResolution %s aangemaakt voor thread %s", resolution_uri, thread_uri)
+    return resolution_id
+
+
 async def get_threads_by_tessera(
     tessera_id: str,
     design_space_id: str,
