@@ -40,6 +40,7 @@ interface CLDViewProps {
     onConnect?: (connection: Connection) => void;
     isReadOnly?: boolean;
     designSpaceId?: string;
+    canResolveThread?: boolean;
 }
 
 
@@ -68,6 +69,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     onConnect,
     isReadOnly = false,
     designSpaceId,
+    canResolveThread = false,
 }) => {
     // React Flow State
     const [rfInstance, setRfInstance] = useState<any>(null);
@@ -450,6 +452,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                     }}
                     onThreadCreated={fetchThreadStats}
                     readOnly={isReadOnly}
+                    canResolve={canResolveThread}
                 />
             )}
         </div >

@@ -554,7 +554,26 @@ export const api = {
         return response.data;
     },
 
+    // Ontologie endpoints
+    getEpistemicStatuses: async (): Promise<{ uri: string; label_en: string; label_nl: string }[]> => {
+        const response = await apiClient.get('/ontology/epistemic-statuses');
+        return response.data;
+    },
+
     // Threads (Fuseki-backed disc endpoints, Epic 16)
+    getCanResolveThread: async (designSpaceId: string): Promise<{ can_resolve: boolean }> => {
+        const response = await apiClient.get<{ can_resolve: boolean }>(`/designspace/${designSpaceId}/can-resolve`);
+        return response.data;
+    },
+
+    resolveDiscThread: async (
+        threadId: string,
+        body: { design_space_id: string; resolution_outcome: string; resolution_rationale: string }
+    ): Promise<{ resolution_id: string; thread_id: string; tessera_id: string; previous_status: string; new_status: string }> => {
+        const response = await apiClient.post(`/threads/${threadId}/resolve`, body);
+        return response.data;
+    },
+
     getDiscThreads: async (tesseraId: string, designSpaceId: string): Promise<DiscThread[]> => {
         const response = await apiClient.get<DiscThread[]>('/threads', {
             params: { tessera_id: tesseraId, design_space_id: designSpaceId },

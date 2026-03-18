@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Send, MessageSquare } from 'lucide-react';
+import { X, Send, MessageSquare, Gavel } from 'lucide-react';
 import { api, type DiscThread, type DiscContribution } from '../../services/api';
+import { Textarea } from '../ui/textarea';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { ScrollArea } from '../ui/scroll-area';
@@ -44,6 +45,12 @@ function shortUri(uri: string): string {
     return uri.split(':').pop() ?? uri;
 }
 
+interface EpistemicStatus {
+    uri: string;
+    label_en: string;
+    label_nl: string;
+}
+
 interface FloatingThreadPanelProps {
     tesseraId: string;
     designSpaceId?: string;
@@ -52,6 +59,7 @@ interface FloatingThreadPanelProps {
     onThreadCreated?: () => void;
     position?: { x: number; y: number };
     readOnly?: boolean;
+    canResolve?: boolean;
 }
 
 export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
@@ -62,6 +70,7 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
     onThreadCreated,
     position,
     readOnly = false,
+    canResolve = false,
 }) => {
     const [view, setView] = useState<'list' | 'contributions'>('list');
     const [threads, setThreads] = useState<DiscThread[]>([]);
@@ -72,9 +81,22 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
     const [loading, setLoading] = useState(false);
     const [newTitle, setNewTitle] = useState('');
 
+    // Resolution state
+    const [epistemicStatuses, setEpistemicStatuses] = useState<EpistemicStatus[]>([]);
+    const [resolveOutcome, setResolveOutcome] = useState('');
+    const [resolveRationale, setResolveRationale] = useState('');
+    const [resolving, setResolving] = useState(false);
+    const [resolveResult, setResolveResult] = useState<{ label_nl: string } | null>(null);
+
     useEffect(() => {
         if (designSpaceId) loadThreads();
     }, [tesseraId, designSpaceId]);
+
+    useEffect(() => {
+        if (canResolve && view === 'contributions') {
+            api.getEpistemicStatuses().then(setEpistemicStatuses).catch(() => {});
+        }
+    }, [canResolve, view]);
 
     const loadThreads = async () => {
         if (!designSpaceId) return;
@@ -94,6 +116,9 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
 
     const openThread = async (thread: DiscThread) => {
         setActiveThread(thread);
+        setResolveResult(null);
+        setResolveOutcome('');
+        setResolveRationale('');
         setLoading(true);
         try {
             const data = await api.getDiscContributions(thread.thread_id, designSpaceId!);
@@ -139,13 +164,32 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
         }
     };
 
+    const handleResolve = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!activeThread || !resolveOutcome || !resolveRationale.trim()) return;
+        setResolving(true);
+        try {
+            await api.resolveDiscThread(activeThread.thread_id, {
+                design_space_id: designSpaceId!,
+                resolution_outcome: resolveOutcome,
+                resolution_rationale: resolveRationale.trim(),
+            });
+            const status = epistemicStatuses.find(s => s.label_en === resolveOutcome);
+            setResolveResult({ label_nl: status?.label_nl ?? resolveOutcome });
+        } catch (e) {
+            console.error('[FloatingThreadPanel] handleResolve:', e);
+        } finally {
+            setResolving(false);
+        }
+    };
+
     return (
         <Card
             className="fixed z-50 w-80 shadow-2xl flex flex-col overflow-hidden"
             style={{
                 left: position ? position.x : '50%',
                 top: position ? position.y : '50%',
-                maxHeight: '520px',
+                maxHeight: '560px',
                 transform: position ? 'none' : 'translate(-50%, -50%)',
             }}
         >
@@ -296,7 +340,16 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
                             </div>
                         </ScrollArea>
 
-                        {!readOnly && (
+                        {/* Resolution banner (na succesvolle resolve) */}
+                        {resolveResult && (
+                            <div className="px-3 py-2 bg-emerald-50 border-t border-emerald-200 text-xs text-emerald-800 flex items-center gap-1.5">
+                                <Gavel className="h-3.5 w-3.5 shrink-0" />
+                                <span>Thread afgesloten als <strong>{resolveResult.label_nl}</strong></span>
+                            </div>
+                        )}
+
+                        {/* Contribution form */}
+                        {!readOnly && !resolveResult && (
                             <form onSubmit={handleSendContribution} className="p-2 border-t space-y-2">
                                 <Select
                                     value={newType}
@@ -329,6 +382,48 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
                                         <Send className="h-3.5 w-3.5" />
                                     </Button>
                                 </div>
+                            </form>
+                        )}
+
+                        {/* Resolution form (alleen voor moderator) */}
+                        {canResolve && !resolveResult && (
+                            <form onSubmit={handleResolve} className="p-2 border-t space-y-2 bg-muted/10">
+                                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
+                                    <Gavel className="h-3 w-3" />
+                                    Afsluiten
+                                </div>
+                                <Select
+                                    value={resolveOutcome}
+                                    onValueChange={setResolveOutcome}
+                                >
+                                    <SelectTrigger className="h-7 text-xs">
+                                        <SelectValue placeholder="Uitkomst kiezen..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {epistemicStatuses.map(s => (
+                                            <SelectItem key={s.uri} value={s.label_en} className="text-xs">
+                                                {s.label_nl}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <Textarea
+                                    value={resolveRationale}
+                                    onChange={e => setResolveRationale(e.target.value)}
+                                    placeholder="Motivatie voor afsluiting..."
+                                    className="text-xs min-h-[48px] resize-none"
+                                    rows={2}
+                                />
+                                <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="outline"
+                                    className="w-full h-7 text-xs"
+                                    disabled={!resolveOutcome || !resolveRationale.trim() || resolving}
+                                >
+                                    <Gavel className="h-3 w-3 mr-1.5" />
+                                    {resolving ? 'Bezig...' : 'Thread Afsluiten'}
+                                </Button>
                             </form>
                         )}
                     </>

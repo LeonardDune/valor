@@ -31,6 +31,7 @@ _participant_role_data: dict[str, dict] = {}
 # RBAC role weights derived from ontology: "admin" → 30
 _rbac_role_weights: dict[str, int] = {}
 _disc_contribution_type_label_to_uri: dict[str, str] = {}  # "Vraag" → URI
+_status_uri_to_nl_label: dict[str, str] = {}  # URI → "Betwist" etc.
 
 
 _DISC_GRAPH = f"{VALOR_NS}disc"
@@ -40,7 +41,7 @@ async def load_ontology_cache() -> None:
     global _evidence_label_to_uri, _status_label_to_uri, _status_uri_to_label
     global _valid_transitions, _requires_decision_episode, _argue_label_to_uri
     global _uncertainty_label_to_uri, _participant_role_data, _rbac_role_weights
-    global _disc_contribution_type_label_to_uri
+    global _disc_contribution_type_label_to_uri, _status_uri_to_nl_label
 
     logger.info("[ontology-cache] Ontologie-data laden van Fuseki...")
 
@@ -72,6 +73,20 @@ async def load_ontology_cache() -> None:
     _status_label_to_uri = {row["label"]: row["uri"] for row in status_rows}
     _status_uri_to_label = {v: k for k, v in _status_label_to_uri.items()}
     logger.info("[ontology-cache] Epistemic statuses: %s", list(_status_label_to_uri.keys()))
+
+    nl_status_rows = await sparql_select_global(f"""
+        PREFIX valor: <{VALOR_NS}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?uri ?label WHERE {{
+          GRAPH <{_TESSERA_GRAPH}> {{
+            ?uri a valor:EpistemicStatus ;
+                 rdfs:label ?label .
+            FILTER(lang(?label) = "nl")
+          }}
+        }}
+    """)
+    _status_uri_to_nl_label = {row["uri"]: row["label"] for row in nl_status_rows}
+    logger.info("[ontology-cache] Epistemic statuses (nl): %s", list(_status_uri_to_nl_label.values()))
 
     transition_rows = await sparql_select_global(f"""
         PREFIX valor: <{VALOR_NS}>
@@ -237,6 +252,14 @@ def has_voting_right(valor_role_label: str) -> bool:
 
 def get_disc_contribution_type_label_to_uri() -> dict[str, str]:
     return _disc_contribution_type_label_to_uri
+
+
+def get_epistemic_statuses() -> list[dict]:
+    """Retourneert alle EpistemicStatus instanties met Engels en Nederlands label."""
+    return [
+        {"uri": uri, "label_en": label_en, "label_nl": _status_uri_to_nl_label.get(uri, label_en)}
+        for label_en, uri in _status_label_to_uri.items()
+    ]
 
 
 def rbac_to_valor_role(rbac_role: str) -> str:
