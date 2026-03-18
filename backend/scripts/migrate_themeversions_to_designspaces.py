@@ -109,6 +109,7 @@ def _get_or_create_designspace_id(
     create_query = """
     MATCH (u:User {id: $uid})
     MATCH (p:Project {id: $pid})
+    MATCH (v:ThemeVersion {id: $vid})
     CREATE (ds:DesignSpace {
         id: $id,
         name: $name,
@@ -120,6 +121,7 @@ def _get_or_create_designspace_id(
         migrated_from_theme_version_id: $vid
     })
     CREATE (p)-[:HAS_DESIGN_SPACE]->(ds)
+    CREATE (v)-[:HAS_DESIGN_SPACE]->(ds)
     CREATE (u)-[:HAS_ROLE {role: 'admin', created_at: datetime()}]->(ds)
     RETURN ds.id AS id
     """
@@ -290,6 +292,21 @@ async def verify_checksum(ds_id: str, expected_factors: int, expected_claims: in
 
 
 # ---------------------------------------------------------------------------
+# Repair helpers
+# ---------------------------------------------------------------------------
+
+def _ensure_themeversion_designspace_rel(driver, theme_version_id: str, ds_id: str) -> None:
+    """Zorg dat ThemeVersion -[:HAS_DESIGN_SPACE]-> DesignSpace bestaat (idempotent)."""
+    query = """
+    MATCH (v:ThemeVersion {id: $vid})
+    MATCH (ds:DesignSpace {id: $dsid})
+    MERGE (v)-[:HAS_DESIGN_SPACE]->(ds)
+    """
+    with driver.session() as session:
+        session.run(query, {"vid": theme_version_id, "dsid": ds_id})
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -322,6 +339,8 @@ async def main(dry_run: bool):
         if existed:
             skipped += 1
             logger.info("[SKIP] ThemeVersion %s → DesignSpace %s (al gemigreerd)", vid, ds_id)
+            if not dry_run:
+                _ensure_themeversion_designspace_rel(driver, vid, ds_id)
             continue
 
         factors = _get_factors(driver, vid)
