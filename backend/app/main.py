@@ -102,6 +102,13 @@ async def root():
     return {"message": "Welcome to CAUSA API", "status": "running"}
 
 
+@app.get("/ontology/epistemic-statuses")
+async def list_epistemic_statuses():
+    """Retourneert alle EpistemicStatus instanties met Engels en Nederlands label (uit VALOR-O ontologie)."""
+    from app.services.ontology_cache import get_epistemic_statuses
+    return get_epistemic_statuses()
+
+
 @app.get("/health")
 async def health_check():
     is_connected = await verify_connectivity()

@@ -83,6 +83,17 @@ async def list_design_spaces_by_project(
     return get_design_spaces_by_project(project_id)
 
 
+@router.get("/{design_space_id}/can-resolve")
+async def can_resolve_thread(
+    design_space_id: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Geeft terug of de huidige gebruiker een thread mag resolveren (MODERATOR-rol vereist)."""
+    user_id = user["id"]
+    can = await check_permission(user_id, design_space_id, Role.MODERATOR)
+    return {"can_resolve": can}
+
+
 @router.post("/{design_space_id}/alternative/", response_model=DesignAlternativeResponse, status_code=201)
 async def create_alternative(
     design_space_id: str,
