@@ -18,6 +18,7 @@ async def create_discussion_thread(
     tessera_id: str,
     design_space_id: str,
     user_id: str,
+    title: str | None = None,
 ) -> str:
     """Schrijft een disc:DiscussionThread naar de named graph van de DesignSpace.
 
@@ -31,14 +32,17 @@ async def create_discussion_thread(
     graph_uri = named_graph_uri(design_space_id)
     timestamp = datetime.now(timezone.utc).isoformat()
 
+    title_triple = f'\n      rdfs:label "{title.replace(chr(34), chr(39))}"@nl ;' if title else ""
+
     update = f"""PREFIX disc: <{DISC_NS}>
 PREFIX prov: <{PROV_NS}>
 PREFIX xsd:  <{XSD_NS}>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX valor: <{VALOR_NS_BASE}>
 
 INSERT DATA {{
   GRAPH <{graph_uri}> {{
-    <{thread_uri}> a disc:DiscussionThread ;
+    <{thread_uri}> a disc:DiscussionThread ;{title_triple}
       prov:wasStartedBy <{user_uri}> ;
       prov:startedAtTime "{timestamp}"^^xsd:dateTime ;
       disc:aboutTessera <{tessera_uri}> ;
@@ -121,6 +125,8 @@ SELECT ?contrib_uri ?contribution_type ?message_content ?associated_with ?ended_
 ORDER BY ASC(?ended_at)"""
 
     rows = await sparql_select(query, design_space_id)
+    user_uris = list({r["associated_with"] for r in rows})
+    names = _get_user_display_names(user_uris)
     return [
         {
             "contribution_id": row["contrib_uri"].split(":")[-1],
@@ -130,6 +136,7 @@ ORDER BY ASC(?ended_at)"""
             "contribution_type": row["contribution_type"],
             "message_content": row["message_content"],
             "contributed_by": row["associated_with"],
+            "contributed_by_name": names.get(row["associated_with"], row["associated_with"].split(":")[-1]),
             "contributed_at": row["ended_at"],
             "evidence_id": row["evidence"].split(":")[-1] if row.get("evidence") else None,
         }
@@ -196,6 +203,23 @@ INSERT DATA {{
     return resolution_id
 
 
+def _get_user_display_names(user_uris: list[str]) -> dict[str, str]:
+    """Geeft een mapping van user-URI naar weergavenaam (username > name > email)."""
+    from app.db.utils import get_driver
+    if not user_uris:
+        return {}
+    user_ids = [u.split(":")[-1] for u in user_uris]
+    driver = get_driver()
+    query = """
+    UNWIND $ids AS uid
+    MATCH (u:User {id: uid})
+    RETURN uid, coalesce(u.username, u.name, u.email) AS display_name
+    """
+    with driver.session() as session:
+        rows = session.run(query, {"ids": user_ids})
+        return {f"urn:valor:user:{r['uid']}": r["display_name"] for r in rows}
+
+
 async def get_threads_by_tessera(
     tessera_id: str,
     design_space_id: str,
@@ -205,16 +229,20 @@ async def get_threads_by_tessera(
 
     query = f"""PREFIX disc: <{DISC_NS}>
 PREFIX prov: <{PROV_NS}>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT ?thread_uri ?started_by ?started_at WHERE {{
+SELECT ?thread_uri ?started_by ?started_at ?title WHERE {{
   ?thread_uri a disc:DiscussionThread ;
     disc:aboutTessera <{tessera_uri}> ;
     prov:wasStartedBy ?started_by ;
     prov:startedAtTime ?started_at .
+  OPTIONAL {{ ?thread_uri rdfs:label ?title . FILTER(lang(?title) = "nl") }}
 }}
 ORDER BY DESC(?started_at)"""
 
     rows = await sparql_select(query, design_space_id)
+    user_uris = list({r["started_by"] for r in rows})
+    names = _get_user_display_names(user_uris)
     return [
         {
             "thread_id": row["thread_uri"].split(":")[-1],
@@ -222,7 +250,9 @@ ORDER BY DESC(?started_at)"""
             "tessera_id": tessera_id,
             "design_space_id": design_space_id,
             "started_by": row["started_by"],
+            "started_by_name": names.get(row["started_by"], row["started_by"].split(":")[-1]),
             "started_at": row["started_at"],
+            "title": row.get("title"),
         }
         for row in rows
     ]

@@ -42,6 +42,7 @@ router = APIRouter(
 class CreateThreadRequest(BaseModel):
     tessera_id: str
     design_space_id: str
+    title: Optional[str] = None
 
 
 class ThreadResponse(BaseModel):
@@ -50,7 +51,9 @@ class ThreadResponse(BaseModel):
     tessera_id: str
     design_space_id: str
     started_by: str
+    started_by_name: str
     started_at: str
+    title: Optional[str] = None
 
 
 @router.post("/threads", response_model=dict[str, str], status_code=201)
@@ -67,6 +70,7 @@ async def create_thread(
         tessera_id=request.tessera_id,
         design_space_id=request.design_space_id,
         user_id=user_id,
+        title=request.title,
     )
     return {"thread_id": thread_id}
 
@@ -100,6 +104,7 @@ class ContributionResponse(BaseModel):
     contribution_type: str
     message_content: str
     contributed_by: str
+    contributed_by_name: str
     contributed_at: str
     evidence_id: Optional[str] = None
 

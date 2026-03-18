@@ -38,6 +38,19 @@ def set_design_space_phase(ds_id: str, phase: str) -> None:
         session.run(query, {"id": ds_id, "phase": phase})
 
 
+def get_design_spaces_by_project(project_id: str) -> list[dict]:
+    """Geeft alle DesignSpaces terug die aan een Project gekoppeld zijn."""
+    driver = get_driver()
+    query = """
+    MATCH (p:Project {id: $pid})-[:HAS_DESIGN_SPACE]->(ds:DesignSpace)
+    RETURN ds.id AS id, ds.name AS name, ds.status AS status, ds.current_phase AS current_phase
+    ORDER BY ds.created_at
+    """
+    with driver.session() as session:
+        result = session.run(query, {"pid": project_id})
+        return [dict(r) for r in result]
+
+
 async def create_design_space(
     name: str,
     description: Optional[str],

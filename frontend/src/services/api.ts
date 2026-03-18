@@ -546,6 +546,14 @@ export const api = {
         return response.data;
     },
 
+    // DesignSpace
+    getDesignSpacesByProject: async (projectId: string, themeId?: string): Promise<{ id: string; name: string; status: string; current_phase: string }[]> => {
+        const response = await apiClient.get(`/designspace/by-project/${projectId}`, {
+            params: themeId ? { theme_id: themeId } : undefined,
+        });
+        return response.data;
+    },
+
     // Threads (Fuseki-backed disc endpoints, Epic 16)
     getDiscThreads: async (tesseraId: string, designSpaceId: string): Promise<DiscThread[]> => {
         const response = await apiClient.get<DiscThread[]>('/threads', {
@@ -554,10 +562,11 @@ export const api = {
         return response.data;
     },
 
-    createDiscThread: async (tesseraId: string, designSpaceId: string): Promise<{ thread_id: string }> => {
+    createDiscThread: async (tesseraId: string, designSpaceId: string, title?: string): Promise<{ thread_id: string }> => {
         const response = await apiClient.post<{ thread_id: string }>('/threads', {
             tessera_id: tesseraId,
             design_space_id: designSpaceId,
+            title: title ?? null,
         });
         return response.data;
     },
@@ -603,7 +612,9 @@ export interface DiscThread {
     tessera_id: string;
     design_space_id: string;
     started_by: string;
+    started_by_name: string;
     started_at: string;
+    title: string | null;
 }
 
 export interface DiscContribution {
@@ -614,6 +625,7 @@ export interface DiscContribution {
     contribution_type: string;
     message_content: string;
     contributed_by: string;
+    contributed_by_name: string;
     contributed_at: string;
     evidence_id: string | null;
 }

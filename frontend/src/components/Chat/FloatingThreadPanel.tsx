@@ -70,6 +70,7 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
     const [newMessage, setNewMessage] = useState('');
     const [newType, setNewType] = useState<ContributionTypeLabel>('Stelling');
     const [loading, setLoading] = useState(false);
+    const [newTitle, setNewTitle] = useState('');
 
     useEffect(() => {
         if (designSpaceId) loadThreads();
@@ -109,7 +110,8 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
         if (readOnly) return;
         setLoading(true);
         try {
-            await api.createDiscThread(tesseraId, designSpaceId!);
+            await api.createDiscThread(tesseraId, designSpaceId!, newTitle.trim() || undefined);
+            setNewTitle('');
             onThreadCreated?.();
             await loadThreads();
         } catch (e) {
@@ -191,18 +193,27 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
                 {designSpaceId && !loading && view === 'list' && (
                     <ScrollArea className="flex-1">
                         {threads.length === 0 ? (
-                            <div className="p-8 text-center text-muted-foreground">
+                            <div className="p-6 text-center text-muted-foreground">
                                 <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-20" />
                                 <p className="text-sm">Nog geen discussies.</p>
                                 {!readOnly && (
-                                    <Button
-                                        size="sm"
-                                        variant="outline"
-                                        className="mt-4"
-                                        onClick={handleCreateThread}
-                                    >
-                                        Discussie Starten
-                                    </Button>
+                                    <div className="mt-4 space-y-2">
+                                        <Input
+                                            value={newTitle}
+                                            onChange={e => setNewTitle(e.target.value)}
+                                            placeholder="Onderwerp (optioneel)"
+                                            className="h-8 text-xs"
+                                        />
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            className="w-full"
+                                            onClick={handleCreateThread}
+                                            disabled={loading}
+                                        >
+                                            Discussie Starten
+                                        </Button>
+                                    </div>
                                 )}
                             </div>
                         ) : (
@@ -213,16 +224,22 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
                                         onClick={() => openThread(thread)}
                                         className="w-full text-left p-2 rounded hover:bg-muted text-sm flex items-center justify-between group"
                                     >
-                                        <span className="truncate flex-1 text-xs text-muted-foreground">
-                                            {shortUri(thread.started_by)}
+                                        <span className="truncate flex-1 text-xs font-medium">
+                                            {thread.title ?? `Discussie ${new Intl.DateTimeFormat('nl-NL', { month: 'short', day: 'numeric' }).format(new Date(thread.started_at))}`}
                                         </span>
                                         <span className="text-[10px] text-muted-foreground ml-2 shrink-0">
-                                            {new Intl.DateTimeFormat('nl-NL', { month: 'short', day: 'numeric' }).format(new Date(thread.started_at))}
+                                            {thread.started_by_name ?? shortUri(thread.started_by)}
                                         </span>
                                     </button>
                                 ))}
                                 {!readOnly && (
-                                    <div className="pt-2 mt-2 border-t px-2">
+                                    <div className="pt-2 mt-2 border-t px-2 space-y-1">
+                                        <Input
+                                            value={newTitle}
+                                            onChange={e => setNewTitle(e.target.value)}
+                                            placeholder="Onderwerp (optioneel)"
+                                            className="h-7 text-xs"
+                                        />
                                         <Button
                                             size="sm"
                                             variant="secondary"
@@ -259,7 +276,7 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
                                                     {typeLabel}
                                                 </span>
                                                 <span className="text-[10px] text-muted-foreground truncate">
-                                                    {shortUri(contrib.contributed_by)}
+                                                    {contrib.contributed_by_name ?? shortUri(contrib.contributed_by)}
                                                 </span>
                                                 <span className="text-[10px] text-muted-foreground ml-auto shrink-0">
                                                     {new Intl.DateTimeFormat('nl-NL', { hour: '2-digit', minute: '2-digit' }).format(new Date(contrib.contributed_at))}
