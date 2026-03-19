@@ -58,6 +58,7 @@ services:
       dockerfile: Dockerfile
       args:
         - VITE_API_URL=https://api.valor-ecosystem.nl
+        - VITE_WS_URL=wss://api.valor-ecosystem.nl
     container_name: valor-frontend-prod
     restart: always
     healthcheck:
