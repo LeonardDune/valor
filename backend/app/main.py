@@ -14,6 +14,8 @@ from app.db.crud import set_conversation_topic
 from app.services.connection_manager import manager
 from app.routers import proposals, dashboard, threads, sessions, deliberation
 from app.routers import factors, claims, organizations, hierarchy
+from app.routers import tessera
+from app.routers import designspace
 
 load_dotenv()
 
@@ -26,6 +28,8 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up...")
     await verify_connectivity()
     await startup_migration()
+    from app.services.ontology_cache import load_ontology_cache
+    await load_ontology_cache()
     yield
     logger.info("Shutting down...")
     close_driver()
@@ -89,11 +93,20 @@ app.include_router(organizations.router)
 app.include_router(hierarchy.router)
 app.include_router(factors.router)
 app.include_router(claims.router)
+app.include_router(tessera.router)
+app.include_router(designspace.router)
 
 
 @app.get("/")
 async def root():
     return {"message": "Welcome to CAUSA API", "status": "running"}
+
+
+@app.get("/ontology/epistemic-statuses")
+async def list_epistemic_statuses():
+    """Retourneert alle EpistemicStatus instanties met Engels en Nederlands label (uit VALOR-O ontologie)."""
+    from app.services.ontology_cache import get_epistemic_statuses
+    return get_epistemic_statuses()
 
 
 @app.get("/health")

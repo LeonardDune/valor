@@ -38,9 +38,11 @@ export interface CausaShellProps {
     onOpenConversation?: (context: ConversationContext) => void;
     versionId?: string;
     isReadOnly?: boolean;
+    designSpaceId?: string;
+    canResolveThread?: boolean;
 }
 
-export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpenConversation, versionId, isReadOnly = false }: CausaShellProps) => {
+export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpenConversation, versionId, isReadOnly = false, designSpaceId, canResolveThread = false }: CausaShellProps) => {
     const queryClient = useQueryClient();
     const themeState = useTheme();
 
@@ -325,10 +327,12 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                 layoutMode={layoutMode}
                 onOpenConversation={onOpenConversation || (() => { })}
                 onEdit={handleEdit}
-                onViewportChange={() => { }} // Clean up unused
+                onViewportChange={() => { }}
                 onInit={setRfInstance}
                 onConnect={effectiveIsReadOnly ? undefined : handleConnect}
                 isReadOnly={effectiveIsReadOnly}
+                designSpaceId={designSpaceId}
+                canResolveThread={canResolveThread}
             />
 
             {/* Modals */}

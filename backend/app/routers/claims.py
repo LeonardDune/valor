@@ -11,6 +11,7 @@ from app.db.crud import (
     get_active_version_id_if_theme, get_claims_for_theme, check_permission,
 )
 from app.services.connection_manager import manager
+from app.services.fuseki_sync import try_write_claim
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,8 @@ async def create_claim(claim: ClaimManualCreate, user: dict = Depends(get_curren
         claim.evidence_text,
         claim.evidence_url
     )
+    await try_write_claim(cid, claim.source_id, claim.target_id, claim.polarity or "+", claim.theme_id)
+
     if project_id:
         await manager.broadcast_data(project_id, {
             "type": "CLAIM_CREATED",

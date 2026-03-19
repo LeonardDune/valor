@@ -24,9 +24,9 @@ async def assign_role(user_id: str, entity_id: str, role: Role):
             result = session.run(query, {"uid": user_id, "entity_id": entity_id, "role": role.value})
             info = result.consume()
             if info.counters.relationships_created > 0 or info.counters.properties_set > 0:
-                logger.info(f"Assigned role {role.value} to user {user_email} on entity {entity_id}")
+                logger.info(f"Assigned role {role.value} to user {user_id} on entity {entity_id}")
             else:
-                 logger.warning(f"Role assignment check: User {user_email} or Entity {entity_id} might not exist.")
+                logger.warning(f"Role assignment check: User {user_id} or Entity {entity_id} might not exist.")
     except Exception as e:
         logger.error(f"Failed to assign role: {e}")
         raise e
@@ -42,12 +42,12 @@ async def check_permission(user_id: str, entity_id: str, required_role: Role) ->
     # We need to traverse UP from the entity to find if the user has a role on it or any parent.
     # We also need to check role hierarchy (Admin allows everything).
     
-    # Role Hierarchy Map integer for comparison
-    role_weights = {
-        Role.ADMIN.value: 30,
-        Role.MEMBER.value: 20,
-        Role.VIEWER.value: 10
-    }
+    from app.services.ontology_cache import get_rbac_role_weights
+    role_weights = get_rbac_role_weights()
+    if not role_weights:
+        # Fallback tijdens startup vóór ontologie geladen is
+        role_weights = {Role.ADMIN.value: 30, Role.MODERATOR.value: 25,
+                        Role.MEMBER.value: 20, Role.VIEWER.value: 10}
     required_weight = role_weights.get(required_role.value, 0)
 
     query = """
@@ -60,7 +60,7 @@ async def check_permission(user_id: str, entity_id: str, required_role: Role) ->
     // Find highest role on any ancestor (including self)
     // We look for any node 'parent' that recursively owns/contains 'target', 
     // AND where 'u' has a role on 'parent'.
-    OPTIONAL MATCH (u)-[r:HAS_ROLE]->(parent)-[:OWNS|HAS_THEME|HAS_VERSION*0..]->(target)
+    OPTIONAL MATCH (u)-[r:HAS_ROLE]->(parent)-[:OWNS|HAS_THEME|HAS_VERSION|HAS_DESIGN_SPACE*0..]->(target)
     WHERE r.status IS NULL OR r.status = 'active'
     
     RETURN is_platform_admin, collect(r.role) as roles

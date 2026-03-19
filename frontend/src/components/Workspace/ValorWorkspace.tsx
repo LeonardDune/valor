@@ -45,6 +45,22 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
     // Context Integration
     const { currentViewedVersion, isReadOnly, setActiveVotingSession } = useTheme();
 
+    // DesignSpace voor disc threads
+    const [activeDesignSpaceId, setActiveDesignSpaceId] = useState<string | undefined>(undefined);
+    const [userCanResolve, setUserCanResolve] = useState(false);
+
+    useEffect(() => {
+        api.getDesignSpacesByProject(projectId, themeId).then(spaces => {
+            const active = spaces.find(s => s.status === 'active') ?? spaces[0];
+            if (active) {
+                setActiveDesignSpaceId(active.id);
+                api.getCanResolveThread(active.id)
+                    .then(r => setUserCanResolve(r.can_resolve))
+                    .catch(() => setUserCanResolve(false));
+            } else console.warn('[ValorWorkspace] Geen actieve DesignSpace gevonden voor project', projectId, spaces);
+        }).catch(err => console.error('[ValorWorkspace] Fout bij ophalen DesignSpaces:', err));
+    }, [projectId, themeId]);
+
     // WS to Context Sync
     useEffect(() => {
         if (!lastMessage) return;
@@ -211,6 +227,8 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
                                 currentUserId={currentUser?.id || null}
                                 versionId={currentViewedVersion?.id}
                                 isReadOnly={isReadOnly}
+                                designSpaceId={activeDesignSpaceId}
+                                canResolveThread={userCanResolve}
                             />
                         </div>
                     </div>
