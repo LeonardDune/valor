@@ -20,4 +20,4 @@ EXPOSE 8000
 # Command to run the application in production mode (no reload)
 # Command to run the application in production mode (no reload)
 # Use shell execution to expand PORT environment variable (default 8000)
-CMD ["sh", "-c", "python scripts/migrate_space_to_version.py && python scripts/migrate_neo4j_threads_to_fuseki.py && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["sh", "-c", "python scripts/migrate_themeversions_to_designspaces.py && python scripts/migrate_neo4j_threads_to_fuseki.py && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
