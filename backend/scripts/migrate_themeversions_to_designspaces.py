@@ -34,7 +34,7 @@ def _get_active_theme_versions(driver) -> list[dict]:
     """Geeft alle actieve ThemeVersions met hun ThemeBase en organisatiehiërarchie."""
     query = """
     MATCH (org:Organization)-[:OWNS]->(p:Project)-[:HAS_THEME]->(t:ThemeBase)
-    MATCH (t)-[:HAS_ACTIVE_VERSION]->(v:ThemeVersion)
+    MATCH (t)-[:HAS_ACTIVE_VERSION|HAS_VERSION]->(v:ThemeVersion)
     WHERE v.valid_to IS NULL
     RETURN
         t.id          AS theme_base_id,
