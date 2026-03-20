@@ -67,22 +67,6 @@ from app.db.themes import (
     create_decision,
 )
 
-from app.db.knowledge import (
-    get_project_id_by_factor,
-    get_version_id_by_factor,
-    get_project_id_by_claim,
-    get_version_id_by_claim,
-    get_factors_for_version,
-    get_factors_for_theme,
-    create_factor_manual,
-    update_factor_manual,
-    delete_factor_manual,
-    get_claims_for_version,
-    get_claims_for_theme,
-    create_claim_manual,
-    update_claim_manual,
-    delete_claim_manual,
-)
 
 from app.db.permissions import check_permission
 from app.db.utils import get_driver
@@ -112,12 +96,6 @@ __all__ = [
     "get_theme_by_id_simple", "get_theme_versions_by_theme", "get_theme_version",
     "get_theme_active_version", "get_active_version_id_if_theme",
     "get_project_id_by_theme", "create_decision",
-    # knowledge
-    "get_project_id_by_factor", "get_project_id_by_claim",
-    "get_factors_for_version", "get_factors_for_theme",
-    "create_factor_manual", "update_factor_manual", "delete_factor_manual",
-    "get_claims_for_version", "get_claims_for_theme",
-    "create_claim_manual", "update_claim_manual", "delete_claim_manual",
     # shared
     "check_permission", "get_driver",
 ]
