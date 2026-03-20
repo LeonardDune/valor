@@ -28,7 +28,7 @@ services:
     restart: always
     # Geen publieke poort — alleen bereikbaar via intern Coolify-netwerk
     volumes:
-      - fuseki_data:/fuseki
+      - fuseki_data:/fuseki/databases
     environment:
       # ADMIN_PASSWORD wordt ingesteld via Coolify UI
       - ADMIN_PASSWORD=${FUSEKI_ADMIN_PASSWORD}
