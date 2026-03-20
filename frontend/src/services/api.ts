@@ -162,8 +162,8 @@ export interface DashboardProject {
     role?: string;
     status?: string;
     type: 'PROJECT';
-    themes: DashboardTheme[];
-    issues?: DashboardTheme[];
+    themes: DashboardTheme[];  // backward compat alias voor issues
+    issues?: DashboardTheme[]; // nieuwe veld van backend
 }
 
 export interface DashboardEnvironment {
@@ -526,7 +526,14 @@ export const api = {
     // Dashboard
     getDashboardEnvironments: async () => {
         const response = await apiClient.get<DashboardEnvironment[]>('/dashboard/environments');
-        return response.data;
+        // Normaliseer: backend geeft `issues` terug, frontend gebruikt `themes` als alias
+        return response.data.map(org => ({
+            ...org,
+            projects: org.projects.map(proj => ({
+                ...proj,
+                themes: proj.issues ?? proj.themes ?? [],
+            })),
+        }));
     },
 
     getDashboardThemes: async () => {
