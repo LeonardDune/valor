@@ -125,8 +125,8 @@ function App() {
           } />
 
 
-          {/* Version Routes (Primary) */}
-          <Route path="/versions/:versionId" element={<VersionLayout />}>
+          {/* DesignSpace Routes (Deliberation) */}
+          <Route path="/designspace/:dsId" element={<VersionLayout />}>
             <Route index element={<VersionDashboard />} />
             <Route path="claims" element={<RefinementBoardComponent />} />
             <Route path="chat" element={<VersionChat />} />

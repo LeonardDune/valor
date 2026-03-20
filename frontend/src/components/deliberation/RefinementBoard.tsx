@@ -52,14 +52,6 @@ export const RefinementBoardComponent: React.FC<RefinementBoardProps> = ({
         enabled: !!versionId,
     });
 
-    // 2b. Get version details to find themeId for "Back" button
-    const {
-        data: versionData
-    } = useQuery({
-        queryKey: ['version', versionId],
-        queryFn: () => api.getThemeVersion(versionId!),
-        enabled: !!versionId,
-    });
 
     // 3. Get feedback if session exists
     const {
@@ -146,7 +138,7 @@ export const RefinementBoardComponent: React.FC<RefinementBoardProps> = ({
                     Vraag een moderator om er een te starten.
                 </p>
                 <button
-                    onClick={() => navigate(`/versions/${versionId}`)}
+                    onClick={() => navigate(`/designspace/${versionId}`)}
                     className="text-primary hover:underline"
                 >
                     Terug naar Dashboard
@@ -166,13 +158,7 @@ export const RefinementBoardComponent: React.FC<RefinementBoardProps> = ({
                         onSelect={setSelectedClaimId}
                         feedbackData={feedbackData}
                         currentUserId={currentUserId}
-                        onBack={onBack || (() => {
-                            if (versionData?.theme_id) {
-                                navigate(`/themes/${versionData.theme_id}`);
-                            } else {
-                                navigate(-1);
-                            }
-                        })}
+                        onBack={onBack || (() => navigate(-1))}
                     />
                 </div>
 

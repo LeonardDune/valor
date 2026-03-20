@@ -235,7 +235,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
         if (!connection.source || !connection.target) return;
         try {
             await api.createClaim({
-                theme_id: themeId,
+                ds_id: themeId,
                 source_id: connection.source,
                 target_id: connection.target,
                 statement: 'invloed', // Default statement
