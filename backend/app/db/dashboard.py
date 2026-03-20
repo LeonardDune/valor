@@ -1,118 +1,89 @@
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict
 from app.db.utils import get_driver
-from app.models.domain import Role, LifecycleStatus
 
 logger = logging.getLogger(__name__)
 
+
 async def get_user_environments(user_id: str) -> List[Dict]:
-    """
-    Recursively fetches the environment hierarchy for a user.
-    Organization -> Projects -> Themes
-    Includes status and proposal counts.
-    """
+    """Haalt de omgevingshiërarchie op voor een gebruiker: Organization -> Projects -> Issues."""
     driver = get_driver()
-    
-    # This query finds all organizations the user is a member of,
-    # then finds all projects in those orgs that the user is a member of,
-    # then finds all themes in those projects that the user is a member of.
-    # It constructs a nested JSON structure.
-    # Note: We filter by explicit membership or ADMIN role implication if required,
-    # but for now we stick to explicit MEMBER_OF relationships or ADMIN roles on parents.
-    
+
     query = """
     MATCH (u:User {id: $uid})
-    
-    // 1. Find Organizations via multiple paths
-    // Path A: Direct Organization Membership
-    OPTIONAL MATCH (u)-[r_direct:HAS_ROLE]->(org_direct:Organization)
-    
-    // Path B: Project Membership -> owning Org
-    OPTIONAL MATCH (u)-[r_proj_indirect:HAS_ROLE]->(:Project)<-[:OWNS]-(org_proj:Organization)
-    
-    // Path C: Theme Membership -> owning Project -> owning Org
-    OPTIONAL MATCH (u)-[r_theme_indirect:HAS_ROLE]->(:ThemeBase)<-[:HAS_THEME]-(:Project)<-[:OWNS]-(org_theme:Organization)
-    
-    // Combine all reachable Orgs
-    WITH u, 
-         collect({node: org_direct, role: r_direct.role}) + 
-         collect({node: org_proj, role: null}) + 
-         collect({node: org_theme, role: null}) as org_list
-         
-    UNWIND org_list as item
-    WITH item.node as org, item.role as raw_role, u
-    WHERE org IS NOT NULL
-    
-    // Deduplicate: Group by Org and pick highest role (no implicit admin anymore)
-    WITH org, u, collect(raw_role) as roles
-    WITH org, u, 
-         CASE WHEN 'admin' IN roles THEN 'admin' ELSE head(roles) END as user_role
 
-    // FILTER: Hide archived orgs UNLESS user is admin
+    // 1. Vind Organizaties via meerdere paden
+    OPTIONAL MATCH (u)-[r_direct:HAS_ROLE]->(org_direct:Organization)
+    OPTIONAL MATCH (u)-[r_proj_indirect:HAS_ROLE]->(:Project)<-[:OWNS]-(org_proj:Organization)
+    OPTIONAL MATCH (u)-[r_ds_indirect:HAS_ROLE]->(:DesignSpace)<-[:isAddressedInDesignSpace]-(:Issue)<-[:hasIssue]-(:Project)<-[:OWNS]-(org_ds:Organization)
+
+    WITH u,
+         collect({node: org_direct, role: r_direct.role}) +
+         collect({node: org_proj, role: null}) +
+         collect({node: org_ds, role: null}) AS org_list
+
+    UNWIND org_list AS item
+    WITH item.node AS org, item.role AS raw_role, u
+    WHERE org IS NOT NULL
+
+    WITH org, u, collect(raw_role) AS roles
+    WITH org, u,
+         CASE WHEN 'admin' IN roles THEN 'admin' ELSE head(roles) END AS user_role
+
     WITH org, user_role, u
     WHERE (org.status IS NULL OR org.status <> 'archived') OR (user_role = 'admin')
-    
-    // 2. Find Projects in those Orgs
+
+    // 2. Vind Projects
     OPTIONAL MATCH (org)-[:OWNS]->(proj:Project)
-    // Check direct project role OR org admin role OR platform admin
     OPTIONAL MATCH (u)-[r_proj:HAS_ROLE]->(proj)
-    
+
     WITH u, org, user_role, proj, r_proj
-    // Determine Project Role
     WITH u, org, user_role, proj,
-         CASE 
-            WHEN u.is_platform_admin = true OR user_role = 'admin' THEN 'admin'
-            ELSE coalesce(r_proj.role, 'member') 
-         END as proj_role
-         
-    // FILTER: Hide archived projects UNLESS user is admin (or project admin)
-    WHERE proj IS NULL OR ((proj.status IS NULL OR proj.status <> 'archived') OR (proj_role = 'admin'))
-    
-    // 3. Find Themes in those Projects
-    OPTIONAL MATCH (proj)-[:HAS_THEME]->(theme:ThemeBase)
-    // Check direct theme role OR project/org admin role OR platform admin
-    OPTIONAL MATCH (u)-[r_theme:HAS_ROLE]->(theme)
-    
-    WITH u, org, user_role, proj, proj_role, theme, r_theme
-    
-    // Determine Theme Role
-    WITH u, org, user_role, proj, proj_role, theme,
          CASE
-            WHEN u.is_platform_admin = true OR user_role = 'admin' OR proj_role = 'admin' THEN 'admin'
-            ELSE coalesce(r_theme.role, 'member')
-         END as theme_role
-         
-    // FILTER: Hide archived themes UNLESS user is admin
-    WHERE theme IS NULL OR ((theme.status IS NULL OR theme.status <> 'archived') OR (theme_role = 'admin'))
-    
-    // Recalculate effective roles (redundant safety)
-    // ...
-    
-    ORDER BY org.name, proj.name, theme.name
-    
-    // Aggregate Themes into Projects
-    WITH org, user_role, proj, proj_role, collect(DISTINCT CASE WHEN theme IS NOT NULL THEN {
-        id: theme.id,
-        // FETCH FROM ACTIVE VERSION
-        // We look for the Active Version to get the name and description
-        name: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v:ThemeVersion) | v.name ]), 
-        description: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v:ThemeVersion) | v.description ]),
-        role: theme_role,
-        status: theme.status,
-        type: "THEME"
-    } ELSE NULL END) as themes
-    
-    // Aggregate Projects into Orgs
-    WITH org, user_role, collect(DISTINCT CASE WHEN proj IS NOT NULL THEN {
-        id: proj.id,
-        name: proj.name,
-        description: proj.description,
-        role: proj_role,
-        status: proj.status,
-        type: "PROJECT",
-        themes: [x IN themes WHERE x IS NOT NULL]
-    } ELSE NULL END) as projects
-    
+           WHEN u.is_platform_admin = true OR user_role = 'admin' THEN 'admin'
+           ELSE coalesce(r_proj.role, 'member')
+         END AS proj_role
+
+    WHERE proj IS NULL OR ((proj.status IS NULL OR proj.status <> 'archived') OR (proj_role = 'admin'))
+
+    // 3. Vind Issues via DesignSpace
+    OPTIONAL MATCH (proj)-[:hasIssue]->(issue:Issue)-[:isAddressedInDesignSpace]->(ds:DesignSpace)
+    OPTIONAL MATCH (u)-[r_ds:HAS_ROLE]->(ds)
+
+    WITH u, org, user_role, proj, proj_role, issue, ds, r_ds
+    WITH u, org, user_role, proj, proj_role, issue, ds,
+         CASE
+           WHEN u.is_platform_admin = true OR user_role = 'admin' OR proj_role = 'admin' THEN 'admin'
+           ELSE coalesce(r_ds.role, 'member')
+         END AS issue_role
+
+    WHERE issue IS NULL OR ((issue.status IS NULL OR issue.status <> 'archived') OR (issue_role = 'admin'))
+
+    ORDER BY org.name, proj.name, issue.name
+
+    WITH org, user_role, proj, proj_role,
+         collect(DISTINCT CASE WHEN issue IS NOT NULL THEN {
+             id: issue.id,
+             ds_id: ds.id,
+             name: issue.name,
+             description: issue.description,
+             role: issue_role,
+             status: issue.status,
+             current_phase: ds.current_phase,
+             type: "ISSUE"
+         } ELSE NULL END) AS issues
+
+    WITH org, user_role,
+         collect(DISTINCT CASE WHEN proj IS NOT NULL THEN {
+             id: proj.id,
+             name: proj.name,
+             description: proj.description,
+             role: proj_role,
+             status: proj.status,
+             type: "PROJECT",
+             issues: [x IN issues WHERE x IS NOT NULL]
+         } ELSE NULL END) AS projects
+
     RETURN collect({
         id: org.id,
         name: org.name,
@@ -121,9 +92,9 @@ async def get_user_environments(user_id: str) -> List[Dict]:
         status: org.status,
         type: "ORGANIZATION",
         projects: [x IN projects WHERE x IS NOT NULL]
-    }) as environments
+    }) AS environments
     """
-    
+
     try:
         with driver.session() as session:
             result = session.run(query, {"uid": user_id})
@@ -135,100 +106,65 @@ async def get_user_environments(user_id: str) -> List[Dict]:
         logger.error(f"Failed to fetch user environments: {e}")
         return []
 
+
 async def get_user_themes(user_id: str) -> List[Dict]:
-    """
-    Returns a flat list of themes the user has access to.
-    Access can be via:
-    1. Direct Theme Role
-    2. Project Role (Admin cascades to all themes, Member usually sees themes)
-    3. Organization Role (Admin cascades)
-    4. Platform Admin (Sees all)
-    """
+    """Retourneert een platte lijst van Issues/DesignSpaces die de gebruiker kan bereiken."""
     driver = get_driver()
-    
+
     query = """
     MATCH (u:User {id: $uid})
-    
-    // 1. Find all accessible Themes via recursive permissions
-    // This looks for any path from User -> ... -> Theme where a role exists
-    // We simplify by looking for direct connections or upstream connections
-    
-    // Direct Theme Access
-    OPTIONAL MATCH (u)-[r1:HAS_ROLE]->(t1:ThemeBase)
-    
-    // Project Access (Cascading down)
-    OPTIONAL MATCH (u)-[r2:HAS_ROLE]->(p:Project)-[:HAS_THEME]->(t2:ThemeBase)
-    
-    // Organization Access (Cascading down)
-    OPTIONAL MATCH (u)-[r3:HAS_ROLE]->(o:Organization)-[:OWNS]->(p2:Project)-[:HAS_THEME]->(t3:ThemeBase)
-    
-    // Platform Admin (All Themes)
-    OPTIONAL MATCH (t4:ThemeBase)
+
+    OPTIONAL MATCH (u)-[r1:HAS_ROLE]->(ds1:DesignSpace)
+    OPTIONAL MATCH (u)-[r2:HAS_ROLE]->(p:Project)-[:hasIssue]->(:Issue)-[:isAddressedInDesignSpace]->(ds2:DesignSpace)
+    OPTIONAL MATCH (u)-[r3:HAS_ROLE]->(o:Organization)-[:OWNS]->(:Project)-[:hasIssue]->(:Issue)-[:isAddressedInDesignSpace]->(ds3:DesignSpace)
+    OPTIONAL MATCH (ds4:DesignSpace)
     WHERE u.is_platform_admin = true
-    
-    // Collect all valid themes with their highest role found
-    WITH u, 
-         collect({t: t1, r: r1.role}) + 
-         collect({t: t2, r: r2.role}) + 
-         collect({t: t3, r: r3.role}) + 
-         collect({t: t4, r: 'admin'}) as candidate_maps
-    UNWIND candidate_maps as item
-    WITH item.t as theme, u, item.r as role
-    WHERE theme IS NOT NULL
-    
-    // Determine highest role per theme
-    WITH theme, u,
-         CASE 
-            WHEN collect(role) CONTAINS 'admin' OR u.is_platform_admin = true THEN 'admin'
-            ELSE 'member'
-         END as effective_role
-    
-    // Now fetch context (Project + Organization) for each theme
-    MATCH (org:Organization)-[:OWNS]->(proj:Project)-[:HAS_THEME]->(theme)
-    
-    // Check Archive Status Hierarchy
-    WITH theme, effective_role, org, proj
-    WHERE 
-        // Show if ADMIN
-        (effective_role = 'admin') OR 
-        // OR if NOTHING in the chain is archived
+
+    WITH u,
+         collect({ds: ds1, r: r1.role}) +
+         collect({ds: ds2, r: r2.role}) +
+         collect({ds: ds3, r: r3.role}) +
+         collect({ds: ds4, r: 'admin'}) AS candidates
+    UNWIND candidates AS item
+    WITH item.ds AS ds, u, item.r AS role
+    WHERE ds IS NOT NULL
+
+    WITH ds, u,
+         CASE
+           WHEN collect(role) CONTAINS 'admin' OR u.is_platform_admin = true THEN 'admin'
+           ELSE 'member'
+         END AS effective_role
+
+    MATCH (org:Organization)-[:OWNS]->(proj:Project)-[:hasIssue]->(issue:Issue)-[:isAddressedInDesignSpace]->(ds)
+
+    WITH ds, effective_role, org, proj, issue
+    WHERE
+        (effective_role = 'admin') OR
         (
             (org.status IS NULL OR org.status <> 'archived') AND
             (proj.status IS NULL OR proj.status <> 'archived') AND
-            (theme.status IS NULL OR theme.status <> 'archived')
+            (issue.status IS NULL OR issue.status <> 'archived')
         )
-    
-    // Optional: Get stats (claims, members)
-    // Counting active claims
-    OPTIONAL MATCH (theme)-[:HAS_ACTIVE_VERSION]->(tv:ThemeVersion)-[:HAS_FACTOR]->(f:FactorVersion)
-    WITH theme, effective_role, org, proj, count(f) as claim_count
-    
-    // Counting members
-    OPTIONAL MATCH (member:User)-[:HAS_ROLE]->(theme)
-    WITH theme, effective_role, org, proj, claim_count, count(member) as member_count
 
     RETURN {
-        id: theme.id,
-        name: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v:ThemeVersion) | v.name ]),
-        description: head([ (theme)-[:HAS_ACTIVE_VERSION]->(v:ThemeVersion) | v.description ]),
+        id: issue.id,
+        ds_id: ds.id,
+        name: issue.name,
+        description: issue.description,
         project_name: proj.name,
         organization_name: org.name,
         role: effective_role,
-        status: theme.status,
-        is_archived: (theme.status = 'archived' OR proj.status = 'archived' OR org.status = 'archived'),
-        stats: {
-            active_claims: claim_count,
-            members: member_count
-        }
-    } as theme_data
-    ORDER BY theme.name
+        status: issue.status,
+        current_phase: ds.current_phase,
+        is_archived: (issue.status = 'archived' OR proj.status = 'archived' OR org.status = 'archived')
+    } AS theme_data
+    ORDER BY issue.name
     """
-    
+
     try:
         with driver.session() as session:
             result = session.run(query, {"uid": user_id})
-            themes = [record["theme_data"] for record in result]
-            return themes
+            return [record["theme_data"] for record in result]
     except Exception as e:
         logger.error(f"Failed to fetch user themes: {e}")
         return []

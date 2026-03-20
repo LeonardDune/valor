@@ -45,39 +45,14 @@ def _escape(text: str) -> str:
 # Neo4j hiërarchie-lookups (geen kennisdata)
 # ---------------------------------------------------------------------------
 
-def _get_designspace_id_for_version_sync(version_id: str) -> Optional[str]:
-    driver = get_driver()
-    with driver.session() as s:
-        r = s.run(
-            "MATCH (v:ThemeVersion {id: $vid})-[:HAS_DESIGN_SPACE]->(ds:DesignSpace) RETURN ds.id AS ds_id",
-            {"vid": version_id},
-        ).single()
-    return r["ds_id"] if r else None
-
-
-def _get_active_version_id_for_theme_sync(theme_id: str) -> Optional[str]:
-    driver = get_driver()
-    with driver.session() as s:
-        r = s.run(
-            """MATCH (t:ThemeBase {id: $tid})-[:HAS_VERSION]->(v:ThemeVersion)
-               WHERE v.valid_to IS NULL RETURN v.id AS vid""",
-            {"tid": theme_id},
-        ).single()
-    return r["vid"] if r else None
-
-
 def _get_project_id_for_designspace_sync(ds_id: str) -> Optional[str]:
     driver = get_driver()
     with driver.session() as s:
         r = s.run(
-            "MATCH (p:Project)-[:HAS_DESIGN_SPACE]->(ds:DesignSpace {id: $ds_id}) RETURN p.id AS pid",
+            "MATCH (p:Project)-[:hasIssue]->(:Issue)-[:isAddressedInDesignSpace]->(ds:DesignSpace {id: $ds_id}) RETURN p.id AS pid",
             {"ds_id": ds_id},
         ).single()
     return r["pid"] if r else None
-
-
-async def get_designspace_id_for_version(version_id: str) -> Optional[str]:
-    return await asyncio.to_thread(_get_designspace_id_for_version_sync, version_id)
 
 
 async def get_project_id_for_designspace(ds_id: str) -> Optional[str]:
@@ -113,20 +88,6 @@ async def _find_tessera_uri_by_base_id(ds_id: str, base_id: str) -> Optional[str
 # ---------------------------------------------------------------------------
 # Factor reads (SPARQL)
 # ---------------------------------------------------------------------------
-
-async def get_factors_for_version(version_id: str) -> list[dict]:
-    ds_id = await get_designspace_id_for_version(version_id)
-    if not ds_id:
-        return []
-    return await _sparql_get_factors(ds_id)
-
-
-async def get_factors_for_theme(theme_id: str) -> list[dict]:
-    version_id = await asyncio.to_thread(_get_active_version_id_for_theme_sync, theme_id)
-    if not version_id:
-        return []
-    return await get_factors_for_version(version_id)
-
 
 async def _sparql_get_factors(ds_id: str) -> list[dict]:
     asis_graph = _ds_asis_graph(ds_id)
@@ -264,20 +225,6 @@ WHERE {{
 # ---------------------------------------------------------------------------
 # Claim reads (SPARQL)
 # ---------------------------------------------------------------------------
-
-async def get_claims_for_version(version_id: str) -> list[dict]:
-    ds_id = await get_designspace_id_for_version(version_id)
-    if not ds_id:
-        return []
-    return await _sparql_get_claims(ds_id)
-
-
-async def get_claims_for_theme(theme_id: str) -> list[dict]:
-    version_id = await asyncio.to_thread(_get_active_version_id_for_theme_sync, theme_id)
-    if not version_id:
-        return []
-    return await get_claims_for_version(version_id)
-
 
 async def _sparql_get_claims(ds_id: str) -> list[dict]:
     asis_graph = _ds_asis_graph(ds_id)

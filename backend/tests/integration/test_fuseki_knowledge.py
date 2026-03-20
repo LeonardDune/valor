@@ -46,7 +46,7 @@ async def _count_tesserae(ds_id: str) -> int:
 
 async def test_create_factor_fuseki_maakt_tessera_aan(ds_id):
     await _seed_design_space(ds_id)
-    from app.db.fuseki_knowledge import create_factor_fuseki, get_factors_for_version
+    from app.db.fuseki_knowledge import create_factor_fuseki
 
     base_id = await create_factor_fuseki(ds_id, "Factor Alpha", "middel", USER_ID)
     assert base_id
@@ -100,23 +100,14 @@ async def test_delete_factor_fuseki_verwijdert_tessera(ds_id):
 # Factor reads (GET)
 # ---------------------------------------------------------------------------
 
-async def test_get_factors_for_version_retourneert_factoren(ds_id):
+async def test_get_factors_voor_designspace_retourneert_factoren(ds_id):
     await _seed_design_space(ds_id)
-    from app.db.fuseki_knowledge import create_factor_fuseki, get_factors_for_version
-    import app.db.fuseki_knowledge as mod
-
-    # Patch Neo4j lookup
-    original = mod._get_designspace_id_for_version_sync
-    mod._get_designspace_id_for_version_sync = lambda vid: ds_id
+    from app.db.fuseki_knowledge import create_factor_fuseki, _sparql_get_factors
 
     await create_factor_fuseki(ds_id, "Factor A", "middel", USER_ID)
     await create_factor_fuseki(ds_id, "Factor B", "criterium", USER_ID)
 
-    try:
-        factors = await get_factors_for_version("version-test")
-    finally:
-        mod._get_designspace_id_for_version_sync = original
-
+    factors = await _sparql_get_factors(ds_id)
     assert len(factors) == 2
     names = {f["name"] for f in factors}
     assert "Factor A" in names
@@ -125,36 +116,20 @@ async def test_get_factors_for_version_retourneert_factoren(ds_id):
 
 async def test_get_factors_retourneert_base_id_als_id(ds_id):
     await _seed_design_space(ds_id)
-    from app.db.fuseki_knowledge import create_factor_fuseki, get_factors_for_version
-    import app.db.fuseki_knowledge as mod
-
-    original = mod._get_designspace_id_for_version_sync
-    mod._get_designspace_id_for_version_sync = lambda vid: ds_id
+    from app.db.fuseki_knowledge import create_factor_fuseki, _sparql_get_factors
 
     base_id = await create_factor_fuseki(ds_id, "Factor met ID", "middel", USER_ID)
 
-    try:
-        factors = await get_factors_for_version("version-test")
-    finally:
-        mod._get_designspace_id_for_version_sync = original
-
+    factors = await _sparql_get_factors(ds_id)
     assert len(factors) == 1
     assert factors[0]["id"] == base_id
 
 
 async def test_get_factors_lege_designspace_geeft_lege_lijst(ds_id):
     await _seed_design_space(ds_id)
-    from app.db.fuseki_knowledge import get_factors_for_version
-    import app.db.fuseki_knowledge as mod
+    from app.db.fuseki_knowledge import _sparql_get_factors
 
-    original = mod._get_designspace_id_for_version_sync
-    mod._get_designspace_id_for_version_sync = lambda vid: ds_id
-
-    try:
-        factors = await get_factors_for_version("version-test")
-    finally:
-        mod._get_designspace_id_for_version_sync = original
-
+    factors = await _sparql_get_factors(ds_id)
     assert factors == []
 
 
@@ -215,23 +190,15 @@ async def test_create_claim_fuseki_slaat_base_id_op(ds_id):
 # Claim reads (GET)
 # ---------------------------------------------------------------------------
 
-async def test_get_claims_for_version_retourneert_claims(ds_id):
+async def test_get_claims_voor_designspace_retourneert_claims(ds_id):
     await _seed_design_space(ds_id)
-    from app.db.fuseki_knowledge import create_factor_fuseki, create_claim_fuseki, get_claims_for_version
-    import app.db.fuseki_knowledge as mod
-
-    original = mod._get_designspace_id_for_version_sync
-    mod._get_designspace_id_for_version_sync = lambda vid: ds_id
+    from app.db.fuseki_knowledge import create_factor_fuseki, create_claim_fuseki, _sparql_get_claims
 
     fac_a = await create_factor_fuseki(ds_id, "Bron", "middel", USER_ID)
     fac_b = await create_factor_fuseki(ds_id, "Doel", "middel", USER_ID)
     await create_claim_fuseki(ds_id, fac_a, fac_b, "A veroorzaakt B", "+", USER_ID, confidence=0.8)
 
-    try:
-        claims = await get_claims_for_version("version-test")
-    finally:
-        mod._get_designspace_id_for_version_sync = original
-
+    claims = await _sparql_get_claims(ds_id)
     assert len(claims) == 1
     c = claims[0]
     assert c["statement"] == "A veroorzaakt B"
@@ -242,21 +209,13 @@ async def test_get_claims_for_version_retourneert_claims(ds_id):
 
 async def test_get_claims_retourneert_base_id_als_id(ds_id):
     await _seed_design_space(ds_id)
-    from app.db.fuseki_knowledge import create_factor_fuseki, create_claim_fuseki, get_claims_for_version
-    import app.db.fuseki_knowledge as mod
-
-    original = mod._get_designspace_id_for_version_sync
-    mod._get_designspace_id_for_version_sync = lambda vid: ds_id
+    from app.db.fuseki_knowledge import create_factor_fuseki, create_claim_fuseki, _sparql_get_claims
 
     fac_a = await create_factor_fuseki(ds_id, "A", "middel", USER_ID)
     fac_b = await create_factor_fuseki(ds_id, "B", "middel", USER_ID)
     claim_id = await create_claim_fuseki(ds_id, fac_a, fac_b, "Stelling", "+", USER_ID)
 
-    try:
-        claims = await get_claims_for_version("version-test")
-    finally:
-        mod._get_designspace_id_for_version_sync = original
-
+    claims = await _sparql_get_claims(ds_id)
     assert len(claims) == 1
     assert claims[0]["id"] == claim_id
 
