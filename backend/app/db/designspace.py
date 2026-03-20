@@ -1,4 +1,5 @@
 import uuid
+import asyncio
 import logging
 from typing import Optional
 
@@ -115,3 +116,109 @@ async def create_design_space(
         if not record:
             raise RuntimeError(f"DesignSpace aanmaken mislukt — gebruiker of project niet gevonden.")
         return record["id"]
+
+
+async def get_designspace_with_issue(ds_id: str) -> Optional[dict]:
+    """Retourneert DesignSpace properties + Issue naam/beschrijving via isAddressedInDesignSpace."""
+    driver = get_driver()
+    query = """
+    MATCH (ds:DesignSpace {id: $id})
+    OPTIONAL MATCH (ds)<-[:isAddressedInDesignSpace]-(i:Issue)
+    RETURN ds.id AS ds_id,
+           i.name AS name,
+           i.description AS description,
+           ds.current_phase AS current_phase,
+           ds.status AS status,
+           i.id AS issue_id
+    """
+
+    def _run():
+        with driver.session() as session:
+            record = session.run(query, {"id": ds_id}).single()
+            if not record:
+                return None
+            return {
+                "ds_id": record["ds_id"],
+                "name": record["name"],
+                "description": record["description"],
+                "current_phase": record["current_phase"] or "exploration",
+                "status": record["status"],
+                "issue_id": record["issue_id"],
+            }
+
+    return await asyncio.to_thread(_run)
+
+
+async def get_designspace_members(ds_id: str) -> list[dict]:
+    driver = get_driver()
+    query = """
+    MATCH (u:User)-[r:HAS_ROLE]->(ds:DesignSpace {id: $id})
+    RETURN u.id AS id, u.name AS name, u.email AS email, r.role AS role
+    """
+
+    def _run():
+        with driver.session() as session:
+            return [dict(r) for r in session.run(query, {"id": ds_id})]
+
+    return await asyncio.to_thread(_run)
+
+
+async def add_designspace_member(ds_id: str, email: str, role: str) -> None:
+    from app.db.organizations import create_user
+    await create_user(email)
+    driver = get_driver()
+    query = """
+    MATCH (u:User {email: toLower($email)})
+    MATCH (ds:DesignSpace {id: $id})
+    MERGE (u)-[r:HAS_ROLE]->(ds)
+    SET r.role = $role, r.updated_at = datetime()
+    """
+
+    def _run():
+        with driver.session() as session:
+            session.run(query, {"email": email, "id": ds_id, "role": role})
+
+    await asyncio.to_thread(_run)
+
+
+async def update_designspace_member_role(ds_id: str, user_id: str, role: str) -> None:
+    driver = get_driver()
+    query = """
+    MATCH (u:User {id: $uid})-[r:HAS_ROLE]->(ds:DesignSpace {id: $id})
+    SET r.role = $role, r.updated_at = datetime()
+    """
+
+    def _run():
+        with driver.session() as session:
+            session.run(query, {"uid": user_id, "id": ds_id, "role": role})
+
+    await asyncio.to_thread(_run)
+
+
+async def remove_designspace_member(ds_id: str, user_id: str) -> None:
+    driver = get_driver()
+    query = """
+    MATCH (u:User {id: $uid})-[r:HAS_ROLE]->(ds:DesignSpace {id: $id})
+    DELETE r
+    """
+
+    def _run():
+        with driver.session() as session:
+            session.run(query, {"uid": user_id, "id": ds_id})
+
+    await asyncio.to_thread(_run)
+
+
+async def get_project_id_by_designspace(ds_id: str) -> Optional[str]:
+    driver = get_driver()
+    query = """
+    MATCH (p:Project)-[:hasIssue]->(:Issue)-[:isAddressedInDesignSpace]->(ds:DesignSpace {id: $id})
+    RETURN p.id AS pid
+    """
+
+    def _run():
+        with driver.session() as session:
+            record = session.run(query, {"id": ds_id}).single()
+            return record["pid"] if record else None
+
+    return await asyncio.to_thread(_run)
