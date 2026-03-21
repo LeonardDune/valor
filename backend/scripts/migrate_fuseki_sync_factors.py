@@ -40,8 +40,7 @@ async def main():
     with driver.session() as session:
         results = session.run("""
         MATCH (tv:ThemeVersion)-[:HAS_DESIGN_SPACE]->(ds:DesignSpace)
-        WHERE tv.valid_to IS NULL
-        MATCH (tv)-[:HAS_FACTOR]->(fv:FactorVersion)
+        MATCH (tv)-[rel:HAS_FACTOR]->(fv:FactorVersion)
         WHERE fv.valid_to IS NULL
         RETURN ds.id AS ds_id,
                fv.id AS fv_id,
@@ -49,7 +48,7 @@ async def main():
                fv.description AS description,
                coalesce(fv.created_by, '') AS created_by,
                toString(fv.created_at) AS created_at,
-               fv.role AS role
+               rel.role AS role
         """)
         neo4j_factors = [dict(r) for r in results]
 
@@ -61,8 +60,7 @@ async def main():
             results = session.run("""
             MATCH (p:Project)-[:hasIssue]->(:Issue)-[:isAddressedInDesignSpace]->(ds:DesignSpace)
             MATCH (ds)<-[:HAS_DESIGN_SPACE]-(tv:ThemeVersion)
-            WHERE tv.valid_to IS NULL
-            MATCH (tv)-[:HAS_FACTOR]->(fv:FactorVersion)
+            MATCH (tv)-[rel:HAS_FACTOR]->(fv:FactorVersion)
             WHERE fv.valid_to IS NULL
             RETURN ds.id AS ds_id,
                    fv.id AS fv_id,
@@ -70,7 +68,7 @@ async def main():
                    fv.description AS description,
                    coalesce(fv.created_by, '') AS created_by,
                    toString(fv.created_at) AS created_at,
-                   fv.role AS role
+                   rel.role AS role
             """)
             neo4j_factors = [dict(r) for r in results]
         logger.info(f"Via Issue-hiërarchie gevonden: {len(neo4j_factors)}")
