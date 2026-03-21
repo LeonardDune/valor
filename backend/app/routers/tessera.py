@@ -19,6 +19,7 @@ from app.services.ontology_cache import (
     get_argue_label_to_uri,
     get_shacl_shapes_graph,
     get_uncertainty_label_to_uri,
+    get_system_situation_uris,
 )
 from app.ontology import VALOR_NS
 
@@ -60,6 +61,7 @@ class CreateTesseraRequest(BaseModel):
     uncertainty_level: Optional[str] = None  # PAMS: "StatisticalRisk" | "Scenario" | "DeepUncertainty" | "Ignorance"
     in_alternative: Optional[str] = None
     in_phase: Optional[str] = None
+    manifestation_condition: Optional[str] = None  # URI van sysont:SystemSituation
 
 
 class TesseraResponse(BaseModel):
@@ -74,6 +76,7 @@ class TesseraResponse(BaseModel):
     uncertainty_level: Optional[str] = None
     in_alternative: Optional[str] = None
     in_phase: Optional[str] = None
+    manifestation_condition: Optional[str] = None  # URI van sysont:SystemSituation
 
 
 class CreateEvidenceRequest(BaseModel):
@@ -133,6 +136,15 @@ async def create_tessera(
                        f"Geldige waarden: {sorted(uncertainty_label_to_uri)}.",
             )
 
+    if request.manifestation_condition:
+        known_situations = get_system_situation_uris()
+        if known_situations and request.manifestation_condition not in known_situations:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Onbekende manifestation_condition URI '{request.manifestation_condition}'. "
+                       f"Moet een bekende sysont:SystemSituation zijn.",
+            )
+
     user_id = user["id"]
 
     has_permission = await check_permission(user_id, request.design_space_id, Role.MEMBER)
@@ -156,6 +168,7 @@ async def create_tessera(
     status_label_to_uri = get_status_label_to_uri()
     proposed_uri = status_label_to_uri.get("Proposed", f"{VALOR_NS}ProposedStatus")
 
+    CAUSA_NS = f"{VALOR_NS}causa#"
     optional_triples = ""
     if uncertainty_level_uri:
         optional_triples += f"      <{tessera_uri}> <{VALOR_NS}uncertaintyLevel> <{uncertainty_level_uri}> .\n"
@@ -165,6 +178,8 @@ async def create_tessera(
     if request.in_phase:
         phase_uri = f"urn:valor:phase:{request.in_phase}"
         optional_triples += f"      <{tessera_uri}> <{VALOR_NS}inPhase> <{phase_uri}> .\n"
+    if request.manifestation_condition:
+        optional_triples += f"      <{tessera_uri}> <{CAUSA_NS}hasManifestationCondition> <{request.manifestation_condition}> .\n"
 
     escaped_content = request.claim_content.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -206,6 +221,7 @@ INSERT DATA {{
         uncertainty_level=request.uncertainty_level,
         in_alternative=request.in_alternative,
         in_phase=request.in_phase,
+        manifestation_condition=request.manifestation_condition,
     )
 
 
@@ -224,8 +240,9 @@ async def get_tessera(
     tessera_uri = f"urn:valor:tessera:{tessera_id}"
     graph_uri = named_graph_uri(design_space_id)
 
+    CAUSA_NS = f"{VALOR_NS}causa#"
     rows = await sparql_select(
-        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase WHERE {{
+        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase ?manifestationCondition WHERE {{
           GRAPH <{graph_uri}> {{
             <{tessera_uri}> a <{VALOR_NS}Tessera> ;
               <{VALOR_NS}claimContent> ?content ;
@@ -236,6 +253,7 @@ async def get_tessera(
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}uncertaintyLevel> ?uncertaintyLevel . }}
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inAlternative> ?inAlternative . }}
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inPhase> ?inPhase . }}
+            OPTIONAL {{ <{tessera_uri}> <{CAUSA_NS}hasManifestationCondition> ?manifestationCondition . }}
           }}
         }}""",
         design_space_id,
@@ -265,6 +283,7 @@ async def get_tessera(
         uncertainty_level=uncertainty_level,
         in_alternative=row.get("inAlternative"),
         in_phase=row.get("inPhase"),
+        manifestation_condition=row.get("manifestationCondition") or None,
     )
 
 
