@@ -15,7 +15,7 @@ interface RefinementDetailProps {
 }
 
 export const RefinementDetail: React.FC<RefinementDetailProps> = ({ claim, allClaims, factors = [] }) => {
-    const [activeThread, setActiveThread] = React.useState<{ targetId: string, label: string, initialThreadId?: string } | null>(null);
+    const [activeThread, setActiveThread] = React.useState<{ targetId: string; label: string; designSpaceId?: string } | null>(null);
 
     const factorMap = React.useMemo(() => {
         const map = new Map<string, string>();
@@ -35,8 +35,8 @@ export const RefinementDetail: React.FC<RefinementDetailProps> = ({ claim, allCl
         );
     }
 
-    const openThread = (targetId: string, label: string, initialThreadId?: string) => {
-        setActiveThread({ targetId, label, initialThreadId });
+    const openThread = (targetId: string, label: string) => {
+        setActiveThread({ targetId, label });
     };
 
     return (
@@ -106,7 +106,7 @@ export const RefinementDetail: React.FC<RefinementDetailProps> = ({ claim, allCl
                                 <li>
                                     <ThreadLink
                                         label={`Discussie over ${getSourceName(claim)}`}
-                                        onClick={() => openThread(claim.source_id!, getSourceName(claim), claim.source_thread_id)}
+                                        onClick={() => openThread(claim.source_id!, getSourceName(claim))}
                                     />
                                 </li>
                             )}
@@ -114,7 +114,7 @@ export const RefinementDetail: React.FC<RefinementDetailProps> = ({ claim, allCl
                                 <li>
                                     <ThreadLink
                                         label={`Discussie over ${getTargetName(claim)}`}
-                                        onClick={() => openThread(claim.target_id!, getTargetName(claim), claim.target_thread_id)}
+                                        onClick={() => openThread(claim.target_id!, getTargetName(claim))}
                                     />
                                 </li>
                             )}
@@ -122,7 +122,7 @@ export const RefinementDetail: React.FC<RefinementDetailProps> = ({ claim, allCl
                                 <li>
                                     <ThreadLink
                                         label="Discussie over deze Claim"
-                                        onClick={() => openThread(claim.id!, "Deze Claim", claim.claim_thread_id)}
+                                        onClick={() => openThread(claim.id!, "Deze Claim")}
                                     />
                                 </li>
                             )}
@@ -157,11 +157,11 @@ export const RefinementDetail: React.FC<RefinementDetailProps> = ({ claim, allCl
                 </Tabs>
             </div>
 
-            {activeThread && (
+            {activeThread && activeThread.designSpaceId && (
                 <FloatingThreadPanel
-                    targetId={activeThread.targetId}
+                    tesseraId={activeThread.targetId}
+                    designSpaceId={activeThread.designSpaceId}
                     targetLabel={activeThread.label}
-                    initialThreadId={activeThread.initialThreadId}
                     onClose={() => setActiveThread(null)}
                     readOnly={true}
                 />

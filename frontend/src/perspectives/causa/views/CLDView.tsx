@@ -19,7 +19,7 @@ import { getGeometricHandles } from '../layout/edgeUtils';
 import { CanvasContextMenu } from '@/components/shell/CanvasContextMenu';
 import { ViewControls } from '@/components/shell/ViewControls';
 import type { ConversationContext } from '@/types/conversation';
-import { api } from '@/services/api';
+// api import verwijderd — disc thread stats worden later via disc endpoints geladen
 import { FloatingThreadPanel } from '@/components/Chat/FloatingThreadPanel';
 
 // Correct path if types are in parent/parent
@@ -39,6 +39,8 @@ interface CLDViewProps {
     onInit?: (instance: any) => void;
     onConnect?: (connection: Connection) => void;
     isReadOnly?: boolean;
+    designSpaceId?: string;
+    canResolveThread?: boolean;
 }
 
 
@@ -65,7 +67,9 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     onViewportChange,
     onInit,
     onConnect,
-    isReadOnly = false
+    isReadOnly = false,
+    designSpaceId,
+    canResolveThread = false,
 }) => {
     // React Flow State
     const [rfInstance, setRfInstance] = useState<any>(null);
@@ -73,29 +77,16 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
     // thread stats
-    const [threadStats, setThreadStats] = useState<Record<string, number>>({});
+    const [threadStats] = useState<Record<string, number>>({});
     const [floatingThread, setFloatingThread] = useState<{ targetId: string; label: string; position?: { x: number; y: number } } | null>(null);
+    // disc threads (Fuseki-backed, Epic 16)
 
-    const fetchThreadStats = async () => {
-        if (causalNodes.length === 0 && causalLinks.length === 0) return;
-        try {
-            // Combine version_ids from both nodes and links
-            const nodeIds = causalNodes.map(n => n.version_id).filter(id => !!id);
-            const linkIds = causalLinks.map(l => l.version_id).filter(id => !!id);
-            const ids = [...nodeIds, ...linkIds] as string[];
+    // Thread stats worden opgehaald via disc-endpoints wanneer designSpaceId beschikbaar is.
+    // Voorlopig is fetchThreadStats een no-op; badges worden later via disc API gevuld.
+    const fetchThreadStats = () => { /* disc-stats: nog niet geïmplementeerd */ };
 
-            if (ids.length === 0) return;
-
-            const stats = await api.getThreadStats(ids);
-            setThreadStats(stats);
-        } catch (e) {
-            console.error("Failed to fetch thread stats", e);
-        }
-    };
-
-    // Fetch thread stats on load and when structure changes
     useEffect(() => {
-        fetchThreadStats();
+        // no-op: thread stats vereisen disc endpoints (Epic 16)
     }, [causalNodes, causalLinks]);
 
     const handleOpenThread = (targetId: string, label: string, position?: { x: number; y: number }) => {
@@ -452,15 +443,17 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
 
             {floatingThread && (
                 <FloatingThreadPanel
-                    targetId={floatingThread.targetId}
+                    tesseraId={floatingThread.targetId}
+                    designSpaceId={designSpaceId}
                     targetLabel={floatingThread.label}
                     position={floatingThread.position}
                     onClose={() => {
                         setFloatingThread(null);
-                        fetchThreadStats(); // Refresh stats when closing
+                        fetchThreadStats();
                     }}
-                    onThreadCreated={fetchThreadStats} // Refresh stats immediately when a thread is created
+                    onThreadCreated={fetchThreadStats}
                     readOnly={isReadOnly}
+                    canResolve={canResolveThread}
                 />
             )}
         </div >

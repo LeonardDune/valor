@@ -130,6 +130,7 @@ export interface Theme {
     name: string;
     description: string;
     project_id: string;
+    ds_id?: string;
     role?: string;
 }
 
@@ -151,7 +152,7 @@ export interface DashboardTheme {
         color: string;
         progress: number;
     }[];
-    type: 'THEME';
+    type: 'THEME' | 'ISSUE';
 }
 
 export interface DashboardProject {
@@ -161,7 +162,8 @@ export interface DashboardProject {
     role?: string;
     status?: string;
     type: 'PROJECT';
-    themes: DashboardTheme[];
+    themes: DashboardTheme[];  // backward compat alias voor issues
+    issues?: DashboardTheme[]; // nieuwe veld van backend
 }
 
 export interface DashboardEnvironment {
@@ -178,13 +180,10 @@ export interface ThemeVersion {
     id: string;
     name: string;
     description: string;
-    theme_id: string;
+    issue_id?: string;
     role?: string;
     status?: string;
-    created_at?: string;
-    valid_from?: string;
-    valid_to?: string;
-    derived_from_id?: string;
+    current_phase?: string;
 }
 
 
@@ -269,8 +268,8 @@ export const api = {
         return response.data;
     },
 
-    getThemeUsers: async (themeId: string) => {
-        const response = await apiClient.get<User[]>(`/themes/${themeId}/users`);
+    getThemeUsers: async (dsId: string) => {
+        const response = await apiClient.get<User[]>(`/designspace/${dsId}/members`);
         return response.data;
     },
 
@@ -304,13 +303,13 @@ export const api = {
         return response.data;
     },
 
-    updateThemeMember: async (themeId: string, userId: string, role: string, name?: string, status?: string) => {
-        const response = await apiClient.put(`/themes/${themeId}/users/${userId}`, { role, name, status });
+    updateThemeMember: async (dsId: string, userId: string, role: string, _name?: string, _status?: string) => {
+        const response = await apiClient.patch(`/designspace/${dsId}/members/${userId}`, { role });
         return response.data;
     },
 
-    removeThemeMember: async (themeId: string, userId: string) => {
-        const response = await apiClient.delete(`/themes/${themeId}/users/${userId}`);
+    removeThemeMember: async (dsId: string, userId: string) => {
+        const response = await apiClient.delete(`/designspace/${dsId}/members/${userId}`);
         return response.data;
     },
 
@@ -333,7 +332,7 @@ export const api = {
     getPendingInvites: async (entityId: string, entityType: 'organization' | 'project' | 'theme' = 'organization') => {
         let endpoint = `/organizations/${entityId}/invites`;
         if (entityType === 'project') endpoint = `/projects/${entityId}/invites`;
-        if (entityType === 'theme') endpoint = `/themes/${entityId}/invites`;
+        if (entityType === 'theme') endpoint = `/designspace/${entityId}/invites`;
 
         const response = await apiClient.get<Invite[]>(endpoint);
         return response.data;
@@ -366,114 +365,128 @@ export const api = {
     },
 
     getProjectThemes: async (projectId: string) => {
-        const response = await apiClient.get<Theme[]>(`/projects/${projectId}/themes`);
-        return response.data;
+        const response = await apiClient.get<{ issue_id: string; ds_id: string; name: string; description: string; role?: string; status?: string; current_phase?: string }[]>(`/projects/${projectId}/issues`);
+        return response.data.map(item => ({
+            id: item.ds_id,
+            ds_id: item.ds_id,
+            issue_id: item.issue_id,
+            name: item.name,
+            description: item.description,
+            role: item.role,
+            status: item.status,
+            current_phase: item.current_phase,
+            project_id: projectId,
+        })) as Theme[];
     },
 
     createTheme: async (projectId: string, name: string, description?: string) => {
-        const response = await apiClient.post(`/projects/${projectId}/themes`, { project_id: projectId, name, description });
+        const response = await apiClient.post(`/projects/${projectId}/issues`, { name, description });
         return response.data;
     },
 
-    updateTheme: async (themeId: string, name?: string, description?: string) => {
-        const response = await apiClient.patch(`/themes/${themeId}`, { name, description });
+    updateTheme: async (dsId: string, name?: string, description?: string) => {
+        const response = await apiClient.patch(`/designspace/${dsId}`, { name, description });
         return response.data;
     },
 
-    archiveTheme: async (themeId: string) => {
-        const response = await apiClient.delete(`/themes/${themeId}`);
+    archiveTheme: async (dsId: string) => {
+        const response = await apiClient.delete(`/designspace/${dsId}`);
         return response.data;
     },
 
-    // Theme Versions
-    getThemeVersions: async (themeId: string) => {
-        const response = await apiClient.get<ThemeVersion[]>(`/themes/${themeId}/versions`);
+    // Theme Versions (nu DesignSpace)
+    getThemeVersions: async (dsId: string) => {
+        const response = await apiClient.get<any>(`/designspace/${dsId}`);
+        const data = response.data;
+        const version: ThemeVersion = { ...data, id: data.ds_id || data.id || dsId };
+        return [version];
+    },
+
+    getThemeActiveVersion: async (dsId: string) => {
+        const response = await apiClient.get<any>(`/designspace/${dsId}`);
+        const data = response.data;
+        return { ...data, id: data.ds_id || data.id || dsId } as ThemeVersion;
+    },
+
+    getThemeVersion: async (dsId: string) => {
+        const response = await apiClient.get<any>(`/designspace/${dsId}`);
+        const data = response.data;
+        return { ...data, id: data.ds_id || data.id || dsId } as ThemeVersion;
+    },
+
+    createThemeVersion: async (_themeId: string, _name: string, _description?: string) => {
+        // Niet meer ondersteund — DesignSpaces worden aangemaakt via createTheme
+        return null;
+    },
+
+    updateThemeVersion: async (dsId: string, name?: string, description?: string) => {
+        const response = await apiClient.patch(`/designspace/${dsId}`, { name, description });
         return response.data;
     },
 
-    getThemeActiveVersion: async (themeId: string) => {
-        const response = await apiClient.get<ThemeVersion>(`/themes/${themeId}/active-version`);
+    archiveThemeVersion: async (dsId: string) => {
+        const response = await apiClient.delete(`/designspace/${dsId}`);
         return response.data;
     },
 
-    getThemeVersion: async (versionId: string) => {
-        const response = await apiClient.get<ThemeVersion>(`/versions/${versionId}`);
+    getVersionThreads: async (dsId: string) => {
+        const response = await apiClient.get<ConversationThread[]>(`/designspace/${dsId}/threads`);
         return response.data;
     },
 
-    createThemeVersion: async (themeId: string, name: string, description?: string) => {
-        const response = await apiClient.post(`/themes/${themeId}/versions`, { name, description });
+    createVersionThread: async (dsId: string, topic: string) => {
+        const response = await apiClient.post<ConversationThread>(`/designspace/${dsId}/threads`, { topic });
         return response.data;
     },
 
-    updateThemeVersion: async (versionId: string, name?: string, description?: string) => {
-        const response = await apiClient.patch(`/versions/${versionId}`, { name, description });
+    getVersionMembers: async (dsId: string) => {
+        const response = await apiClient.get<User[]>(`/designspace/${dsId}/members`);
         return response.data;
     },
 
-    archiveThemeVersion: async (versionId: string) => {
-        const response = await apiClient.delete(`/versions/${versionId}`);
+    inviteVersionMember: async (dsId: string, email: string, role: string) => {
+        const response = await apiClient.post(`/designspace/${dsId}/members`, { email, role });
         return response.data;
     },
 
-    getVersionThreads: async (versionId: string) => {
-        const response = await apiClient.get<ConversationThread[]>(`/versions/${versionId}/threads`);
+    updateVersionMemberRole: async (dsId: string, userId: string, role: string) => {
+        const response = await apiClient.patch(`/designspace/${dsId}/members/${userId}`, { role });
         return response.data;
     },
 
-    createVersionThread: async (versionId: string, topic: string) => {
-        const response = await apiClient.post<ConversationThread>(`/versions/${versionId}/threads`, { topic });
+    removeVersionMember: async (dsId: string, userId: string) => {
+        const response = await apiClient.delete(`/designspace/${dsId}/members/${userId}`);
         return response.data;
     },
 
-    getVersionMembers: async (versionId: string) => {
-        const response = await apiClient.get<User[]>(`/versions/${versionId}/members`);
+    getThemeClaims: async (dsId: string) => {
+        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`);
         return response.data;
     },
 
-    inviteVersionMember: async (versionId: string, email: string, role: string) => {
-        const response = await apiClient.post(`/versions/${versionId}/members`, { email, role });
+    getThemeVersionClaims: async (dsId: string) => {
+        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`);
         return response.data;
     },
 
-    updateVersionMemberRole: async (versionId: string, userId: string, role: string) => {
-        const response = await apiClient.patch(`/versions/${versionId}/members/${userId}`, { role });
+    getThemeFactors: async (dsId: string) => {
+        const response = await apiClient.get<Factor[]>(`/designspace/${dsId}/factors`);
         return response.data;
     },
 
-    removeVersionMember: async (versionId: string, userId: string) => {
-        const response = await apiClient.delete(`/versions/${versionId}/members/${userId}`);
-        return response.data;
-    },
-
-    getThemeClaims: async (themeId: string) => {
-        const response = await apiClient.get<Claim[]>(`/themes/${themeId}/claims`);
-        return response.data;
-    },
-
-    getThemeVersionClaims: async (versionId: string) => {
-        const response = await apiClient.get<Claim[]>(`/versions/${versionId}/claims`);
-        return response.data;
-    },
-
-    getThemeFactors: async (themeId: string) => {
-        const response = await apiClient.get<Factor[]>(`/themes/${themeId}/factors`);
-        return response.data;
-    },
-
-    getThemeVersionFactors: async (versionId: string) => {
-        const response = await apiClient.get<Factor[]>(`/versions/${versionId}/factors`);
+    getThemeVersionFactors: async (dsId: string) => {
+        const response = await apiClient.get<Factor[]>(`/designspace/${dsId}/factors`);
         return response.data;
     },
 
     // Manual Editing
-    createFactor: async (themeId: string, name: string, description?: string, type: FactorType = 'systeemelement') => {
-        const response = await apiClient.post('/factors', { theme_id: themeId, name, description, type });
+    createFactor: async (dsId: string, name: string, description?: string, type: FactorType = 'systeemelement') => {
+        const response = await apiClient.post('/factors', { ds_id: dsId, name, description, type });
         return response.data;
     },
 
-    updateFactor: async (id: string, name?: string, description?: string, type?: FactorType, themeId?: string) => {
-        const response = await apiClient.patch(`/factors/${id}`, { name, description, type, theme_id: themeId });
+    updateFactor: async (id: string, name?: string, description?: string, type?: FactorType) => {
+        const response = await apiClient.patch(`/factors/${id}`, { name, description, type });
         return response.data;
     },
 
@@ -483,7 +496,7 @@ export const api = {
     },
 
     createClaim: async (data: {
-        theme_id: string;
+        ds_id: string;
         source_id: string;
         target_id: string;
         statement: string;
@@ -517,7 +530,14 @@ export const api = {
     // Dashboard
     getDashboardEnvironments: async () => {
         const response = await apiClient.get<DashboardEnvironment[]>('/dashboard/environments');
-        return response.data;
+        // Normaliseer: backend geeft `issues` terug, frontend gebruikt `themes` als alias
+        return response.data.map(org => ({
+            ...org,
+            projects: org.projects.map(proj => ({
+                ...proj,
+                themes: proj.issues ?? proj.themes ?? [],
+            })),
+        }));
     },
 
     getDashboardThemes: async () => {
@@ -547,33 +567,62 @@ export const api = {
         return response.data;
     },
 
-    // Threads
-    getThreads: async (targetId: string): Promise<ConversationThread[]> => {
-        const response = await apiClient.get<ConversationThread[]>('/threads', { params: { target_id: targetId } });
+    // DesignSpace
+    getDesignSpacesByProject: async (projectId: string, themeId?: string): Promise<{ id: string; name: string; status: string; current_phase: string }[]> => {
+        const response = await apiClient.get(`/designspace/by-project/${projectId}`, {
+            params: themeId ? { theme_id: themeId } : undefined,
+        });
         return response.data;
     },
 
-    createThread: async (targetId: string, topic: string): Promise<ConversationThread> => {
-        const response = await apiClient.post('/threads', { target_id: targetId, topic });
-        return {
-            ...response.data,
-            status: 'open',
-            created_at: new Date().toISOString()
-        } as ConversationThread;
-    },
-
-    getThreadStats: async (targetIds: string[]): Promise<Record<string, number>> => {
-        const response = await apiClient.post<Record<string, number>>('/threads/stats', targetIds);
+    // Ontologie endpoints
+    getEpistemicStatuses: async (): Promise<{ uri: string; label_en: string; label_nl: string }[]> => {
+        const response = await apiClient.get('/ontology/epistemic-statuses');
         return response.data;
     },
 
-    createThreadMessage: async (threadId: string, content: string): Promise<ConversationMessage> => {
-        const response = await apiClient.post<ConversationMessage>(`/threads/${threadId}/messages`, { content });
+    // Threads (Fuseki-backed disc endpoints, Epic 16)
+    getCanResolveThread: async (designSpaceId: string): Promise<{ can_resolve: boolean }> => {
+        const response = await apiClient.get<{ can_resolve: boolean }>(`/designspace/${designSpaceId}/can-resolve`);
         return response.data;
     },
 
-    getThreadMessages: async (threadId: string): Promise<ConversationMessage[]> => {
-        const response = await apiClient.get<ConversationMessage[]>(`/threads/${threadId}/messages`);
+    resolveDiscThread: async (
+        threadId: string,
+        body: { design_space_id: string; resolution_outcome: string; resolution_rationale: string }
+    ): Promise<{ resolution_id: string; thread_id: string; tessera_id: string; previous_status: string; new_status: string }> => {
+        const response = await apiClient.post(`/threads/${threadId}/resolve`, body);
+        return response.data;
+    },
+
+    getDiscThreads: async (tesseraId: string, designSpaceId: string): Promise<DiscThread[]> => {
+        const response = await apiClient.get<DiscThread[]>('/threads', {
+            params: { tessera_id: tesseraId, design_space_id: designSpaceId },
+        });
+        return response.data;
+    },
+
+    createDiscThread: async (tesseraId: string, designSpaceId: string, title?: string): Promise<{ thread_id: string }> => {
+        const response = await apiClient.post<{ thread_id: string }>('/threads', {
+            tessera_id: tesseraId,
+            design_space_id: designSpaceId,
+            title: title ?? null,
+        });
+        return response.data;
+    },
+
+    getDiscContributions: async (threadId: string, designSpaceId: string): Promise<DiscContribution[]> => {
+        const response = await apiClient.get<DiscContribution[]>(`/threads/${threadId}/contributions`, {
+            params: { design_space_id: designSpaceId },
+        });
+        return response.data;
+    },
+
+    createDiscContribution: async (
+        threadId: string,
+        body: { design_space_id: string; contribution_type: string; message_content: string; evidence_id?: string }
+    ): Promise<{ contribution_id: string }> => {
+        const response = await apiClient.post<{ contribution_id: string }>(`/threads/${threadId}/contribute`, body);
         return response.data;
     },
 
@@ -594,6 +643,31 @@ export interface ConversationMessage {
     content: string;
     role: 'user' | 'assistant';
     created_at: string;
+}
+
+// Disc (Fuseki-backed deliberation threads, Epic 16)
+export interface DiscThread {
+    thread_id: string;
+    thread_uri: string;
+    tessera_id: string;
+    design_space_id: string;
+    started_by: string;
+    started_by_name: string;
+    started_at: string;
+    title: string | null;
+}
+
+export interface DiscContribution {
+    contribution_id: string;
+    contribution_uri: string;
+    thread_id: string;
+    design_space_id: string;
+    contribution_type: string;
+    message_content: string;
+    contributed_by: string;
+    contributed_by_name: string;
+    contributed_at: string;
+    evidence_id: string | null;
 }
 
 export type LifecycleStatus = 'draft' | 'proposed' | 'accepted' | 'rejected' | 'deprecated';

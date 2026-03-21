@@ -69,11 +69,11 @@ export function ThemeCard({ theme, onUpdate }: ThemeCardProps) {
 
     const handlePerspectiveClick = (e: React.MouseEvent, mode: string) => {
         e.stopPropagation();
-        navigate(`/themes/${theme.id}?mode=${mode}`);
+        navigate(`/designspace/${theme.id}?mode=${mode}`);
     };
 
     const handleCardClick = () => {
-        navigate(`/themes/${theme.id}`);
+        navigate(`/designspace/${theme.id}`);
     };
 
     const handleManageClick = (e: React.MouseEvent) => {

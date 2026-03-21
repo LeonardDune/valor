@@ -18,7 +18,7 @@ import { MemberManagement } from '../Settings/MemberManagement';
 interface ValorWorkspaceProps {
     projectId: string;
     projectName: string;
-    themeId: string;
+    dsId: string;
     themeName: string;
     onBack: () => void;
 }
@@ -28,10 +28,10 @@ type AgentType = 'CAUSA' | 'AXIA' | 'ACTOR' | 'PRAXIS';
 import { useWebSocket } from '../../hooks/useWebSocket';
 
 // ... imports
-import { useTheme } from '../../context/ThemeContext';
+import { useDesignSpace } from '../../context/DesignSpaceContext';
 import { ThemeContextPanel } from '../Theme/ThemeContextPanel';
 
-export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, themeId, projectName, themeName, onBack }) => {
+export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, dsId, projectName, themeName, onBack }) => {
     const [searchParams, setSearchParams] = useSearchParams();
     const mode = searchParams.get('mode') as AgentType | null;
 
@@ -43,7 +43,17 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
     const [currentUser, setCurrentUser] = useState<any>(null);
 
     // Context Integration
-    const { currentViewedVersion, isReadOnly, setActiveVotingSession } = useTheme();
+    const { currentViewedVersion, isReadOnly, setActiveVotingSession } = useDesignSpace();
+
+    // dsId IS de ds_id — direct gebruiken, geen lookup nodig
+    const activeDesignSpaceId = dsId;
+    const [userCanResolve, setUserCanResolve] = useState(false);
+
+    useEffect(() => {
+        api.getCanResolveThread(dsId)
+            .then(r => setUserCanResolve(r.can_resolve))
+            .catch(() => setUserCanResolve(false));
+    }, [dsId]);
 
     // WS to Context Sync
     useEffect(() => {
@@ -204,13 +214,15 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
                         <div className="flex-1 bg-muted/30 h-full relative overflow-hidden">
                             {/* Pass version context to CausaShell */}
                             <CausaShell
-                                themeId={themeId}
+                                themeId={dsId}
                                 projectId={projectId}
                                 onOpenConversation={handleOpenConversation}
                                 websocket={websocketContext}
                                 currentUserId={currentUser?.id || null}
                                 versionId={currentViewedVersion?.id}
                                 isReadOnly={isReadOnly}
+                                designSpaceId={activeDesignSpaceId}
+                                canResolveThread={userCanResolve}
                             />
                         </div>
                     </div>
@@ -229,7 +241,7 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
                 isOpen={!!activeConversation}
                 onClose={handleCloseConversation}
                 context={activeConversation}
-                topicId={themeId}
+                topicId={dsId}
                 topicLabel={themeName}
                 onClaimsUpdate={handleClaimsUpdate}
                 isReadOnly={isReadOnly}
@@ -241,7 +253,7 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, theme
                         <DialogTitle>Thema Instellingen: {themeName}</DialogTitle>
                     </DialogHeader>
                     <div className="py-4">
-                        <MemberManagement entityId={themeId} entityType="theme" />
+                        <MemberManagement entityId={dsId} entityType="theme" />
                     </div>
                 </DialogContent>
             </Dialog>

@@ -21,12 +21,13 @@ import { toast } from 'sonner';
 interface EnvironmentNode {
     id: string;
     name: string;
-    type: 'ORGANIZATION' | 'PROJECT' | 'THEME';
+    type: 'ORGANIZATION' | 'PROJECT' | 'THEME' | 'ISSUE';
     role?: string;
     status?: string;
     description?: string;
     projects?: EnvironmentNode[]; // For ORG
     themes?: EnvironmentNode[];   // For PROJECT
+    issues?: EnvironmentNode[];   // For PROJECT (new model)
 }
 
 interface WidgetProps {
@@ -139,6 +140,7 @@ const EnvironmentItem: React.FC<{
                 <div className="animate-in fade-in slide-in-from-top-1 duration-200">
                     {node.projects?.map(p => <EnvironmentItem key={p.id} node={p} level={level + 1} onNavigate={onNavigate} userId={userId} />)}
                     {node.themes?.map(t => <EnvironmentItem key={t.id} node={t} level={level + 1} onNavigate={onNavigate} userId={userId} />)}
+                    {node.issues?.map(t => <EnvironmentItem key={t.id} node={t} level={level + 1} onNavigate={onNavigate} userId={userId} />)}
                 </div>
             )}
         </div>
@@ -157,7 +159,7 @@ export const MyEnvironmentsWidget: React.FC<WidgetProps> = ({ className }) => {
         const load = async () => {
             try {
                 const envs = await api.getDashboardEnvironments();
-                setData(envs);
+                setData(envs as unknown as EnvironmentNode[]);
             } catch (err) {
                 console.error("Failed to load environments", err);
             } finally {
@@ -175,8 +177,8 @@ export const MyEnvironmentsWidget: React.FC<WidgetProps> = ({ className }) => {
             navigate(`/organizations/${node.id}`);
         } else if (node.type === 'PROJECT') {
             navigate(`/projects/${node.id}`);
-        } else if (node.type === 'THEME') {
-            navigate(`/themes/${node.id}`);
+        } else if (node.type === 'THEME' || node.type === 'ISSUE') {
+            navigate(`/designspace/${node.id}`);
         }
     };
 

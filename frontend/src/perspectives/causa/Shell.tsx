@@ -21,7 +21,7 @@ import { CreateFactorModal } from './views/modals/CreateFactorModal';
 import { EditFactorDetailModal } from './views/modals/EditFactorDetailModal';
 import { ParticipantDashboard } from '@/components/deliberation/ParticipantDashboard';
 import { ModeratorDashboard } from '@/components/deliberation/ModeratorDashboard';
-import { useTheme } from '@/context/ThemeContext';
+import { useDesignSpace } from '@/context/DesignSpaceContext';
 // RankingBoard, ConsentBoard, RefinementBoard removed
 import { api } from '@/services/api';
 import { sessionService } from '@/services/sessions';
@@ -38,11 +38,13 @@ export interface CausaShellProps {
     onOpenConversation?: (context: ConversationContext) => void;
     versionId?: string;
     isReadOnly?: boolean;
+    designSpaceId?: string;
+    canResolveThread?: boolean;
 }
 
-export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpenConversation, versionId, isReadOnly = false }: CausaShellProps) => {
+export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpenConversation, versionId, isReadOnly = false, designSpaceId, canResolveThread = false }: CausaShellProps) => {
     const queryClient = useQueryClient();
-    const themeState = useTheme();
+    const themeState = useDesignSpace();
 
     // A. Local UI State
     const [localSelection, setLocalSelection] = useState<{ type: 'node' | 'link'; data: any } | null>(null);
@@ -233,7 +235,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
         if (!connection.source || !connection.target) return;
         try {
             await api.createClaim({
-                theme_id: themeId,
+                ds_id: themeId,
                 source_id: connection.source,
                 target_id: connection.target,
                 statement: 'invloed', // Default statement
@@ -325,10 +327,12 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                 layoutMode={layoutMode}
                 onOpenConversation={onOpenConversation || (() => { })}
                 onEdit={handleEdit}
-                onViewportChange={() => { }} // Clean up unused
+                onViewportChange={() => { }}
                 onInit={setRfInstance}
                 onConnect={effectiveIsReadOnly ? undefined : handleConnect}
                 isReadOnly={effectiveIsReadOnly}
+                designSpaceId={designSpaceId}
+                canResolveThread={canResolveThread}
             />
 
             {/* Modals */}

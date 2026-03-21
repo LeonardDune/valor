@@ -1,4 +1,4 @@
-FROM stain/jena-fuseki
+FROM stain/jena-fuseki:5.1.0
 
 USER root
 
