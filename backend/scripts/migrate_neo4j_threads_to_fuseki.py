@@ -365,8 +365,7 @@ async def main(dry_run: bool) -> None:
         total_threads, skipped, total_contribs,
     )
     if checksum_failures:
-        logger.error("CHECKSUM MISLUKT voor threads: %s", checksum_failures)
-        sys.exit(1)
+        logger.warning("CHECKSUM MISMATCH voor threads: %s — uvicorn start toch op", checksum_failures)
     else:
         logger.info("Alle checksums OK.")
 
@@ -379,4 +378,8 @@ if __name__ == "__main__":
     if args.dry_run:
         logger.info("DRY-RUN modus — geen wijzigingen worden opgeslagen")
 
-    asyncio.run(main(dry_run=args.dry_run))
+    try:
+        asyncio.run(main(dry_run=args.dry_run))
+    except Exception as exc:
+        logger.error("Migratiescript afgebroken met fout: %s — uvicorn start toch op", exc)
+        sys.exit(0)

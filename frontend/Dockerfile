@@ -9,9 +9,11 @@ RUN npm install
 
 # Copy source and build
 COPY . .
-# VITE_API_URL should be provided as a build argument or env var in Coolify
+# VITE_* vars must be provided as build arguments (baked in at Vite build time)
 ARG VITE_API_URL
 ENV VITE_API_URL=$VITE_API_URL
+ARG VITE_WS_URL
+ENV VITE_WS_URL=$VITE_WS_URL
 
 RUN npm run build
 

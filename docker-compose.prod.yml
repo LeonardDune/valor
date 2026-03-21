@@ -7,10 +7,13 @@ services:
     restart: always
     environment:
       - PORT=8000
-    # Env variables like NEO4J_URI are managed in Coolify UI
+      - FUSEKI_URL=http://fuseki:3030
+    # Overige env variables (NEO4J_URI, etc.) worden ingesteld in Coolify UI
     depends_on:
       fuseki:
         condition: service_healthy
+      fuseki-loader:
+        condition: service_completed_successfully
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
       interval: 30s
@@ -25,7 +28,7 @@ services:
     restart: always
     # Geen publieke poort — alleen bereikbaar via intern Coolify-netwerk
     volumes:
-      - fuseki_data:/fuseki
+      - fuseki_data:/fuseki/databases
     environment:
       # ADMIN_PASSWORD wordt ingesteld via Coolify UI
       - ADMIN_PASSWORD=${FUSEKI_ADMIN_PASSWORD}
@@ -58,6 +61,7 @@ services:
       dockerfile: Dockerfile
       args:
         - VITE_API_URL=https://api.valor-ecosystem.nl
+        - VITE_WS_URL=wss://api.valor-ecosystem.nl/ws
     container_name: valor-frontend-prod
     restart: always
     healthcheck:

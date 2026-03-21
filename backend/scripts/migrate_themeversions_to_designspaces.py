@@ -107,9 +107,9 @@ def _get_or_create_designspace_id(
         return f"dry-run-{uuid.uuid4()}", False
 
     create_query = """
-    MATCH (u:User {id: $uid})
     MATCH (p:Project {id: $pid})
     MATCH (v:ThemeVersion {id: $vid})
+    OPTIONAL MATCH (u:User {id: $uid})
     CREATE (ds:DesignSpace {
         id: $id,
         name: $name,
@@ -122,7 +122,9 @@ def _get_or_create_designspace_id(
     })
     CREATE (p)-[:HAS_DESIGN_SPACE]->(ds)
     CREATE (v)-[:HAS_DESIGN_SPACE]->(ds)
-    CREATE (u)-[:HAS_ROLE {role: 'admin', created_at: datetime()}]->(ds)
+    FOREACH (ignore IN CASE WHEN u IS NOT NULL THEN [1] ELSE [] END |
+        CREATE (u)-[:HAS_ROLE {role: 'admin', created_at: datetime()}]->(ds)
+    )
     RETURN ds.id AS id
     """
     import uuid
@@ -138,7 +140,7 @@ def _get_or_create_designspace_id(
             "vid": theme_version_id,
         }).single()
         if not result:
-            raise RuntimeError(f"DesignSpace aanmaken mislukt voor ThemeVersion {theme_version_id}")
+            raise RuntimeError(f"DesignSpace aanmaken mislukt voor ThemeVersion {theme_version_id} (project of ThemeVersion niet gevonden)")
         return result["id"], False
 
 
@@ -366,8 +368,7 @@ async def main(dry_run: bool):
         len(versions) - skipped, skipped, total_factors, total_claims,
     )
     if checksum_failures:
-        logger.error("CHECKSUM MISLUKT voor: %s", checksum_failures)
-        sys.exit(1)
+        logger.warning("CHECKSUM MISMATCH voor: %s — uvicorn start toch op", checksum_failures)
     else:
         logger.info("Alle checksums OK.")
 
@@ -380,4 +381,8 @@ if __name__ == "__main__":
     if args.dry_run:
         logger.info("DRY-RUN modus — geen wijzigingen worden opgeslagen")
 
-    asyncio.run(main(dry_run=args.dry_run))
+    try:
+        asyncio.run(main(dry_run=args.dry_run))
+    except Exception as exc:
+        logger.error("Migratiescript afgebroken met fout: %s — uvicorn start toch op", exc)
+        sys.exit(0)

@@ -13,9 +13,9 @@
 ##   Geeft een sh:ValidationReport terug (JSON-LD via Accept: application/ld+json).
 ##   Shapes-graph wordt uit het dataset zelf gelezen (shapegraph= parameter).
 
-PREFIX fuseki:  <http://jena.apache.org/fuseki#> .
-PREFIX rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
-PREFIX tdb2:    <http://jena.apache.org/2016/tdb#> .
+PREFIX fuseki:  <http://jena.apache.org/fuseki#>
+PREFIX rdf:     <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX tdb2:    <http://jena.apache.org/2016/tdb#>
 
 <#valor_service>
     rdf:type fuseki:Service ;
