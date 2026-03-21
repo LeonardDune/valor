@@ -3,126 +3,9 @@ import uuid
 import logging
 
 from app.db.utils import get_driver
-from app.models.domain import LifecycleStatus, Claim, Proposal
+from app.models.domain import LifecycleStatus, Proposal
 
 logger = logging.getLogger(__name__)
-
-
-# --- Agent / Conversation ---
-
-async def save_claims(conversation_id: str, claims: List[Claim]):
-    """
-    Persists claims extracted by the Agent.
-    Updated for Base/Version Refactor:
-    - Creates FactorBase/FactorVersion if not exist.
-    - Creates ClaimBase/ClaimVersion.
-    - Uses active ThemeVersion.
-    """
-    driver = get_driver()
-    query = """
-    MERGE (ct:ConversationThread {id: $cid})
-    WITH ct, ct.space_id as version_id
-
-    // Ensure we have an active ThemeVersion to attach to
-    MATCH (v:ThemeVersion {id: version_id})
-    WHERE v.status = 'active'
-
-    UNWIND $claims as claim
-
-    // --- Source Factor ---
-    // Try to find existing active FactorVersion by name within this ThemeVersion
-    OPTIONAL MATCH (v)-[:HAS_FACTOR]->(existing_fv_source:FactorVersion {name: claim.source_node})
-    WITH ct, v, claim, existing_fv_source
-
-    CALL {
-        WITH v, claim, existing_fv_source
-        // IF existing found, use it. ELSE create new Base + Version
-        WHERE existing_fv_source IS NULL
-        CREATE (fb_source:FactorBase {
-            id: randomUUID(),
-            created_at: datetime(),
-            created_by: 'system_agent' // Agent doesn't have ID yet?
-        })
-        CREATE (fv_source:FactorVersion {
-            id: randomUUID(),
-            base_id: fb_source.id,
-            name: claim.source_node,
-            // type removed - now context-dependent on relationship
-            version_id: v.id,
-            created_at: datetime()
-        })
-        CREATE (v)-[:HAS_FACTOR {role: coalesce(claim.source_type, 'systeemelement')}]->(fv_source)
-        // No User-Created ink for agent? Or link to System Admin?
-        RETURN fv_source as source_v
-
-        UNION
-
-        WITH existing_fv_source
-        WHERE existing_fv_source IS NOT NULL
-        RETURN existing_fv_source as source_v
-    }
-
-    // --- Target Factor (Same logic) ---
-    WITH ct, v, claim, source_v
-    OPTIONAL MATCH (v)-[:HAS_FACTOR]->(existing_fv_target:FactorVersion {name: claim.target_node})
-
-    CALL {
-        WITH v, claim, existing_fv_target
-        WHERE existing_fv_target IS NULL
-        CREATE (fb_target:FactorBase {
-            id: randomUUID(),
-            created_at: datetime(),
-            created_by: 'system_agent'
-        })
-        CREATE (fv_target:FactorVersion {
-            id: randomUUID(),
-            base_id: fb_target.id,
-            name: claim.target_node,
-            // type removed - now context-dependent on relationship
-            version_id: v.id,
-            created_at: datetime()
-        })
-        CREATE (v)-[:HAS_FACTOR {role: coalesce(claim.target_type, 'systeemelement')}]->(fv_target)
-        RETURN fv_target as target_v
-
-        UNION
-
-        WITH existing_fv_target
-        WHERE existing_fv_target IS NOT NULL
-        RETURN existing_fv_target as target_v
-    }
-
-    // --- Claim ---
-    CREATE (cb:ClaimBase {
-        id: coalesce(claim.id, randomUUID()),
-        created_at: datetime(),
-        created_by: 'system_agent'
-    })
-    CREATE (cv:ClaimVersion {
-        id: randomUUID(),
-        base_id: cb.id,
-        statement: claim.statement,
-        confidence: claim.confidence,
-        polarity: claim.polarity,
-        evidence_text: claim.evidence_text,
-        evidence_url: claim.evidence_url,
-        source_version_id: source_v.id,
-        target_version_id: target_v.id,
-        created_at: datetime()
-    })
-
-    // Link ClaimVersion to FactorVersions
-    CREATE (source_v)-[:CLAIMS]->(cv)
-    CREATE (cv)-[:TO]->(target_v)
-
-    // Link to Conversation
-    MERGE (ct)-[:GENERATED]->(cv)
-    """
-
-    # Note: Logic above is simplified "Merge if not exists" using CALL/UNION
-    # Agent logic is complex. For now focusing on manual endpoints.
-    # Placeholder for Agent logic update until verified.
-    pass
 
 
 async def set_conversation_topic(conversation_id: str, topic: str):
@@ -148,41 +31,6 @@ async def get_conversation_topic(conversation_id: str) -> Optional[str]:
             return record["topic"] if record else None
     except Exception as e:
         return None
-
-
-async def fetch_existing_factors(conversation_id: str) -> List[str]:
-    """Returns names of factors mentioned in this conversation or context."""
-    driver = get_driver()
-    query = """
-    MATCH (c:ConversationThread {id: $cid})-[:GENERATED]->(cl:ClaimVersion)
-    MATCH (source)-[:CLAIMS]->(cl)-[:TO]->(target)
-    RETURN collect(distinct source.name) + collect(distinct target.name) as factors
-    """
-    try:
-        with driver.session() as session:
-            result = session.run(query, {"cid": conversation_id})
-            record = result.single()
-            if record:
-                names = list(set(record["factors"]))
-                return names
-            return []
-    except Exception as e:
-        logger.error(f"Failed to fetch factors: {e}")
-        return []
-
-
-async def revoke_claims(conversation_id: str):
-    """Marks claims from this conversation as revoked or deletes them?"""
-    driver = get_driver()
-    query = """
-    MATCH (c:ConversationThread {id: $cid})-[rel:GENERATED]->(cl:ClaimVersion)
-    DETACH DELETE cl
-    """
-    try:
-        with driver.session() as session:
-            session.run(query, {"cid": conversation_id})
-    except Exception as e:
-        logger.error(f"Failed to revoke claims: {e}")
 
 
 # --- Proposals ---

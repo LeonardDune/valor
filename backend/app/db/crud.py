@@ -2,11 +2,8 @@
 # Alle logica zit in de domein-modules; importeer altijd vanuit crud.py.
 
 from app.db.conversations import (
-    save_claims,
     set_conversation_topic,
     get_conversation_topic,
-    fetch_existing_factors,
-    revoke_claims,
     create_proposal,
     get_proposals,
     get_proposal_by_id,
@@ -160,8 +157,7 @@ from app.db.utils import get_driver
 
 __all__ = [
     # conversations
-    "save_claims", "set_conversation_topic", "get_conversation_topic",
-    "fetch_existing_factors", "revoke_claims",
+    "set_conversation_topic", "get_conversation_topic",
     "create_proposal", "get_proposals", "get_proposal_by_id", "update_proposal_status",
     "create_conversation_thread", "get_threads_by_target", "get_thread_counts",
     "create_thread_message", "get_thread_messages",
