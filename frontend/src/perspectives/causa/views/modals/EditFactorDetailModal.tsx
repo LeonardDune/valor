@@ -101,7 +101,7 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
         setIsSaving(true);
         try {
             if (selection.type === 'node') {
-                await api.updateFactor(selection.data.id, name, description, type, themeId);
+                await api.updateFactor(selection.data.id, name, description, type);
             } else {
                 await api.updateClaim(selection.data.id, {
                     statement,
@@ -151,7 +151,7 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
         try {
             const sourceId = selection.data.id;
             await api.createClaim({
-                theme_id: themeId,
+                ds_id: themeId,
                 statement: newStatement || 'Nieuwe verbinding',
                 source_id: sourceId,
                 target_id: newTargetId,

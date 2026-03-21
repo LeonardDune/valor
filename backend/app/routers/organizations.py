@@ -12,7 +12,6 @@ from app.db.crud import (
     get_user_by_email, check_permission, get_all_users,
     update_organization, archive_organization,
     update_project_member_role, remove_project_member,
-    update_theme_member_role, remove_theme_member,
     get_user_by_id,
 )
 from app.db.invites import create_invite, get_pending_invites, accept_invite
@@ -155,8 +154,8 @@ async def add_org_member(org_id: str, member: AddMemberRequest, user: dict = Dep
 
 @router.put("/organizations/{org_id}/users/{user_id}")
 async def update_member(org_id: str, user_id: str, data: UpdateMemberRequest, user: dict = Depends(get_current_user)):
-    await update_org_member_role(org_id, user_id, data.role, data.name, data.status)
-    return {"status": "updated", "user_id": user_id, "role": data.role, "name": data.name, "member_status": data.status}
+    await update_org_member_role(org_id, user_id, data.role, data.name)
+    return {"status": "updated", "user_id": user_id, "role": data.role, "name": data.name}
 
 
 @router.delete("/organizations/{org_id}/users/{user_id}")
@@ -171,8 +170,8 @@ async def remove_member(org_id: str, user_id: str, user: dict = Depends(get_curr
 async def update_project_member(project_id: str, user_id: str, data: UpdateMemberRequest, user: dict = Depends(get_current_user)):
     if not await check_permission(user["id"], project_id, Role.ADMIN):
         raise HTTPException(status_code=403, detail="Not authorized to manage this project")
-    await update_project_member_role(project_id, user_id, data.role, data.name, data.status)
-    return {"status": "updated", "user_id": user_id, "role": data.role, "name": data.name, "member_status": data.status}
+    await update_project_member_role(project_id, user_id, data.role, data.name)
+    return {"status": "updated", "user_id": user_id, "role": data.role, "name": data.name}
 
 
 @router.delete("/projects/{project_id}/users/{user_id}")
@@ -180,22 +179,6 @@ async def remove_project_member_endpoint(project_id: str, user_id: str, user: di
     if not await check_permission(user["id"], project_id, Role.ADMIN):
         raise HTTPException(status_code=403, detail="Not authorized to manage this project")
     await remove_project_member(project_id, user_id)
-    return {"status": "removed", "user_id": user_id}
-
-
-@router.put("/themes/{theme_id}/users/{user_id}")
-async def update_theme_member(theme_id: str, user_id: str, data: UpdateMemberRequest, user: dict = Depends(get_current_user)):
-    if not await check_permission(user["id"], theme_id, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="Not authorized to manage this theme")
-    await update_theme_member_role(theme_id, user_id, data.role, data.name, data.status)
-    return {"status": "updated", "user_id": user_id, "role": data.role, "name": data.name, "member_status": data.status}
-
-
-@router.delete("/themes/{theme_id}/users/{user_id}")
-async def remove_theme_member_endpoint(theme_id: str, user_id: str, user: dict = Depends(get_current_user)):
-    if not await check_permission(user["id"], theme_id, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="Not authorized to manage this theme")
-    await remove_theme_member(theme_id, user_id)
     return {"status": "removed", "user_id": user_id}
 
 
@@ -260,9 +243,9 @@ async def list_project_invites(project_id: str, user: dict = Depends(get_current
     return await get_pending_invites(project_id)
 
 
-@router.get("/themes/{theme_id}/invites")
-async def list_theme_invites(theme_id: str, user: dict = Depends(get_current_user)):
-    can_view = await check_permission(user["id"], theme_id, Role.ADMIN)
+@router.get("/designspace/{ds_id}/invites")
+async def list_designspace_invites(ds_id: str, user: dict = Depends(get_current_user)):
+    can_view = await check_permission(user["id"], ds_id, Role.ADMIN)
     if not can_view:
         raise HTTPException(status_code=403, detail="Not authorized to view invites")
-    return await get_pending_invites(theme_id)
+    return await get_pending_invites(ds_id)
