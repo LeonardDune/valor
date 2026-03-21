@@ -1,5 +1,5 @@
 import React from 'react';
-import { useTheme } from '../../context/ThemeContext';
+import { useDesignSpace } from '../../context/DesignSpaceContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, Target } from 'lucide-react';
@@ -9,7 +9,7 @@ export const ThemeContextPanel: React.FC = () => {
         activeVersion,
         isReadOnly,
         activeVotingSession
-    } = useTheme();
+    } = useDesignSpace();
 
     if (!activeVersion) return null;
 

@@ -19,7 +19,7 @@ import { VersionLayout } from './components/layout/VersionLayout';
 import { VersionDashboard } from './pages/VersionDashboard';
 import { VersionChat } from './pages/VersionChat';
 import { RefinementBoardComponent } from './components/deliberation/RefinementBoard';
-import { ThemeProvider } from './context/ThemeContext';
+import { DesignSpaceProvider } from './context/DesignSpaceContext';
 
 function App() {
   const { session, isLoading: authLoading } = useAuth();
@@ -116,22 +116,16 @@ function App() {
             </DashboardLayout>
           } />
 
-          <Route path="/themes/:themeId" element={
-            <DashboardLayout>
-              <div className="h-full">
-                <WorkspaceWrapper />
-              </div>
-            </DashboardLayout>
-          } />
-
-
-          {/* DesignSpace Routes (Deliberation) */}
-          <Route path="/designspace/:dsId" element={<VersionLayout />}>
-            <Route index element={<VersionDashboard />} />
-            <Route path="claims" element={<RefinementBoardComponent />} />
-            <Route path="chat" element={<VersionChat />} />
-            <Route path="members" element={<div className="p-8">Members (Coming Soon)</div>} />
-            <Route path="settings" element={<div className="p-8">Version Settings (Coming Soon)</div>} />
+          {/* DesignSpace Routes */}
+          <Route path="/designspace/:dsId">
+            <Route index element={<WorkspaceWrapper />} />
+            <Route element={<VersionLayout />}>
+              <Route path="overview" element={<VersionDashboard />} />
+              <Route path="claims" element={<RefinementBoardComponent />} />
+              <Route path="chat" element={<VersionChat />} />
+              <Route path="members" element={<div className="p-8">Members (Coming Soon)</div>} />
+              <Route path="settings" element={<div className="p-8">Version Settings (Coming Soon)</div>} />
+            </Route>
           </Route>
 
 
@@ -175,12 +169,10 @@ const ThemeListWrapper = () => {
 }
 
 const WorkspaceWrapper = () => {
-  const { themeId } = useParams();
+  const { dsId } = useParams();
   const navigate = useNavigate();
   const { organizations, isLoading } = useOrganization();
 
-  // Find the context (Project & Theme) from the loaded structure
-  // Need to traverse Org -> Project -> Theme
   const found = organizations.flatMap(org =>
     org.projects.flatMap(proj =>
       proj.themes.map(theme => ({
@@ -188,31 +180,26 @@ const WorkspaceWrapper = () => {
         theme
       }))
     )
-  ).find(item => item.theme.id === themeId);
+  ).find(item => item.theme.id === dsId);
 
   if (isLoading) {
     return <div className="flex items-center justify-center h-screen">Laden...</div>;
   }
 
   if (!found) {
-    return <div className="flex items-center justify-center h-screen">Thema niet gevonden of geen toegang.</div>;
+    return <div className="flex items-center justify-center h-screen">DesignSpace niet gevonden of geen toegang.</div>;
   }
 
-  // Import locally to avoid circular dependencies if any, or just ensure top-level import
-  // But wait, I can't import inside component. 
-  // I will add the import to the top of the file in a separate step or assume I added it. 
-  // Actually, I should add the import first.
-
   return (
-    <ThemeProvider themeId={found.theme.id}>
+    <DesignSpaceProvider dsId={found.theme.id}>
       <ValorWorkspace
         projectId={found.project.id}
         projectName={found.project.name}
-        themeId={found.theme.id}
+        dsId={found.theme.id}
         themeName={found.theme.name}
-        onBack={() => navigate(-1)} // Or navigate to project view
+        onBack={() => navigate(-1)}
       />
-    </ThemeProvider>
+    </DesignSpaceProvider>
   );
 }
 

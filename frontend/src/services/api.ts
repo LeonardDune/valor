@@ -332,7 +332,7 @@ export const api = {
     getPendingInvites: async (entityId: string, entityType: 'organization' | 'project' | 'theme' = 'organization') => {
         let endpoint = `/organizations/${entityId}/invites`;
         if (entityType === 'project') endpoint = `/projects/${entityId}/invites`;
-        if (entityType === 'theme') endpoint = `/themes/${entityId}/invites`;
+        if (entityType === 'theme') endpoint = `/designspace/${entityId}/invites`;
 
         const response = await apiClient.get<Invite[]>(endpoint);
         return response.data;
@@ -396,18 +396,22 @@ export const api = {
 
     // Theme Versions (nu DesignSpace)
     getThemeVersions: async (dsId: string) => {
-        const response = await apiClient.get<ThemeVersion>(`/designspace/${dsId}`);
-        return [response.data];
+        const response = await apiClient.get<any>(`/designspace/${dsId}`);
+        const data = response.data;
+        const version: ThemeVersion = { ...data, id: data.ds_id || data.id || dsId };
+        return [version];
     },
 
     getThemeActiveVersion: async (dsId: string) => {
-        const response = await apiClient.get<ThemeVersion>(`/designspace/${dsId}`);
-        return response.data;
+        const response = await apiClient.get<any>(`/designspace/${dsId}`);
+        const data = response.data;
+        return { ...data, id: data.ds_id || data.id || dsId } as ThemeVersion;
     },
 
     getThemeVersion: async (dsId: string) => {
-        const response = await apiClient.get<ThemeVersion>(`/designspace/${dsId}`);
-        return response.data;
+        const response = await apiClient.get<any>(`/designspace/${dsId}`);
+        const data = response.data;
+        return { ...data, id: data.ds_id || data.id || dsId } as ThemeVersion;
     },
 
     createThemeVersion: async (_themeId: string, _name: string, _description?: string) => {

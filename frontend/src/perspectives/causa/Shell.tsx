@@ -21,7 +21,7 @@ import { CreateFactorModal } from './views/modals/CreateFactorModal';
 import { EditFactorDetailModal } from './views/modals/EditFactorDetailModal';
 import { ParticipantDashboard } from '@/components/deliberation/ParticipantDashboard';
 import { ModeratorDashboard } from '@/components/deliberation/ModeratorDashboard';
-import { useTheme } from '@/context/ThemeContext';
+import { useDesignSpace } from '@/context/DesignSpaceContext';
 // RankingBoard, ConsentBoard, RefinementBoard removed
 import { api } from '@/services/api';
 import { sessionService } from '@/services/sessions';
@@ -44,7 +44,7 @@ export interface CausaShellProps {
 
 export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpenConversation, versionId, isReadOnly = false, designSpaceId, canResolveThread = false }: CausaShellProps) => {
     const queryClient = useQueryClient();
-    const themeState = useTheme();
+    const themeState = useDesignSpace();
 
     // A. Local UI State
     const [localSelection, setLocalSelection] = useState<{ type: 'node' | 'link'; data: any } | null>(null);

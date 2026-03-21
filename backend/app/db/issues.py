@@ -134,19 +134,22 @@ async def get_issues_by_project(project_id: str, user_id: str) -> list[dict]:
     MATCH (p:Project {id: $pid})-[:hasIssue]->(i:Issue)-[:isAddressedInDesignSpace]->(ds:DesignSpace)
     WHERE i.status IS NULL OR i.status <> 'archived'
     MATCH (u:User {id: $uid})
-    OPTIONAL MATCH (u)-[r:HAS_ROLE]->(ds)
+    OPTIONAL MATCH (u)-[r_ds:HAS_ROLE]->(ds)
     OPTIONAL MATCH (u)-[r_proj:HAS_ROLE]->(p)
     OPTIONAL MATCH (org:Organization)-[:OWNS]->(p)
     OPTIONAL MATCH (u)-[r_org:HAS_ROLE]->(org)
-    WITH i, ds, r,
+    WITH i, ds,
          CASE
            WHEN u.is_platform_admin = true THEN 'admin'
-           WHEN r IS NOT NULL THEN r.role
+           WHEN 'admin' IN collect(DISTINCT r_ds.role) THEN 'admin'
+           WHEN 'moderator' IN collect(DISTINCT r_ds.role) THEN 'moderator'
+           WHEN collect(DISTINCT r_ds.role) <> [] THEN head(collect(DISTINCT r_ds.role))
            WHEN r_proj.role = 'admin' THEN 'admin'
            WHEN r_org.role = 'admin' THEN 'admin'
            ELSE 'member'
          END AS role
-    RETURN i.id AS issue_id,
+    RETURN DISTINCT
+           i.id AS issue_id,
            ds.id AS ds_id,
            i.name AS name,
            i.description AS description,

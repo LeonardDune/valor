@@ -17,8 +17,7 @@ export const VersionLayout: React.FC<VersionLayoutProps> = ({ children }) => {
             id: 'overview',
             icon: LayoutDashboard,
             label: 'Overview',
-            path: `/designspace/${dsId}`,
-            exact: true
+            path: `/designspace/${dsId}/overview`,
         },
         {
             id: 'claims',

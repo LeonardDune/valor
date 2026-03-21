@@ -178,7 +178,7 @@ export const MyEnvironmentsWidget: React.FC<WidgetProps> = ({ className }) => {
         } else if (node.type === 'PROJECT') {
             navigate(`/projects/${node.id}`);
         } else if (node.type === 'THEME' || node.type === 'ISSUE') {
-            navigate(`/themes/${node.id}`);
+            navigate(`/designspace/${node.id}`);
         }
     };
 
