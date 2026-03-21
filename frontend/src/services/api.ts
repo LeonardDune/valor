@@ -53,6 +53,7 @@ export interface Claim {
     status?: string;
     evidence_text?: string;
     evidence_url?: string;
+    claim_type?: string;
 }
 
 export interface ValidationResult {

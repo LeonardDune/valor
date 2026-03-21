@@ -121,9 +121,18 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
         return viewportParams;
     };
 
+    // As-is / To-be filter state
+    const [claimTypeFilter, setClaimTypeFilter] = useState<'all' | 'AsIsType' | 'ToBeType'>('all');
+
     // B. Fetch Data
     // console.log('[CausaShell] Props:', { themeId, versionId, activeVersionId: themeState.activeVersion?.id });
     const { nodes, links, factors, refresh, loading } = useCausaData(themeId, versionId || themeState.activeVersion?.id);
+
+    // Filter links on claimType; nodes always remain visible
+    const filteredLinks = useMemo(() => {
+        if (claimTypeFilter === 'all') return links;
+        return links.filter(l => l.claimType === claimTypeFilter || l.claimType === undefined);
+    }, [links, claimTypeFilter]);
 
     // C. Initialize Session
     // Re-create session ONLY when layoutMode changes
@@ -295,6 +304,34 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                     </>
                 }
             >
+                {/* As-is / To-be toggle */}
+                <div className="flex items-center gap-1 border rounded-md p-0.5 bg-muted">
+                    <Button
+                        size="sm"
+                        variant={claimTypeFilter === 'all' ? 'secondary' : 'ghost'}
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setClaimTypeFilter('all')}
+                    >
+                        Alles
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant={claimTypeFilter === 'AsIsType' ? 'secondary' : 'ghost'}
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setClaimTypeFilter('AsIsType')}
+                    >
+                        As-is
+                    </Button>
+                    <Button
+                        size="sm"
+                        variant={claimTypeFilter === 'ToBeType' ? 'secondary' : 'ghost'}
+                        className="h-7 px-2 text-xs"
+                        onClick={() => setClaimTypeFilter('ToBeType')}
+                    >
+                        To-be
+                    </Button>
+                </div>
+
                 {!effectiveIsReadOnly && (
                     <TooltipProvider>
                         <Tooltip>
@@ -319,7 +356,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
             {/* View */}
             <CLDView
                 nodes={nodes}
-                links={links}
+                links={filteredLinks}
                 session={session}
                 runner={runner}
                 onSelect={handleSelect}

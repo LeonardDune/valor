@@ -27,4 +27,5 @@ export interface CausalLink {
     evidence_text?: string;
     evidence_url?: string;
     threadCount?: number;
+    claimType?: 'AsIsType' | 'ToBeType';
 }

@@ -43,7 +43,8 @@ export const mapClaimToLink = (claim: Claim): CausalLink => {
         statement: claim.statement,
         version_id: claim.version_id,
         evidence_text: claim.evidence_text,
-        evidence_url: claim.evidence_url
+        evidence_url: claim.evidence_url,
+        claimType: (claim.claim_type === 'AsIsType' || claim.claim_type === 'ToBeType') ? claim.claim_type : undefined
     };
 };
 
