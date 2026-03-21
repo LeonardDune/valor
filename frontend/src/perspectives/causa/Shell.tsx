@@ -14,6 +14,7 @@ import { ExportMenu } from '@/components/shell/ExportMenu';
 import { useDomExport } from '@/hooks/useDomExport';
 import { CLDView } from './views/CLDView';
 import { useCausaData } from './hooks/useCausaData';
+import { useFeedbackLoopDetection } from './hooks/useFeedbackLoopDetection';
 import { LayoutSession } from './layout/session';
 import { ForceRunner } from './layout/runners/force';
 import { RailRunner } from './layout/runners/rail';
@@ -124,6 +125,9 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
     // B. Fetch Data
     // console.log('[CausaShell] Props:', { themeId, versionId, activeVersionId: themeState.activeVersion?.id });
     const { nodes, links, factors, refresh, loading } = useCausaData(themeId, versionId || themeState.activeVersion?.id);
+
+    // Feedback-loop detectie (async, na elke datawijziging)
+    const feedbackLoopNodeIds = useFeedbackLoopDetection(nodes, links);
 
     // C. Initialize Session
     // Re-create session ONLY when layoutMode changes
@@ -333,6 +337,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                 isReadOnly={effectiveIsReadOnly}
                 designSpaceId={designSpaceId}
                 canResolveThread={canResolveThread}
+                feedbackLoopNodeIds={feedbackLoopNodeIds}
             />
 
             {/* Modals */}

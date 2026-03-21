@@ -60,6 +60,7 @@ const CLDNode: FunctionComponent<NodeProps> = ({ id, data, selected }) => {
     const role = (data.role || 'systeemelement').toLowerCase() as keyof typeof iconMap;
     const isReadOnly = data.isReadOnly || false;
     const epistemicStatus = (data.epistemicStatus || 'Proposed') as EpistemicStatus;
+    const inFeedbackLoop = data.inFeedbackLoop || false;
 
     const Icon = iconMap[role] || iconMap.unknown;
     const styles = roleStyles[role] || roleStyles.unknown;
@@ -71,7 +72,8 @@ const CLDNode: FunctionComponent<NodeProps> = ({ id, data, selected }) => {
                 'group bg-white rounded-panel relative hover:shadow-lg transition-all',
                 'flex flex-col border border-border-standard border-l-4',
                 statusStyle.borderLeft,
-                selected ? 'ring-2 ring-blue-500 border-transparent' : ''
+                selected ? 'ring-2 ring-blue-500 border-transparent' : (inFeedbackLoop ? 'ring-2 ring-amber-400 ring-offset-1' : ''),
+                inFeedbackLoop && !selected ? 'animate-pulse' : ''
             )}
             style={{
                 width: CARD_WIDTH,
@@ -133,6 +135,12 @@ const CLDNode: FunctionComponent<NodeProps> = ({ id, data, selected }) => {
 
             {/* Footer: rol-icoon + status-badge */}
             <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                {inFeedbackLoop && (
+                    <span
+                        className="w-2 h-2 rounded-full bg-amber-400"
+                        title="Onderdeel van een feedback-loop"
+                    />
+                )}
                 <span
                     className={cn('w-2 h-2 rounded-full', statusStyle.dot)}
                     title={statusStyle.label}
