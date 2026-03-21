@@ -10,6 +10,7 @@ import {
     TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { PerspectiveToolbar } from '@/components/shell/PerspectiveToolbar';
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ExportMenu } from '@/components/shell/ExportMenu';
 import { useDomExport } from '@/hooks/useDomExport';
 import { CLDView } from './views/CLDView';
@@ -51,6 +52,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [layoutMode, setLayoutMode] = useState<'free' | 'system'>('free');
+    const [viewMode, setViewMode] = useState<'all' | 'asis' | 'tobe'>('all');
 
     // Derived state
     const { activeVersion, activeVotingSession } = themeState;
@@ -125,6 +127,14 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
     // console.log('[CausaShell] Props:', { themeId, versionId, activeVersionId: themeState.activeVersion?.id });
     const { nodes, links, factors, refresh, loading } = useCausaData(themeId, versionId || themeState.activeVersion?.id);
 
+    // B2. Filter nodes/links op viewMode (As-is/To-be toggle)
+    // Nodes zijn altijd zichtbaar; alleen links worden gefilterd
+    const filteredLinks = useMemo(() => {
+        if (viewMode === 'all') return links;
+        const type = viewMode === 'asis' ? 'AsIs' : 'ToBe';
+        return links.filter(l => (l.claimType ?? 'AsIs') === type);
+    }, [links, viewMode]);
+
     // C. Initialize Session
     // Re-create session ONLY when layoutMode changes
     // This ensures we start fresh (or from cache) and don't leak state from previous runner
@@ -171,7 +181,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
         if (!websocket?.lastMessage) return;
         const msg = websocket.lastMessage;
         // Check for data updates types
-        if (['FACTOR_CREATED', 'FACTOR_UPDATED', 'FACTOR_DELETED', 'CLAIM_CREATED', 'CLAIM_UPDATED', 'CLAIM_DELETED'].includes(msg.type)) {
+        if (['FACTOR_CREATED', 'FACTOR_UPDATED', 'FACTOR_DELETED', 'CLAIM_CREATED', 'CLAIM_UPDATED', 'CLAIM_DELETED', 'TESSERA_STATUS_CHANGED'].includes(msg.type)) {
             console.log('WS: Received update, refreshing graph...', msg.type);
             refresh(true);
         }
@@ -295,6 +305,41 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                     </>
                 }
             >
+                {/* As-is / To-be toggle */}
+                <TooltipProvider>
+                    <ToggleGroup
+                        type="single"
+                        value={viewMode}
+                        onValueChange={(v) => v && setViewMode(v as 'all' | 'asis' | 'tobe')}
+                        className="gap-1"
+                    >
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <ToggleGroupItem value="asis" size="sm" aria-label="As-is weergave" className="text-xs px-2">
+                                    As-is
+                                </ToggleGroupItem>
+                            </TooltipTrigger>
+                            <TooltipContent>Alleen huidige situatie</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <ToggleGroupItem value="all" size="sm" aria-label="Alle relaties" className="text-xs px-2">
+                                    Alle
+                                </ToggleGroupItem>
+                            </TooltipTrigger>
+                            <TooltipContent>Alle relaties weergeven</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <ToggleGroupItem value="tobe" size="sm" aria-label="To-be weergave" className="text-xs px-2">
+                                    To-be
+                                </ToggleGroupItem>
+                            </TooltipTrigger>
+                            <TooltipContent>Alleen gewenste situatie</TooltipContent>
+                        </Tooltip>
+                    </ToggleGroup>
+                </TooltipProvider>
+
                 {!effectiveIsReadOnly && (
                     <TooltipProvider>
                         <Tooltip>
@@ -319,7 +364,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
             {/* View */}
             <CLDView
                 nodes={nodes}
-                links={links}
+                links={filteredLinks}
                 session={session}
                 runner={runner}
                 onSelect={handleSelect}

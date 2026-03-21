@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from app.ontology import VALOR_NS
+from app.ontology import VALOR_NS, CAUSA_NS
 from app.db.utils import get_driver
 from app.services.fuseki import sparql_select_global, sparql_update
 
@@ -39,6 +39,15 @@ def _ds_asis_graph(ds_id: str) -> str:
 
 def _escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "")
+
+
+def _extract_claim_type_label(uri: Optional[str]) -> str:
+    """Vertaalt een valor:claimType URI naar 'AsIs' of 'ToBe'. Default: 'AsIs'."""
+    if not uri:
+        return "AsIs"
+    if uri.endswith("ToBeType"):
+        return "ToBe"
+    return "AsIs"
 
 
 # ---------------------------------------------------------------------------
@@ -92,13 +101,14 @@ async def _find_tessera_uri_by_base_id(ds_id: str, base_id: str) -> Optional[str
 async def _sparql_get_factors(ds_id: str) -> list[dict]:
     asis_graph = _ds_asis_graph(ds_id)
     rows = await sparql_select_global(f"""
-SELECT ?tessera ?baseId ?name ?role ?description WHERE {{
+SELECT ?tessera ?baseId ?name ?role ?description ?claimType WHERE {{
   GRAPH <{asis_graph}> {{
     ?tessera a <{VALOR_NS}Tessera> ;
              <{VALOR_NS}baseId> ?baseId ;
              <{VALOR_NS}claimContent> ?name ;
              <{VALOR_NS}factorRole> ?role .
     OPTIONAL {{ ?tessera <{VALOR_NS}description> ?description }}
+    OPTIONAL {{ ?tessera <{VALOR_NS}claimType> ?claimType }}
     FILTER NOT EXISTS {{ ?tessera <{VALOR_NS}fromFactor> ?x }}
   }}
 }}
@@ -112,6 +122,7 @@ SELECT ?tessera ?baseId ?name ?role ?description WHERE {{
             "type": row.get("role"),
             "theme_id": None,
             "thread_id": None,
+            "claim_type": _extract_claim_type_label(row.get("claimType")),
         }
         for row in rows
     ]
@@ -231,7 +242,7 @@ async def _sparql_get_claims(ds_id: str) -> list[dict]:
     rows = await sparql_select_global(f"""
 SELECT ?tessera ?baseId ?statement ?polarity ?confidence
        ?fromFactor ?sourceBaseId ?toFactor ?targetBaseId
-       ?evidenceText ?claimedAt WHERE {{
+       ?evidenceText ?claimedAt ?manifestationCondition ?claimType ?epistemicStatus WHERE {{
   GRAPH <{asis_graph}> {{
     ?tessera a <{VALOR_NS}Tessera> ;
              <{VALOR_NS}baseId> ?baseId ;
@@ -240,13 +251,18 @@ SELECT ?tessera ?baseId ?statement ?polarity ?confidence
              <{VALOR_NS}toFactor> ?toFactor .
     ?fromFactor <{VALOR_NS}baseId> ?sourceBaseId .
     ?toFactor   <{VALOR_NS}baseId> ?targetBaseId .
-    OPTIONAL {{ ?tessera <{VALOR_NS}polarity>     ?polarity }}
-    OPTIONAL {{ ?tessera <{VALOR_NS}confidence>   ?confidence }}
-    OPTIONAL {{ ?tessera <{VALOR_NS}evidenceText> ?evidenceText }}
-    OPTIONAL {{ ?tessera <{VALOR_NS}claimedAt>    ?claimedAt }}
+    OPTIONAL {{ ?tessera <{VALOR_NS}polarity>        ?polarity }}
+    OPTIONAL {{ ?tessera <{VALOR_NS}confidence>      ?confidence }}
+    OPTIONAL {{ ?tessera <{VALOR_NS}evidenceText>    ?evidenceText }}
+    OPTIONAL {{ ?tessera <{VALOR_NS}claimedAt>       ?claimedAt }}
+    OPTIONAL {{ ?tessera <{VALOR_NS}epistemicStatus> ?epistemicStatus }}
+    OPTIONAL {{ ?tessera <{CAUSA_NS}hasManifestationCondition> ?manifestationCondition }}
+    OPTIONAL {{ ?tessera <{VALOR_NS}claimType>       ?claimType }}
   }}
 }}
 """)
+    from app.services.ontology_cache import get_status_uri_to_label
+    status_uri_to_label = get_status_uri_to_label()
     return [
         {
             "id": row["baseId"],
@@ -265,7 +281,9 @@ SELECT ?tessera ?baseId ?statement ?polarity ?confidence
             "target_thread_id": None,
             "created_at": row.get("claimedAt"),
             "created_by": None,
-            "status": None,
+            "status": status_uri_to_label.get(row["epistemicStatus"], "Proposed") if row.get("epistemicStatus") else "Proposed",
+            "manifestation_condition": row.get("manifestationCondition"),
+            "claim_type": _extract_claim_type_label(row.get("claimType")),
         }
         for row in rows
     ]
@@ -285,6 +303,7 @@ async def create_claim_fuseki(
     confidence: float = 1.0,
     evidence_text: Optional[str] = None,
     evidence_url: Optional[str] = None,
+    manifestation_condition_uri: Optional[str] = None,
 ) -> str:
     """Maakt een nieuwe Claim-Tessera aan in Fuseki.
 
@@ -298,6 +317,7 @@ async def create_claim_fuseki(
     user_uri = f"urn:valor:user:{user_id}"
     claimed_at = datetime.now(timezone.utc).isoformat()
     proposed_uri = f"{VALOR_NS}ProposedStatus"
+    as_is_uri = f"{VALOR_NS}AsIsType"
 
     # Zoek de werkelijke tessera-URIs op via valor:baseId
     source_uri = await _find_tessera_uri_by_base_id(ds_id, source_id)
@@ -306,6 +326,10 @@ async def create_claim_fuseki(
     evidence_triple = (
         f'<{tessera_uri}> <{VALOR_NS}evidenceText> "{_escape(evidence_text)}"@nl .'
         if evidence_text else ""
+    )
+    manifestation_triple = (
+        f"<{tessera_uri}> <{CAUSA_NS}hasManifestationCondition> <{manifestation_condition_uri}> ."
+        if manifestation_condition_uri else ""
     )
 
     sparql = f"""INSERT DATA {{
@@ -317,11 +341,13 @@ async def create_claim_fuseki(
       <{VALOR_NS}toFactor> <{target_uri}> ;
       <{VALOR_NS}polarity> "{_escape(polarity)}" ;
       <{VALOR_NS}confidence> "{confidence}"^^<{_XSD}double> ;
+      <{VALOR_NS}claimType> <{as_is_uri}> ;
       <{VALOR_NS}epistemicStatus> <{proposed_uri}> ;
       <{VALOR_NS}claimedBy> <{user_uri}> ;
       <{VALOR_NS}claimedAt> "{claimed_at}"^^<{_XSD}dateTime> ;
       <{VALOR_NS}inDesignSpace> <urn:valor:ds:{ds_id}> .
     {evidence_triple}
+    {manifestation_triple}
   }}
 }}"""
     await sparql_update(sparql, ds_id)
