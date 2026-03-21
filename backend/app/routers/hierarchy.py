@@ -6,15 +6,20 @@ import logging
 from app.auth import get_current_user
 from app.models.domain import Role
 from app.db.crud import (
-    get_projects, create_project, get_project_themes, create_theme,
-    get_project_users, get_theme_users, check_permission,
+    get_projects, create_project, get_project_users, check_permission,
     update_project, archive_project,
-    update_theme, archive_theme,
-    create_theme_version, get_theme_versions_by_theme,
-    get_theme_version, update_theme_version, archive_theme_version,
-    get_theme_version_users, add_user_to_theme_version,
-    update_theme_version_member_role, delete_theme_version_member,
     create_conversation_thread, get_threads_by_target,
+)
+from app.db.issues import (
+    create_issue_with_designspace, get_issue, update_issue, archive_issue,
+    get_issues_by_project,
+)
+from app.db.designspace import (
+    get_designspace_with_issue,
+    get_designspace_members,
+    add_designspace_member,
+    update_designspace_member_role,
+    remove_designspace_member,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,23 +38,17 @@ class ProjectUpdate(BaseModel):
     description: Optional[str] = None
 
 
-class ThemeCreate(BaseModel):
-    project_id: str
+class IssueCreate(BaseModel):
     name: str
     description: Optional[str] = None
 
 
-class ThemeUpdate(BaseModel):
+class IssueUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
 
 
-class ThemeVersionCreate(BaseModel):
-    name: str
-    description: Optional[str] = None
-
-
-class ThemeVersionUpdate(BaseModel):
+class DesignSpaceUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
 
@@ -96,15 +95,15 @@ async def archive_project_endpoint(project_id: str, user: dict = Depends(get_cur
     return {"status": "archived"}
 
 
-@router.get("/projects/{project_id}/themes")
-async def list_themes(project_id: str, user: dict = Depends(get_current_user)):
-    return await get_project_themes(project_id, user["id"])
+@router.get("/projects/{project_id}/issues")
+async def list_issues(project_id: str, user: dict = Depends(get_current_user)):
+    return await get_issues_by_project(project_id, user["id"])
 
 
-@router.post("/projects/{project_id}/themes")
-async def create_new_theme(project_id: str, theme: ThemeCreate, user: dict = Depends(get_current_user)):
-    tid = await create_theme(project_id, theme.name, theme.description, owner_id=user["id"])
-    return {"id": tid, "name": theme.name}
+@router.post("/projects/{project_id}/issues")
+async def create_new_issue(project_id: str, issue: IssueCreate, user: dict = Depends(get_current_user)):
+    result = await create_issue_with_designspace(project_id, issue.name, issue.description, owner_id=user["id"])
+    return {"id": result["issue_id"], "ds_id": result["ds_id"], "name": issue.name}
 
 
 @router.get("/projects/{project_id}/users")
@@ -112,121 +111,117 @@ async def list_project_users(project_id: str, user: dict = Depends(get_current_u
     return await get_project_users(project_id)
 
 
-# --- Theme routes ---
+# --- Issue routes ---
 
-@router.get("/themes/{theme_id}/users")
-async def list_theme_users(theme_id: str, user: dict = Depends(get_current_user)):
-    return await get_theme_users(theme_id)
-
-
-@router.patch("/themes/{theme_id}")
-async def update_theme_endpoint(theme_id: str, data: ThemeUpdate, user: dict = Depends(get_current_user)):
-    if not await check_permission(user["id"], theme_id, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="Not authorized to edit this theme")
-    await update_theme(theme_id, data.name, data.description)
+@router.patch("/issues/{issue_id}")
+async def update_issue_endpoint(issue_id: str, data: IssueUpdate, user: dict = Depends(get_current_user)):
+    if not await check_permission(user["id"], issue_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to edit this issue")
+    await update_issue(issue_id, data.name, data.description)
     return {"status": "updated"}
 
 
-@router.delete("/themes/{theme_id}")
-async def archive_theme_endpoint(theme_id: str, user: dict = Depends(get_current_user)):
-    if not await check_permission(user["id"], theme_id, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="Not authorized to archive this theme")
-    await archive_theme(theme_id)
+@router.delete("/issues/{issue_id}")
+async def archive_issue_endpoint(issue_id: str, user: dict = Depends(get_current_user)):
+    if not await check_permission(user["id"], issue_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to archive this issue")
+    await archive_issue(issue_id)
     return {"status": "archived"}
 
 
-@router.post("/themes/{theme_id}/versions")
-@router.post("/themes/{theme_id}/spaces", deprecated=True)
-async def create_new_theme_version(theme_id: str, version: ThemeVersionCreate, user: dict = Depends(get_current_user)):
-    sid = await create_theme_version(theme_id, version.name, version.description, owner_id=user["id"])
-    return {"id": sid, "name": version.name}
+@router.get("/issues/{issue_id}/designspace")
+async def get_issue_designspace(issue_id: str, user: dict = Depends(get_current_user)):
+    issue = await get_issue(issue_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue niet gevonden")
+    from app.db.utils import get_driver
+    driver = get_driver()
+
+    def _get_ds():
+        with driver.session() as session:
+            record = session.run(
+                "MATCH (i:Issue {id: $id})-[:isAddressedInDesignSpace]->(ds:DesignSpace) RETURN ds.id AS ds_id",
+                {"id": issue_id},
+            ).single()
+            return record["ds_id"] if record else None
+
+    import asyncio
+    ds_id = await asyncio.to_thread(_get_ds)
+    if not ds_id:
+        raise HTTPException(status_code=404, detail="DesignSpace niet gevonden voor dit issue")
+    result = await get_designspace_with_issue(ds_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="DesignSpace niet gevonden")
+    return result
 
 
-@router.get("/themes/{theme_id}/versions")
-@router.get("/themes/{theme_id}/spaces", deprecated=True)
-async def read_theme_versions(theme_id: str, user: dict = Depends(get_current_user)):
-    return await get_theme_versions_by_theme(theme_id, user_id=user["id"])
+# --- DesignSpace routes ---
+
+@router.get("/designspace/{ds_id}")
+async def read_designspace(ds_id: str, user: dict = Depends(get_current_user)):
+    result = await get_designspace_with_issue(ds_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="DesignSpace niet gevonden")
+    return result
 
 
-@router.get("/themes/{theme_id}/active-version")
-async def read_theme_active_version(theme_id: str, user: dict = Depends(get_current_user)):
-    from app.db.crud import get_theme_active_version
-    version = await get_theme_active_version(theme_id, user_id=user["id"])
-    if not version:
-        raise HTTPException(status_code=404, detail="Active Theme Version not found or access denied")
-    return version
-
-
-# --- Version / Space routes ---
-
-@router.get("/versions/{version_id}")
-@router.get("/spaces/{version_id}", deprecated=True)
-async def read_theme_version_endpoint(version_id: str, user: dict = Depends(get_current_user)):
-    version = await get_theme_version(version_id, user_id=user["id"])
-    if not version:
-        raise HTTPException(status_code=404, detail="Theme Version not found")
-    return version
-
-
-@router.patch("/versions/{version_id}")
-@router.patch("/spaces/{version_id}", deprecated=True)
-async def update_theme_version_endpoint(version_id: str, name: str, description: Optional[str] = None, user: dict = Depends(get_current_user)):
-    if not await check_permission(user["id"], version_id, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="Not authorized to edit this version")
-    await update_theme_version(version_id, name, description)
+@router.patch("/designspace/{ds_id}")
+async def update_designspace_endpoint(ds_id: str, data: DesignSpaceUpdate, user: dict = Depends(get_current_user)):
+    if not await check_permission(user["id"], ds_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to edit this designspace")
+    ds = await get_designspace_with_issue(ds_id)
+    if not ds or not ds.get("issue_id"):
+        raise HTTPException(status_code=404, detail="DesignSpace of gekoppeld Issue niet gevonden")
+    await update_issue(ds["issue_id"], data.name, data.description)
     return {"status": "updated"}
 
 
-@router.delete("/versions/{version_id}")
-@router.delete("/spaces/{version_id}", deprecated=True)
-async def archive_theme_version_endpoint(version_id: str, user: dict = Depends(get_current_user)):
-    if not await check_permission(user["id"], version_id, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="Not authorized to archive this version")
-    await archive_theme_version(version_id)
+@router.delete("/designspace/{ds_id}")
+async def archive_designspace_endpoint(ds_id: str, user: dict = Depends(get_current_user)):
+    if not await check_permission(user["id"], ds_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to archive this designspace")
+    ds = await get_designspace_with_issue(ds_id)
+    if not ds or not ds.get("issue_id"):
+        raise HTTPException(status_code=404, detail="DesignSpace of gekoppeld Issue niet gevonden")
+    await archive_issue(ds["issue_id"])
     return {"status": "archived"}
 
 
-@router.post("/versions/{version_id}/threads")
-@router.post("/spaces/{version_id}/threads", deprecated=True)
-async def create_new_thread(version_id: str, thread: ThreadCreate, user: dict = Depends(get_current_user)):
-    tid = await create_conversation_thread(version_id, thread.topic)
+@router.post("/designspace/{ds_id}/threads")
+async def create_ds_thread(ds_id: str, thread: ThreadCreate, user: dict = Depends(get_current_user)):
+    tid = await create_conversation_thread(ds_id, thread.topic)
     return {"id": tid, "topic": thread.topic}
 
 
-@router.get("/versions/{version_id}/threads")
-@router.get("/spaces/{version_id}/threads", deprecated=True)
-async def list_version_threads(version_id: str, user: dict = Depends(get_current_user)):
-    return await get_threads_by_target(version_id)
+@router.get("/designspace/{ds_id}/threads")
+async def list_ds_threads(ds_id: str, user: dict = Depends(get_current_user)):
+    return await get_threads_by_target(ds_id)
 
 
-@router.get("/versions/{version_id}/members")
-@router.get("/spaces/{version_id}/members", deprecated=True)
-async def list_version_members(version_id: str, user: dict = Depends(get_current_user)):
-    return await get_theme_version_users(version_id)
+@router.get("/designspace/{ds_id}/members")
+async def list_ds_members(ds_id: str, user: dict = Depends(get_current_user)):
+    return await get_designspace_members(ds_id)
 
 
-@router.post("/versions/{version_id}/members")
-@router.post("/spaces/{version_id}/members", deprecated=True)
-async def invite_version_member(version_id: str, data: MemberInvite, user: dict = Depends(get_current_user)):
-    if not await check_permission(user["id"], version_id, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="Not authorized to invite members to this version")
-    await add_user_to_theme_version(data.email, version_id, data.role)
+@router.post("/designspace/{ds_id}/members")
+async def invite_ds_member(ds_id: str, data: MemberInvite, user: dict = Depends(get_current_user)):
+    if not await check_permission(user["id"], ds_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to invite members to this designspace")
+    await add_designspace_member(ds_id, data.email, data.role)
     return {"status": "invited"}
 
 
-@router.patch("/versions/{version_id}/members/{user_id}")
-@router.patch("/spaces/{version_id}/members/{user_id}", deprecated=True)
-async def update_version_member(version_id: str, user_id: str, data: RoleUpdate, user: dict = Depends(get_current_user)):
-    if not await check_permission(user["id"], version_id, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="Not authorized to manage members in this version")
-    await update_theme_version_member_role(version_id, user_id, data.role)
+@router.patch("/designspace/{ds_id}/members/{member_id}")
+async def update_ds_member(ds_id: str, member_id: str, data: RoleUpdate, user: dict = Depends(get_current_user)):
+    if not await check_permission(user["id"], ds_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to manage members in this designspace")
+    await update_designspace_member_role(ds_id, member_id, data.role)
     return {"status": "role updated"}
 
 
-@router.delete("/versions/{version_id}/members/{user_id}")
-@router.delete("/spaces/{version_id}/members/{user_id}", deprecated=True)
-async def remove_version_member_endpoint(version_id: str, user_id: str, user: dict = Depends(get_current_user)):
-    if not await check_permission(user["id"], version_id, Role.ADMIN):
-        raise HTTPException(status_code=403, detail="Not authorized to remove members from this version")
-    await delete_theme_version_member(version_id, user_id)
+@router.delete("/designspace/{ds_id}/members/{member_id}")
+async def remove_ds_member(ds_id: str, member_id: str, user: dict = Depends(get_current_user)):
+    if not await check_permission(user["id"], ds_id, Role.ADMIN):
+        raise HTTPException(status_code=403, detail="Not authorized to remove members from this designspace")
+    await remove_designspace_member(ds_id, member_id)
     return {"status": "removed"}

@@ -60,7 +60,7 @@ async def check_permission(user_id: str, entity_id: str, required_role: Role) ->
     // Find highest role on any ancestor (including self)
     // We look for any node 'parent' that recursively owns/contains 'target', 
     // AND where 'u' has a role on 'parent'.
-    OPTIONAL MATCH (u)-[r:HAS_ROLE]->(parent)-[:OWNS|HAS_THEME|HAS_VERSION|HAS_DESIGN_SPACE*0..]->(target)
+    OPTIONAL MATCH (u)-[r:HAS_ROLE]->(parent)-[:OWNS|hasIssue|isAddressedInDesignSpace*0..]->(target)
     WHERE r.status IS NULL OR r.status = 'active'
     
     RETURN is_platform_admin, collect(r.role) as roles
