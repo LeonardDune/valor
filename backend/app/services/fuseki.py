@@ -292,9 +292,10 @@ PROV_NS = "https://www.w3.org/ns/prov#"
 XSD_NS = "http://www.w3.org/2001/XMLSchema#"
 
 _OPERATION_TYPE_URI = {
-    "TesseraCreated": "urn:valor:op:TesseraCreated",
-    "StatusChanged":  "urn:valor:op:StatusChanged",
-    "ArgumentAdded":  "urn:valor:op:ArgumentAdded",
+    "TesseraCreated":    "urn:valor:op:TesseraCreated",
+    "StatusChanged":     "urn:valor:op:StatusChanged",
+    "ArgumentAdded":     "urn:valor:op:ArgumentAdded",
+    "RealisationLinked": "urn:valor:op:RealisationLinked",
 }
 
 

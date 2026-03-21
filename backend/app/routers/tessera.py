@@ -74,6 +74,7 @@ class TesseraResponse(BaseModel):
     uncertainty_level: Optional[str] = None
     in_alternative: Optional[str] = None
     in_phase: Optional[str] = None
+    realised_by: Optional[str] = None  # causa:realisedBy → acta:TransactionType URI
 
 
 class CreateEvidenceRequest(BaseModel):
@@ -213,6 +214,7 @@ INSERT DATA {{
 async def get_tessera(
     tessera_id: str,
     design_space_id: str,
+    in_alternative: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):
     user_id = user["id"]
@@ -222,10 +224,13 @@ async def get_tessera(
         raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
 
     tessera_uri = f"urn:valor:tessera:{tessera_id}"
-    graph_uri = named_graph_uri(design_space_id)
+    if in_alternative:
+        graph_uri = f"urn:valor:ds:{design_space_id}/alternative/{in_alternative}"
+    else:
+        graph_uri = named_graph_uri(design_space_id)
 
     rows = await sparql_select(
-        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase WHERE {{
+        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase ?realisedBy WHERE {{
           GRAPH <{graph_uri}> {{
             <{tessera_uri}> a <{VALOR_NS}Tessera> ;
               <{VALOR_NS}claimContent> ?content ;
@@ -236,6 +241,7 @@ async def get_tessera(
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}uncertaintyLevel> ?uncertaintyLevel . }}
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inAlternative> ?inAlternative . }}
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inPhase> ?inPhase . }}
+            OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}causa#realisedBy> ?realisedBy . }}
           }}
         }}""",
         design_space_id,
@@ -265,6 +271,7 @@ async def get_tessera(
         uncertainty_level=uncertainty_level,
         in_alternative=row.get("inAlternative"),
         in_phase=row.get("inPhase"),
+        realised_by=row.get("realisedBy") or None,
     )
 
 
@@ -607,6 +614,158 @@ WHERE {{
         relation_type_uri=relation_uri,
         contested_triggered=contested_triggered,
     )
+
+
+class RealiseRequest(BaseModel):
+    design_space_id: str
+    transaction_type_uri: str   # Volledige URI van het acta:TransactionType
+    in_alternative: str         # Alternatief-ID (verplicht: realisatie is altijd to-be)
+
+
+class RealiseResponse(BaseModel):
+    tessera_id: str
+    tessera_uri: str
+    transaction_type_uri: str
+    graph_uri: str
+
+
+@router.post("/{tessera_id}/realise", response_model=RealiseResponse, status_code=201)
+async def realise_intervention(
+    tessera_id: str,
+    request: RealiseRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Koppelt een causa:Intervention aan een acta:TransactionType via causa:realisedBy.
+
+    De triple wordt opgeslagen in de alternatief-graph van de DesignSpace.
+    Beide resources (Tessera en TransactionType) moeten bestaan in Fuseki.
+    """
+    user_id = user["id"]
+
+    has_permission = await check_permission(user_id, request.design_space_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(
+            status_code=403,
+            detail="Onvoldoende rechten voor deze DesignSpace.",
+        )
+
+    tessera_uri = f"urn:valor:tessera:{tessera_id}"
+    graph_uri = f"urn:valor:ds:{request.design_space_id}/alternative/{request.in_alternative}"
+
+    # Controleer of de Tessera bestaat in de alternatief-graph
+    rows = await sparql_select(
+        f"""SELECT ?t WHERE {{
+          GRAPH <{graph_uri}> {{
+            <{tessera_uri}> a <{VALOR_NS}Tessera> .
+            BIND(<{tessera_uri}> AS ?t)
+          }}
+        }}""",
+        request.design_space_id,
+    )
+    if not rows:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Tessera niet gevonden in alternatief '{request.in_alternative}'.",
+        )
+
+    # Valideer dat transaction_type_uri een geldige URI is (geen scriptinjectie)
+    tx_uri = request.transaction_type_uri
+    if not (tx_uri.startswith("http") or tx_uri.startswith("urn")):
+        raise HTTPException(
+            status_code=422,
+            detail="transaction_type_uri moet een geldige URI zijn (http of urn).",
+        )
+
+    causa_realised_by = f"{VALOR_NS}causa#realisedBy"
+
+    # Idempotent: verwijder eerst een eventuele bestaande realisatiebinding
+    await sparql_update(
+        f"""DELETE WHERE {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> <{causa_realised_by}> ?any .
+  }}
+}}""",
+        request.design_space_id,
+    )
+
+    await sparql_update(
+        f"""INSERT DATA {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> <{causa_realised_by}> <{tx_uri}> .
+  }}
+}}""",
+        request.design_space_id,
+    )
+
+    await record_provenance_activity(
+        request.design_space_id,
+        "RealisationLinked",
+        f"urn:valor:user:{user_id}",
+        used=[tessera_uri, tx_uri],
+    )
+
+    logger.info(
+        "causa:realisedBy gekoppeld: %s → %s in graph %s (door %s)",
+        tessera_uri, tx_uri, graph_uri, user_id,
+    )
+
+    return RealiseResponse(
+        tessera_id=tessera_id,
+        tessera_uri=tessera_uri,
+        transaction_type_uri=tx_uri,
+        graph_uri=graph_uri,
+    )
+
+
+class MissingRealisationBasis(BaseModel):
+    tessera_uri: str
+    transaction_type_uri: str
+    alternative_uri: str
+
+
+@router.get("/design-space/{design_space_id}/missing-realisation-basis",
+            response_model=list[MissingRealisationBasis])
+async def get_missing_realisation_basis(
+    design_space_id: str,
+    user: dict = Depends(get_current_user),
+):
+    """Detecteert Interventions waarvan het gekoppelde TransactionType niet
+    meer bestaat in het alternatief (ontbrekende realisatiebasis).
+
+    SPARQL-patroon: ?intervention causa:realisedBy ?tx .
+    FILTER NOT EXISTS { ?alt valor:includesTransaction ?tx }
+    """
+    user_id = user["id"]
+
+    if not await check_permission(user_id, design_space_id, Role.VIEWER):
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    from app.services.fuseki import sparql_select_global
+
+    causa_realised_by = f"{VALOR_NS}causa#realisedBy"
+    includes_tx = f"{VALOR_NS}includesTransaction"
+
+    # Zoek in alle alternatief-graphs van deze DesignSpace
+    rows = await sparql_select_global(
+        f"""SELECT ?intervention ?tx ?alt WHERE {{
+  GRAPH ?alt {{
+    ?intervention <{causa_realised_by}> ?tx .
+    FILTER(STRSTARTS(STR(?alt), "urn:valor:ds:{design_space_id}/alternative/"))
+    FILTER NOT EXISTS {{
+      ?alt <{includes_tx}> ?tx .
+    }}
+  }}
+}}"""
+    )
+
+    return [
+        MissingRealisationBasis(
+            tessera_uri=r["intervention"],
+            transaction_type_uri=r["tx"],
+            alternative_uri=r["alt"],
+        )
+        for r in rows
+    ]
 
 
 class ProvenanceActivity(BaseModel):
