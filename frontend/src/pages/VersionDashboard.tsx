@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 export const VersionDashboard: React.FC = () => {
     // Check for versionId first, then spaceId fallback
     const params = useParams();
-    const versionId = params.versionId || params.spaceId;
+    const versionId = params.dsId || params.versionId || params.spaceId;
 
     const navigate = useNavigate();
     const [threads, setThreads] = useState<ConversationThread[]>([]);
@@ -30,7 +30,7 @@ export const VersionDashboard: React.FC = () => {
                     <h1 className="text-3xl font-bold tracking-tight">Version Dashboard</h1>
                     <p className="text-muted-foreground">Beheer de conversaties en claims voor deze versie. Version ID: {versionId}</p>
                 </div>
-                <Button onClick={() => navigate(`/versions/${versionId}/chat`)}>
+                <Button onClick={() => navigate(`/designspace/${versionId}/chat`)}>
                     <MessageSquare className="mr-2 h-4 w-4" />
                     Open Chat
                 </Button>
@@ -43,7 +43,7 @@ export const VersionDashboard: React.FC = () => {
                             <CardTitle>Gesprekken</CardTitle>
                             <CardDescription>Recente parallelle conversaties in deze versie.</CardDescription>
                         </div>
-                        <Button variant="outline" size="sm" onClick={() => navigate(`/versions/${versionId}/chat`)}>
+                        <Button variant="outline" size="sm" onClick={() => navigate(`/designspace/${versionId}/chat`)}>
                             <Plus className="h-4 w-4 mr-1" /> Nieuw
                         </Button>
                     </CardHeader>
@@ -54,7 +54,7 @@ export const VersionDashboard: React.FC = () => {
                             <div className="py-8 text-center text-muted-foreground">
                                 <MessageCircle className="h-12 w-12 mx-auto mb-2 opacity-10" />
                                 <p>Nog geen gesprekken gestart.</p>
-                                <Button variant="link" onClick={() => navigate(`/versions/${versionId}/chat`)}>
+                                <Button variant="link" onClick={() => navigate(`/designspace/${versionId}/chat`)}>
                                     Start je eerste gesprek
                                 </Button>
                             </div>
@@ -64,7 +64,7 @@ export const VersionDashboard: React.FC = () => {
                                     <div
                                         key={thread.id}
                                         className="flex items-center justify-between p-3 rounded-lg border border-border hover:bg-muted/50 cursor-pointer transition-colors"
-                                        onClick={() => navigate(`/versions/${versionId}/chat`)}
+                                        onClick={() => navigate(`/designspace/${versionId}/chat`)}
                                     >
                                         <div className="flex items-center gap-3">
                                             <div className="p-2 rounded-full bg-primary/10 text-primary">
@@ -81,7 +81,7 @@ export const VersionDashboard: React.FC = () => {
                                     </div>
                                 ))}
                                 {threads.length > 5 && (
-                                    <Button variant="ghost" className="w-full text-xs mt-2" onClick={() => navigate(`/versions/${versionId}/chat`)}>
+                                    <Button variant="ghost" className="w-full text-xs mt-2" onClick={() => navigate(`/designspace/${versionId}/chat`)}>
                                         Bekijk alle {threads.length} gesprekken
                                     </Button>
                                 )}
@@ -97,7 +97,7 @@ export const VersionDashboard: React.FC = () => {
                     </CardHeader >
                     <CardContent>
                         <p className="text-sm text-muted-foreground">Ga naar de Claims tab om factoren te valideren en toe te voegen aan het thema.</p>
-                        <Button variant="outline" className="w-full mt-4" onClick={() => navigate(`/versions/${versionId}/claims`)}>
+                        <Button variant="outline" className="w-full mt-4" onClick={() => navigate(`/designspace/${versionId}/claims`)}>
                             Bekijk Claims
                         </Button>
                     </CardContent>

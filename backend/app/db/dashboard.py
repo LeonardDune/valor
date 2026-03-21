@@ -63,7 +63,7 @@ async def get_user_environments(user_id: str) -> List[Dict]:
 
     WITH org, user_role, proj, proj_role,
          collect(DISTINCT CASE WHEN issue IS NOT NULL THEN {
-             id: issue.id,
+             id: ds.id,
              ds_id: ds.id,
              name: issue.name,
              description: issue.description,
@@ -147,7 +147,7 @@ async def get_user_themes(user_id: str) -> List[Dict]:
         )
 
     RETURN {
-        id: issue.id,
+        id: ds.id,
         ds_id: ds.id,
         name: issue.name,
         description: issue.description,

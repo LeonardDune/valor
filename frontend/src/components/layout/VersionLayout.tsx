@@ -9,7 +9,7 @@ interface VersionLayoutProps {
 }
 
 export const VersionLayout: React.FC<VersionLayoutProps> = ({ children }) => {
-    const { versionId } = useParams();
+    const { dsId } = useParams();
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
     const versionNavItems: NavItem[] = [
@@ -17,32 +17,31 @@ export const VersionLayout: React.FC<VersionLayoutProps> = ({ children }) => {
             id: 'overview',
             icon: LayoutDashboard,
             label: 'Overview',
-            path: `/versions/${versionId}`,
-            exact: true
+            path: `/designspace/${dsId}/overview`,
         },
         {
             id: 'claims',
             icon: FileText,
             label: 'Verfijn',
-            path: `/versions/${versionId}/claims`
+            path: `/designspace/${dsId}/claims`
         },
         {
             id: 'chat',
             icon: MessageSquare,
             label: 'Chat',
-            path: `/versions/${versionId}/chat`
+            path: `/designspace/${dsId}/chat`
         },
         {
             id: 'members',
             icon: Users,
             label: 'Members',
-            path: `/versions/${versionId}/members`
+            path: `/designspace/${dsId}/members`
         },
         {
             id: 'settings',
             icon: Settings,
             label: 'Settings',
-            path: `/versions/${versionId}/settings`
+            path: `/designspace/${dsId}/settings`
         },
     ];
 

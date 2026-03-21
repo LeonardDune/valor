@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { useTheme } from '@/context/ThemeContext';
+import { useDesignSpace } from '@/context/DesignSpaceContext';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { X, Shield } from 'lucide-react';
 import { useSessionParticipation, useUpdateSessionStage, useFinalizeDeliberation, useSessionValidation } from '@/hooks/queries/useSessions';
@@ -26,7 +26,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({
     onStartSession,
     isStartingSession = false
 }) => {
-    const { refreshVersions } = useTheme();
+    const { refreshVersions } = useDesignSpace();
 
     // Stage Mapping for Tabs
     const [activeTab, setActiveTab] = useState<string>('start');

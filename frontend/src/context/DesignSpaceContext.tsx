@@ -3,8 +3,8 @@ import { api, type ThemeVersion } from '../services/api';
 import { type VotingSession } from '../types/session';
 import { useActiveSession } from '../hooks/queries/useSessions';
 
-interface ThemeContextType {
-    themeId: string | null;
+interface DesignSpaceContextType {
+    dsId: string | null;
     activeVersion: ThemeVersion | null;
     currentViewedVersion: ThemeVersion | null;
     versions: ThemeVersion[];
@@ -16,14 +16,14 @@ interface ThemeContextType {
     refreshVersions: () => Promise<void>;
 }
 
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+const DesignSpaceContext = createContext<DesignSpaceContextType | undefined>(undefined);
 
-interface ThemeProviderProps {
-    themeId: string;
+interface DesignSpaceProviderProps {
+    dsId: string;
     children: ReactNode;
 }
 
-export const ThemeProvider: React.FC<ThemeProviderProps> = ({ themeId, children }) => {
+export const DesignSpaceProvider: React.FC<DesignSpaceProviderProps> = ({ dsId, children }) => {
     const [activeVersion, setActiveVersion] = useState<ThemeVersion | null>(null);
     const [currentViewedVersion, setCurrentViewedVersion] = useState<ThemeVersion | null>(null);
     const [versions, setVersions] = useState<ThemeVersion[]>([]);
@@ -31,41 +31,37 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ themeId, children 
 
     const { data: activeVotingSession } = useActiveSession(activeVersion?.id || null);
 
-    const fetchThemeData = useCallback(async () => {
+    const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
-            // Parallel fetch for efficiency
             const [fetchedActive, fetchedVersions] = await Promise.all([
-                api.getThemeActiveVersion(themeId),
-                api.getThemeVersions(themeId)
+                api.getThemeActiveVersion(dsId),
+                api.getThemeVersions(dsId)
             ]);
 
             setActiveVersion(fetchedActive);
             setVersions(fetchedVersions);
 
-            // If we haven't selected a version yet, or if the selection is invalid, default to Active
             if (!currentViewedVersion || !fetchedVersions.find(v => v.id === currentViewedVersion.id)) {
                 setCurrentViewedVersion(fetchedActive);
             } else {
-                // Determine if we need to update the current viewed object to latest ref
                 const updatedViewed = fetchedVersions.find(v => v.id === currentViewedVersion.id);
                 if (updatedViewed) setCurrentViewedVersion(updatedViewed);
             }
 
         } catch (error) {
-            console.error("Failed to fetch theme context data", error);
+            console.error("Failed to fetch DesignSpace context data", error);
         } finally {
             setIsLoading(false);
         }
-    }, [themeId, currentViewedVersion]); // logic slightly complex on viewed update, simplified below
+    }, [dsId, currentViewedVersion]);
 
-    // Initial load
     useEffect(() => {
-        fetchThemeData();
-    }, [themeId]);
+        fetchData();
+    }, [dsId]);
 
     const refreshVersions = async () => {
-        await fetchThemeData();
+        await fetchData();
     };
 
     const switchVersion = (versionId: string) => {
@@ -75,14 +71,13 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ themeId, children 
         }
     };
 
-    // Read Only if the viewed version ID is different from the Active Version ID
     const isReadOnly = activeVersion && currentViewedVersion
         ? activeVersion.id !== currentViewedVersion.id
         : false;
 
     return (
-        <ThemeContext.Provider value={{
-            themeId,
+        <DesignSpaceContext.Provider value={{
+            dsId,
             activeVersion,
             currentViewedVersion,
             versions,
@@ -96,14 +91,14 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ themeId, children 
             refreshVersions
         }}>
             {children}
-        </ThemeContext.Provider>
+        </DesignSpaceContext.Provider>
     );
 };
 
-export const useTheme = () => {
-    const context = useContext(ThemeContext);
+export const useDesignSpace = () => {
+    const context = useContext(DesignSpaceContext);
     if (!context) {
-        throw new Error("useTheme must be used within a ThemeProvider");
+        throw new Error("useDesignSpace must be used within a DesignSpaceProvider");
     }
     return context;
 };

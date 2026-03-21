@@ -43,8 +43,8 @@ def get_design_spaces_by_project(project_id: str) -> list[dict]:
     """Geeft alle DesignSpaces terug die aan een Project gekoppeld zijn."""
     driver = get_driver()
     query = """
-    MATCH (p:Project {id: $pid})-[:HAS_DESIGN_SPACE]->(ds:DesignSpace)
-    RETURN ds.id AS id, ds.name AS name, ds.status AS status, ds.current_phase AS current_phase
+    MATCH (p:Project {id: $pid})-[:hasIssue]->(:Issue)-[:isAddressedInDesignSpace]->(ds:DesignSpace)
+    RETURN DISTINCT ds.id AS id, ds.name AS name, ds.status AS status, ds.current_phase AS current_phase
     ORDER BY ds.created_at
     """
     with driver.session() as session:
