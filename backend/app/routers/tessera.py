@@ -30,6 +30,7 @@ router = APIRouter(
 )
 
 XSD_NS = "http://www.w3.org/2001/XMLSchema#"
+CAUSA_NS = "https://valor-ecosystem.nl/ontology/causa/"
 
 
 def _normalize_status(raw: str) -> str:
@@ -74,6 +75,7 @@ class TesseraResponse(BaseModel):
     uncertainty_level: Optional[str] = None
     in_alternative: Optional[str] = None
     in_phase: Optional[str] = None
+    realised_by: Optional[str] = None
 
 
 class CreateEvidenceRequest(BaseModel):
@@ -209,10 +211,121 @@ INSERT DATA {{
     )
 
 
+class RealiseRequest(BaseModel):
+    design_space_id: str
+    alternative_id: str
+    transaction_type_uri: str
+
+
+class RealiseResponse(BaseModel):
+    tessera_id: str
+    tessera_uri: str
+    transaction_type_uri: str
+
+
+class MissingRealisationItem(BaseModel):
+    tessera_uri: str
+    claim_content: str
+
+
+@router.get("/missing-realisation-basis", response_model=list[MissingRealisationItem])
+async def get_missing_realisation_basis(
+    design_space_id: str,
+    alternative_id: str,
+    user: dict = Depends(get_current_user),
+):
+    user_id = user["id"]
+
+    has_permission = await check_permission(user_id, design_space_id, Role.VIEWER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    alt_graph = f"urn:valor:ds:{design_space_id}/alternative/{alternative_id}"
+
+    rows = await sparql_select(
+        f"""PREFIX causa: <{CAUSA_NS}>
+PREFIX valor: <{VALOR_NS}>
+SELECT ?tessera ?content WHERE {{
+  GRAPH <{alt_graph}> {{
+    ?tessera a valor:Tessera ;
+             valor:claimContent ?content .
+    FILTER NOT EXISTS {{ ?tessera causa:realisedBy ?tx . }}
+  }}
+}}""",
+        design_space_id,
+    )
+
+    return [
+        MissingRealisationItem(tessera_uri=r["tessera"], claim_content=r["content"])
+        for r in rows
+    ]
+
+
+@router.post("/{tessera_id}/realise", response_model=RealiseResponse, status_code=201)
+async def realise_intervention(
+    tessera_id: str,
+    request: RealiseRequest,
+    user: dict = Depends(get_current_user),
+):
+    user_id = user["id"]
+
+    has_permission = await check_permission(user_id, request.design_space_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    tessera_uri = f"urn:valor:tessera:{tessera_id}"
+    alt_graph = f"urn:valor:ds:{request.design_space_id}/alternative/{request.alternative_id}"
+
+    # Controleer of de Tessera bestaat in de alternatief-graph
+    rows = await sparql_select(
+        f"""SELECT ?t WHERE {{
+          GRAPH <{alt_graph}> {{
+            <{tessera_uri}> a <{VALOR_NS}Tessera> .
+            BIND(<{tessera_uri}> AS ?t)
+          }}
+        }}""",
+        request.design_space_id,
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Tessera niet gevonden in de opgegeven alternatief-graph.")
+
+    escaped_tx_uri = request.transaction_type_uri.replace("\\", "\\\\").replace('"', '\\"')
+
+    sparql = f"""PREFIX causa: <{CAUSA_NS}>
+
+INSERT DATA {{
+  GRAPH <{alt_graph}> {{
+    <{tessera_uri}> causa:realisedBy <{escaped_tx_uri}> .
+  }}
+}}"""
+
+    await sparql_update(sparql, request.design_space_id)
+
+    await record_provenance_activity(
+        request.design_space_id,
+        "RealisedByLinked",
+        f"urn:valor:user:{user_id}",
+        used=[tessera_uri],
+        extra_props=[(f"{CAUSA_NS}realisedBy", request.transaction_type_uri)],
+    )
+
+    logger.info(
+        "causa:realisedBy %s → %s (door %s)",
+        tessera_uri, request.transaction_type_uri, user_id,
+    )
+
+    return RealiseResponse(
+        tessera_id=tessera_id,
+        tessera_uri=tessera_uri,
+        transaction_type_uri=request.transaction_type_uri,
+    )
+
+
 @router.get("/{tessera_id}", response_model=TesseraResponse)
 async def get_tessera(
     tessera_id: str,
     design_space_id: str,
+    alternative_id: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):
     user_id = user["id"]
@@ -253,6 +366,23 @@ async def get_tessera(
     uncertainty_uri_to_label = {v: k for k, v in uncertainty_label_to_uri.items()}
     uncertainty_level = uncertainty_uri_to_label.get(raw_uncertainty) if raw_uncertainty else None
 
+    # Zoek causa:realisedBy in de alternatief-graph (optioneel)
+    realised_by: Optional[str] = None
+    alt_id = alternative_id or (row.get("inAlternative", "").rsplit("/", 1)[-1] if row.get("inAlternative") else None)
+    if alt_id:
+        alt_graph = f"urn:valor:ds:{design_space_id}/alternative/{alt_id}"
+        realised_rows = await sparql_select(
+            f"""PREFIX causa: <{CAUSA_NS}>
+SELECT ?tx WHERE {{
+  GRAPH <{alt_graph}> {{
+    <{tessera_uri}> causa:realisedBy ?tx .
+  }}
+}}""",
+            design_space_id,
+        )
+        if realised_rows:
+            realised_by = realised_rows[0]["tx"]
+
     return TesseraResponse(
         tessera_id=tessera_id,
         tessera_uri=tessera_uri,
@@ -265,6 +395,7 @@ async def get_tessera(
         uncertainty_level=uncertainty_level,
         in_alternative=row.get("inAlternative"),
         in_phase=row.get("inPhase"),
+        realised_by=realised_by,
     )
 
 
