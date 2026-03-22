@@ -479,6 +479,11 @@ export const api = {
         return response.data;
     },
 
+    detectCycles: async (dsId: string): Promise<string[]> => {
+        const response = await apiClient.get<{ cycle_node_ids: string[] }>(`/designspace/${dsId}/cycles`);
+        return response.data.cycle_node_ids;
+    },
+
     // Manual Editing
     createFactor: async (dsId: string, name: string, description?: string, type: FactorType = 'systeemelement') => {
         const response = await apiClient.post('/factors', { ds_id: dsId, name, description, type });

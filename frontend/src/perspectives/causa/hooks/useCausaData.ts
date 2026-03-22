@@ -10,6 +10,7 @@ interface CausaData {
     claims: Claim[];   // Raw data for Modals
     loading: boolean;
     error: Error | null;
+    cycleNodeIds: string[];
     refresh: (force?: boolean) => Promise<void>;
 }
 
@@ -20,6 +21,7 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
     const [claims, setClaims] = useState<Claim[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
+    const [cycleNodeIds, setCycleNodeIds] = useState<string[]>([]);
 
     const lastFetchRef = useRef<string | null>(null);
 
@@ -34,6 +36,8 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
             let factorsData: Factor[];
 
             console.log('[useCausaData] Refreshing...', { themeId, versionId, force });
+
+            const dsId = versionId || themeId;
 
             if (versionId) {
                 [claimsData, factorsData] = await Promise.all([
@@ -52,6 +56,11 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
             setNodes(mapFactors(factorsData));
             setLinks(mapClaims(claimsData));
             setError(null);
+
+            // Non-blocking cycle detection na data-refresh
+            api.detectCycles(dsId)
+                .then(setCycleNodeIds)
+                .catch((err) => console.warn('[useCausaData] cycle detection failed:', err));
         } catch (err) {
             console.error('Failed to load Causa data:', err);
             setError(err as Error);
@@ -68,5 +77,5 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
         }
     }, [refresh]);
 
-    return { nodes, links, factors, claims, loading, error, refresh };
+    return { nodes, links, factors, claims, loading, error, cycleNodeIds, refresh };
 };

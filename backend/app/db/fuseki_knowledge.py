@@ -391,3 +391,43 @@ WHERE {{
   GRAPH <{asis_graph}> {{ <{tessera_uri}> ?p ?o . }}
 }}"""
     await sparql_update(sparql, ds_id)
+
+
+# ---------------------------------------------------------------------------
+# Cycle detection (feedback-loop)
+# ---------------------------------------------------------------------------
+
+async def detect_cycles(ds_id: str) -> list[str]:
+    """Detecteert feedback-loops in het causale model via SPARQL property-path.
+
+    Zoekt alle factor-paren (A, B) waarbij A de target bereikt via een keten van
+    valor:toFactor/valor:fromFactor^-1 stappen — én B ook A bereikt — wat een
+    directe cyclus indiceert.
+
+    Retourneert een lijst van base_ids van factors die in een cyclus zitten.
+    """
+    asis_graph = _ds_asis_graph(ds_id)
+    # Een cyclus bestaat als factor A via claims factor B bereikt én factor B
+    # via claims ook factor A bereikt.  We detecteren dit door te zoeken naar
+    # factoren die zichzelf bereiken via één of meer claim-hops:
+    # factor -> (claim.fromFactor=factor, claim.toFactor=nextFactor) -> ...
+    # Uitgedrukt als: ?a <via claims>+ ?a  (property path over factor-keten)
+    #
+    # Property path: via een claim die ?a als fromFactor heeft, naar de toFactor,
+    # herhaald = (<valor:fromFactor>^-1 / <valor:toFactor>)+
+    sparql = f"""
+SELECT DISTINCT ?baseId WHERE {{
+  GRAPH <{asis_graph}> {{
+    ?factor a <{VALOR_NS}Tessera> ;
+            <{VALOR_NS}baseId> ?baseId .
+    FILTER NOT EXISTS {{ ?factor <{VALOR_NS}fromFactor> ?x }}
+    ?factor (<{VALOR_NS}fromFactor>^-1 / <{VALOR_NS}toFactor>)+ ?factor .
+  }}
+}}
+"""
+    try:
+        rows = await sparql_select_global(sparql)
+        return [row["baseId"] for row in rows if row.get("baseId")]
+    except Exception as exc:
+        logger.warning("detect_cycles failed for ds_id=%s: %s", ds_id, exc)
+        return []

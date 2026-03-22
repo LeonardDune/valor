@@ -106,6 +106,14 @@ async def update_claim_route(claim_id: str, claim: ClaimUpdate, user: dict = Dep
     return {"status": "updated"}
 
 
+@router.get("/designspace/{ds_id}/cycles")
+async def detect_cycles_route(ds_id: str, user: dict = Depends(get_current_user)):
+    if not await check_permission(user["id"], ds_id, Role.MEMBER):
+        raise HTTPException(status_code=403, detail="Geen toegang tot deze DesignSpace")
+    cycle_node_ids = await fuseki_knowledge.detect_cycles(ds_id)
+    return {"cycle_node_ids": cycle_node_ids}
+
+
 @router.delete("/claims/{claim_id}")
 async def delete_claim_route(claim_id: str, user: dict = Depends(get_current_user)):
     ds_id = await fuseki_knowledge.get_designspace_id_for_tessera(claim_id)
