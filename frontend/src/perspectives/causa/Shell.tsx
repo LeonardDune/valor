@@ -14,6 +14,7 @@ import { ExportMenu } from '@/components/shell/ExportMenu';
 import { useDomExport } from '@/hooks/useDomExport';
 import { CLDView } from './views/CLDView';
 import { useCausaData } from './hooks/useCausaData';
+import { AsIsToBeToggle, type ViewFilter } from './components/AsIsToBeToggle';
 import { LayoutSession } from './layout/session';
 import { ForceRunner } from './layout/runners/force';
 import { RailRunner } from './layout/runners/rail';
@@ -51,6 +52,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [layoutMode, setLayoutMode] = useState<'free' | 'system'>('free');
+    const [viewFilter, setViewFilter] = useState<ViewFilter>('Beide');
 
     // Derived state
     const { activeVersion, activeVotingSession } = themeState;
@@ -73,7 +75,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
     const effectiveIsReadOnly = isReadOnly || (!!versionId && versionId !== activeVersion?.id);
 
     // Persist layout mode preference across re-renders/sessions if needed?
-    // For now, we prefer to keep it in state. 
+    // For now, we prefer to keep it in state.
     // But we might want to Cache positions when switching.
     const layoutCache = useRef<{ [key: string]: Map<string, { x: number, y: number }> }>({
         free: new Map(),
@@ -96,7 +98,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
         const width = bounds.width + (padding * 2);
         const height = bounds.height + (padding * 2);
 
-        // CRITICAL FIX: Do NOT use getViewportForBounds. 
+        // CRITICAL FIX: Do NOT use getViewportForBounds.
         // We want 1:1 scale (zoom=1). We just need to shift (translate) the viewport
         // so that the top-left of the graph (bounds.x, bounds.y) aligns with (0,0) of our image.
         const x = -bounds.x + padding;
@@ -123,12 +125,12 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
 
     // B. Fetch Data
     // console.log('[CausaShell] Props:', { themeId, versionId, activeVersionId: themeState.activeVersion?.id });
-    const { nodes, links, factors, refresh, loading } = useCausaData(themeId, versionId || themeState.activeVersion?.id);
+    const { nodes, links, factors, refresh, loading, cycleNodeIds } = useCausaData(themeId, versionId || themeState.activeVersion?.id, viewFilter);
 
     // C. Initialize Session
     // Re-create session ONLY when layoutMode changes
     // This ensures we start fresh (or from cache) and don't leak state from previous runner
-    // We also re-create session if nodes change significantly? No, syncGraph handles that. 
+    // We also re-create session if nodes change significantly? No, syncGraph handles that.
     // But if we switch version, nodes change completely. session.syncGraph should handle it.
     const session = useMemo(() => {
         // Load initial positions from cache if available
@@ -157,7 +159,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
             session.syncGraph(nodes, links);
 
             // Critical Fix for Initial Load & Hydration
-            // Notify runner of updated data. 
+            // Notify runner of updated data.
             // Since session is fresh on mode swap, this ensures runner gets the initial data.
             // Check if updateData exists (it does on ForceRunner, maybe not RailRunner base?)
             if ('updateData' in runner) {
@@ -270,7 +272,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
     };
 
     // Calculate viewMode primarily for toolbar state
-    // const viewMode = (showDeliberation && activeVotingSession) ? 'deliberation' : 'graph'; 
+    // const viewMode = (showDeliberation && activeVotingSession) ? 'deliberation' : 'graph';
 
     if (!themeId) return <div className="p-10 text-muted-foreground italic">Geen thema geactiveerd.</div>;
 
@@ -295,6 +297,8 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                     </>
                 }
             >
+                <AsIsToBeToggle value={viewFilter} onChange={setViewFilter} />
+
                 {!effectiveIsReadOnly && (
                     <TooltipProvider>
                         <Tooltip>
@@ -333,6 +337,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                 isReadOnly={effectiveIsReadOnly}
                 designSpaceId={designSpaceId}
                 canResolveThread={canResolveThread}
+                cycleNodeIds={cycleNodeIds}
             />
 
             {/* Modals */}

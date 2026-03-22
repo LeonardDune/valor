@@ -226,12 +226,23 @@ WHERE {{
 # Claim reads (SPARQL)
 # ---------------------------------------------------------------------------
 
-async def _sparql_get_claims(ds_id: str) -> list[dict]:
+_CLAIM_TYPE_URI = {
+    "AsIs": f"{VALOR_NS}AsIsType",
+    "ToBe": f"{VALOR_NS}ToBeType",
+}
+_CLAIM_TYPE_SUFFIX = {v.rsplit("/", 1)[-1]: k for k, v in _CLAIM_TYPE_URI.items()}
+
+
+async def _sparql_get_claims(ds_id: str, claim_type: Optional[str] = None) -> list[dict]:
     asis_graph = _ds_asis_graph(ds_id)
+    claim_type_filter = ""
+    if claim_type and claim_type in _CLAIM_TYPE_URI:
+        ct_uri = _CLAIM_TYPE_URI[claim_type]
+        claim_type_filter = f"?tessera <{VALOR_NS}claimType> <{ct_uri}> ."
     rows = await sparql_select_global(f"""
 SELECT ?tessera ?baseId ?statement ?polarity ?confidence
        ?fromFactor ?sourceBaseId ?toFactor ?targetBaseId
-       ?evidenceText ?claimedAt WHERE {{
+       ?evidenceText ?claimType ?claimedAt WHERE {{
   GRAPH <{asis_graph}> {{
     ?tessera a <{VALOR_NS}Tessera> ;
              <{VALOR_NS}baseId> ?baseId ;
@@ -243,10 +254,19 @@ SELECT ?tessera ?baseId ?statement ?polarity ?confidence
     OPTIONAL {{ ?tessera <{VALOR_NS}polarity>     ?polarity }}
     OPTIONAL {{ ?tessera <{VALOR_NS}confidence>   ?confidence }}
     OPTIONAL {{ ?tessera <{VALOR_NS}evidenceText> ?evidenceText }}
+    OPTIONAL {{ ?tessera <{VALOR_NS}claimType>    ?claimType }}
     OPTIONAL {{ ?tessera <{VALOR_NS}claimedAt>    ?claimedAt }}
+    {claim_type_filter}
   }}
 }}
 """)
+
+    def _resolve_claim_type(raw: Optional[str]) -> str:
+        if not raw:
+            return "AsIs"
+        suffix = raw.rsplit("/", 1)[-1].rsplit("#", 1)[-1]
+        return _CLAIM_TYPE_SUFFIX.get(suffix, "AsIs")
+
     return [
         {
             "id": row["baseId"],
@@ -256,6 +276,7 @@ SELECT ?tessera ?baseId ?statement ?polarity ?confidence
             "confidence": float(row["confidence"]) if row.get("confidence") else 0.5,
             "evidence_text": row.get("evidenceText"),
             "evidence_url": None,
+            "claim_type": _resolve_claim_type(row.get("claimType")),
             "source_id": row["sourceBaseId"],
             "target_id": row["targetBaseId"],
             "source_version_id": row["sourceBaseId"],
@@ -391,3 +412,36 @@ WHERE {{
   GRAPH <{asis_graph}> {{ <{tessera_uri}> ?p ?o . }}
 }}"""
     await sparql_update(sparql, ds_id)
+
+
+# ---------------------------------------------------------------------------
+# Cycle detection (SPARQL property-path)
+# ---------------------------------------------------------------------------
+
+async def detect_cycles(ds_id: str) -> list[str]:
+    """Detecteert feedback-loops in het causale model via SPARQL property-path query.
+
+    Retourneert de base_ids van alle Factor-Tesserae die deel uitmaken van een cyclus.
+    Property-path: ^valor:fromFactor / valor:toFactor volgt de gerichte graaf van
+    factor naar factor via de tussenliggende claim-Tesserae.
+    FILTER EXISTS controleert of een factor via dit pad terug naar zichzelf kan komen.
+    """
+    asis_graph = _ds_asis_graph(ds_id)
+    query = f"""
+SELECT DISTINCT ?baseId WHERE {{
+  GRAPH <{asis_graph}> {{
+    ?source a <{VALOR_NS}Tessera> ;
+            <{VALOR_NS}baseId> ?baseId ;
+            <{VALOR_NS}factorRole> ?role .
+    FILTER EXISTS {{
+      ?source (^<{VALOR_NS}fromFactor> / <{VALOR_NS}toFactor>)+ ?source .
+    }}
+  }}
+}}
+"""
+    try:
+        rows = await sparql_select_global(query)
+        return [row["baseId"] for row in rows]
+    except Exception:
+        logger.warning("Cyclusdetectie mislukt voor ds_id=%s", ds_id)
+        return []

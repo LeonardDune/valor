@@ -1,6 +1,6 @@
 import { memo, type FunctionComponent, type MouseEvent } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
-import { Wrench, Cloud, Cpu, Target, HelpCircle, MessageSquare, type LucideProps } from 'lucide-react';
+import { Wrench, Cloud, Cpu, Target, HelpCircle, MessageSquare, RefreshCw, type LucideProps } from 'lucide-react';
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,6 +60,7 @@ const CLDNode: FunctionComponent<NodeProps> = ({ id, data, selected }) => {
     const role = (data.role || 'systeemelement').toLowerCase() as keyof typeof iconMap;
     const isReadOnly = data.isReadOnly || false;
     const epistemicStatus = (data.epistemicStatus || 'Proposed') as EpistemicStatus;
+    const inCycle = data.inCycle === true;
 
     const Icon = iconMap[role] || iconMap.unknown;
     const styles = roleStyles[role] || roleStyles.unknown;
@@ -71,7 +72,8 @@ const CLDNode: FunctionComponent<NodeProps> = ({ id, data, selected }) => {
                 'group bg-white rounded-panel relative hover:shadow-lg transition-all',
                 'flex flex-col border border-border-standard border-l-4',
                 statusStyle.borderLeft,
-                selected ? 'ring-2 ring-blue-500 border-transparent' : ''
+                selected ? 'ring-2 ring-blue-500 border-transparent' : '',
+                inCycle ? 'ring-2 ring-amber-400 ring-offset-1' : ''
             )}
             style={{
                 width: CARD_WIDTH,
@@ -133,6 +135,11 @@ const CLDNode: FunctionComponent<NodeProps> = ({ id, data, selected }) => {
 
             {/* Footer: rol-icoon + status-badge */}
             <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                {inCycle && (
+                    <span title="Onderdeel van feedback-loop" className="text-amber-400">
+                        <RefreshCw size={12} />
+                    </span>
+                )}
                 <span
                     className={cn('w-2 h-2 rounded-full', statusStyle.dot)}
                     title={statusStyle.label}

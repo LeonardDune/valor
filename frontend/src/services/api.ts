@@ -33,6 +33,8 @@ apiClient.interceptors.response.use(
 
 export type FactorType = 'middel' | 'extern' | 'systeemelement' | 'criterium';
 
+export type ClaimViewType = 'AsIs' | 'ToBe';
+
 export interface Claim {
     id: string;
     statement: string;
@@ -53,6 +55,7 @@ export interface Claim {
     status?: string;
     evidence_text?: string;
     evidence_url?: string;
+    claim_type?: ClaimViewType;
 }
 
 export interface ValidationResult {
@@ -459,13 +462,20 @@ export const api = {
         return response.data;
     },
 
-    getThemeClaims: async (dsId: string) => {
-        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`);
+    getThemeClaims: async (dsId: string, claimType?: ClaimViewType) => {
+        const params = claimType ? { claim_type: claimType } : {};
+        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`, { params });
         return response.data;
     },
 
-    getThemeVersionClaims: async (dsId: string) => {
-        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`);
+    detectCycles: async (dsId: string): Promise<string[]> => {
+        const response = await apiClient.get<{ cycle_nodes: string[] }>(`/designspace/${dsId}/cycles`);
+        return response.data.cycle_nodes;
+    },
+
+    getThemeVersionClaims: async (dsId: string, claimType?: ClaimViewType) => {
+        const params = claimType ? { claim_type: claimType } : {};
+        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`, { params });
         return response.data;
     },
 

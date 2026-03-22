@@ -1,7 +1,8 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { api, type Factor, type Claim } from '../../../services/api';
 import { mapFactors, mapClaims } from '../layout/mappers';
 import type { CausalNode, CausalLink } from '../types';
+import type { ViewFilter } from '../components/AsIsToBeToggle';
 
 interface CausaData {
     nodes: CausalNode[];
@@ -11,15 +12,17 @@ interface CausaData {
     loading: boolean;
     error: Error | null;
     refresh: (force?: boolean) => Promise<void>;
+    cycleNodeIds: string[];
 }
 
-export const useCausaData = (themeId: string, versionId?: string): CausaData => {
-    const [nodes, setNodes] = useState<CausalNode[]>([]);
-    const [links, setLinks] = useState<CausalLink[]>([]);
+export const useCausaData = (themeId: string, versionId?: string, viewFilter: ViewFilter = 'Beide'): CausaData => {
+    const [allNodes, setAllNodes] = useState<CausalNode[]>([]);
+    const [allLinks, setAllLinks] = useState<CausalLink[]>([]);
     const [factors, setFactors] = useState<Factor[]>([]);
     const [claims, setClaims] = useState<Claim[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
+    const [cycleNodeIds, setCycleNodeIds] = useState<string[]>([]);
 
     const lastFetchRef = useRef<string | null>(null);
 
@@ -49,9 +52,14 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
 
             setFactors(factorsData);
             setClaims(claimsData);
-            setNodes(mapFactors(factorsData));
-            setLinks(mapClaims(claimsData));
+            setAllNodes(mapFactors(factorsData));
+            setAllLinks(mapClaims(claimsData));
             setError(null);
+
+            // Async cyclusdetectie — non-blocking, geen UI-blokkering
+            api.detectCycles(themeId).then(setCycleNodeIds).catch(() => {
+                setCycleNodeIds([]);
+            });
         } catch (err) {
             console.error('Failed to load Causa data:', err);
             setError(err as Error);
@@ -68,5 +76,12 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
         }
     }, [refresh]);
 
-    return { nodes, links, factors, claims, loading, error, refresh };
+    // Gefilterde links op basis van viewFilter.
+    // Nodes blijven altijd volledig zichtbaar (AC-3: nodes met beide types altijd zichtbaar).
+    const links = useMemo(() => {
+        if (viewFilter === 'Beide') return allLinks;
+        return allLinks.filter(l => !l.claimType || l.claimType === viewFilter);
+    }, [allLinks, viewFilter]);
+
+    return { nodes: allNodes, links, factors, claims, loading, error, refresh, cycleNodeIds };
 };
