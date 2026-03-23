@@ -507,3 +507,58 @@ WHERE {{
         await sparql_update(insert_sparql, ds_id)
 
     return result
+
+
+async def create_claim_coverage_assessment(ds_id: str, alt_id: str, user_id: str) -> dict:
+    """Aggregeert ConditionCoverage-oordelen en slaat een causa:ClaimCoverageAssessment op.
+
+    Aggregatielogica:
+    - Geen claims met conditie, of alle conditioned claims Full  → FullyCovered
+    - Enige conditioned claim Partial                            → PartiallyCovered
+    - (NotCovered gereserveerd voor CAPAX-integratie, Epic 9)
+
+    Retourneert: { assessment_id, assessment_uri, outcome }
+    """
+    alt_graph = f"urn:valor:ds:{ds_id}/alternative/{alt_id}"
+    proposed_uri = f"{VALOR_NS}ProposedStatus"
+    user_uri = f"urn:valor:user:{user_id}"
+    created_at = datetime.now(timezone.utc).isoformat()
+
+    # Bereken huidige coverage
+    coverage_items = await get_condition_coverage(ds_id, alt_id)
+    conditioned = [c for c in coverage_items if c["coverage"] != "None"]
+
+    if all(c["coverage"] == "Full" for c in conditioned):
+        outcome = "FullyCovered"
+    else:
+        outcome = "PartiallyCovered"
+
+    assessment_id = str(uuid.uuid4())
+    assessment_uri = f"urn:valor:assessment:{assessment_id}"
+    outcome_uri = f"{_CAUSA_NS}{outcome}"
+
+    # Verwijder eerder aangemaakte assessment voor dit alternatief
+    delete_sparql = f"""DELETE {{
+  GRAPH <{alt_graph}> {{ ?a ?p ?o }}
+}}
+WHERE {{
+  GRAPH <{alt_graph}> {{
+    ?a a <{_CAUSA_NS}ClaimCoverageAssessment> ;
+       ?p ?o .
+  }}
+}}"""
+    await sparql_update(delete_sparql, ds_id)
+
+    insert_sparql = f"""INSERT DATA {{
+  GRAPH <{alt_graph}> {{
+    <{assessment_uri}> a <{_CAUSA_NS}ClaimCoverageAssessment> ;
+      <{_CAUSA_NS}coverageOutcome> <{outcome_uri}> ;
+      <{VALOR_NS}epistemicStatus> <{proposed_uri}> ;
+      <{VALOR_NS}claimedBy> <{user_uri}> ;
+      <{VALOR_NS}claimedAt> "{created_at}"^^<{_XSD}dateTime> ;
+      <{VALOR_NS}inDesignSpace> <urn:valor:ds:{ds_id}> .
+  }}
+}}"""
+    await sparql_update(insert_sparql, ds_id)
+
+    return {"assessment_id": assessment_id, "assessment_uri": assessment_uri, "outcome": outcome}

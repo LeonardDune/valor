@@ -22,7 +22,7 @@ from app.models.domain import (
     ParticipantAdd, ParticipantResponse,
 )
 from app.ontology import VALOR_NS
-from app.db.fuseki_knowledge import get_condition_coverage
+from app.db.fuseki_knowledge import get_condition_coverage, create_claim_coverage_assessment
 from app.services.fuseki import (
     initialize_design_space_graphs, initialize_alternative_graph,
     sparql_proxy_query, sparql_select, sparql_update,
@@ -213,6 +213,39 @@ async def get_alternative_coverage(
     return [ConditionCoverageItem(**item) for item in items]
 
 
+class ClaimCoverageAssessmentResponse(BaseModel):
+    assessment_id: str
+    assessment_uri: str
+    outcome: str  # "FullyCovered" | "PartiallyCovered"
+
+
+@router.post(
+    "/{design_space_id}/alternative/{alternative_id}/assessment/coverage",
+    response_model=ClaimCoverageAssessmentResponse,
+    status_code=201,
+)
+async def create_coverage_assessment(
+    design_space_id: str,
+    alternative_id: str,
+    user: dict = Depends(get_current_user),
+) -> ClaimCoverageAssessmentResponse:
+    """Aggregeert ConditionCoverage en maakt een causa:ClaimCoverageAssessment Tessera aan."""
+    user_id = user["id"]
+
+    if not await check_permission(user_id, design_space_id, Role.MEMBER):
+        raise HTTPException(
+            status_code=403,
+            detail="Onvoldoende rechten voor deze DesignSpace.",
+        )
+
+    result = await create_claim_coverage_assessment(design_space_id, alternative_id, user_id)
+    logger.info(
+        "ClaimCoverageAssessment aangemaakt voor DesignSpace %s / alternatief %s: %s",
+        design_space_id, alternative_id, result["outcome"],
+    )
+    return ClaimCoverageAssessmentResponse(**result)
+
+
 @router.get("/{design_space_id}/sparql")
 async def sparql_query(
     design_space_id: str,
@@ -289,25 +322,39 @@ async def phase_transition(
     active_alternatives = [r["alt"] for r in alt_rows]
 
     # -- Gate-check per actief alternatief -------------------------------------
+    causa_ns = f"{VALOR_NS}causa#"
     missing_gates: list[str] = []
     for alt_uri in active_alternatives:
-        for gate_type, gate_label in [
-            (f"{VALOR_NS}FeasibilityAssessment", "FeasibilityAssessment"),
-            (f"{VALOR_NS}ClaimCoverageAssessment", "ClaimCoverageAssessment"),
-        ]:
-            rows = await sparql_select(
-                f"""SELECT ?status WHERE {{
-                  GRAPH <{asis_graph}> {{
-                    ?t a <{gate_type}> ;
-                       <{VALOR_NS}inAlternative> <{alt_uri}> ;
-                       <{VALOR_NS}epistemicStatus> ?status .
-                  }}
-                }}""",
-                design_space_id,
-            )
-            if not rows:
-                alt_label = alt_uri.rsplit(":", 1)[-1]
-                missing_gates.append(f"{gate_label} ontbreekt voor alternatief '{alt_label}'")
+        alt_id = alt_uri.rsplit("/", 1)[-1]
+        alt_graph = f"urn:valor:ds:{design_space_id}/alternative/{alt_id}"
+        alt_label = alt_id
+
+        # FeasibilityAssessment: in asis graph (CAPAX, Epic 9)
+        feasibility_rows = await sparql_select(
+            f"""SELECT ?status WHERE {{
+              GRAPH <{asis_graph}> {{
+                ?t a <{VALOR_NS}FeasibilityAssessment> ;
+                   <{VALOR_NS}inAlternative> <{alt_uri}> ;
+                   <{VALOR_NS}epistemicStatus> ?status .
+              }}
+            }}""",
+            design_space_id,
+        )
+        if not feasibility_rows:
+            missing_gates.append(f"FeasibilityAssessment ontbreekt voor alternatief '{alt_label}'")
+
+        # ClaimCoverageAssessment: in alternative graph (CAUSA-engine, US-4.8)
+        coverage_rows = await sparql_select(
+            f"""SELECT ?status WHERE {{
+              GRAPH <{alt_graph}> {{
+                ?t a <{causa_ns}ClaimCoverageAssessment> ;
+                   <{VALOR_NS}epistemicStatus> ?status .
+              }}
+            }}""",
+            design_space_id,
+        )
+        if not coverage_rows:
+            missing_gates.append(f"ClaimCoverageAssessment ontbreekt voor alternatief '{alt_label}'")
 
     if missing_gates:
         raise HTTPException(
