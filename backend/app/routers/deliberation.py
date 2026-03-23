@@ -29,18 +29,18 @@ router = APIRouter(prefix="/deliberation", tags=["deliberation"])
 
 class FeedbackRequest(BaseModel):
     session_id: str
-    claim_version_id: str
+    tessera_base_id: str
     color: str
     motivation: Optional[str] = None
 
 class RankingRequest(BaseModel):
     session_id: str
-    claim_version_id: str
+    tessera_base_id: str
     category: str # high, medium, backlog, discard
 
 class ConsentVoteRequest(BaseModel):
     session_id: str
-    claim_version_id: str
+    tessera_base_id: str
     vote: ConsentVoteType
     motivation: Optional[str] = None
 
@@ -54,7 +54,7 @@ async def post_feedback(data: FeedbackRequest, user: dict = Depends(get_current_
     # 1. Create model
     feedback = Feedback(
         session_id=data.session_id,
-        claim_version_id=data.claim_version_id,
+        tessera_base_id=data.tessera_base_id,
         user_id=user_id,
         color=data.color,
         motivation=data.motivation
@@ -77,7 +77,7 @@ async def post_ranking(data: RankingRequest, user: dict = Depends(get_current_us
     
     ranking = Ranking(
         session_id=data.session_id,
-        claim_version_id=data.claim_version_id,
+        tessera_base_id=data.tessera_base_id,
         user_id=user_id,
         category=data.category
     )
@@ -106,7 +106,7 @@ async def post_consent_vote(session_id: str, data: ConsentVoteRequest, user: dic
     
     vote_obj = ConsentVote(
         session_id=session_id,
-        claim_version_id=data.claim_version_id,
+        tessera_base_id=data.tessera_base_id,
         user_id=user_id,
         vote=data.vote,
         motivation=data.motivation

@@ -91,7 +91,7 @@ export type ConsentVoteType = 'approve' | 'object';
 
 export interface ConsentVotePayload {
     session_id: string;
-    claim_version_id: string;
+    tessera_base_id: string;
     vote: ConsentVoteType;
     motivation?: string;
 }

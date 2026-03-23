@@ -29,7 +29,7 @@ export const VotingConsent: React.FC<VotingConsentProps> = ({ sessionId, onCompl
         mutationFn: async ({ claimId, type, motivation }: { claimId: string; type: 'approve' | 'object'; motivation?: string }) => {
             await sessionService.submitConsentVote(sessionId, {
                 session_id: sessionId,
-                claim_version_id: claimId,
+                tessera_base_id: claimId,
                 vote: type,
                 motivation
             });

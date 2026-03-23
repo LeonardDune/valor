@@ -280,7 +280,7 @@ class VotingSession(BaseModel):
 class Feedback(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     session_id: str
-    claim_version_id: str
+    tessera_base_id: str
     user_id: str
     color: str # green, amber, red
     motivation: Optional[str] = None
@@ -295,7 +295,7 @@ class RankingCategory(str, Enum):
 class Ranking(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     session_id: str
-    claim_version_id: str
+    tessera_base_id: str
     user_id: str
     category: RankingCategory
     created_at: datetime = Field(default_factory=datetime.now)
@@ -307,7 +307,7 @@ class ConsentVoteType(str, Enum):
 class ConsentVote(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     session_id: str
-    claim_version_id: str
+    tessera_base_id: str
     user_id: str
     vote: ConsentVoteType
     motivation: Optional[str] = None
