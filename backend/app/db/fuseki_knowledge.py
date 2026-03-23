@@ -417,7 +417,7 @@ SELECT DISTINCT ?baseId WHERE {{
     ?factor a <{VALOR_NS}Tessera> ;
             <{VALOR_NS}baseId> ?baseId .
     FILTER NOT EXISTS {{ ?factor <{VALOR_NS}fromFactor> ?x }}
-    ?factor ^<{VALOR_NS}fromFactor>/<{VALOR_NS}toFactor>+ ?factor .
+    ?factor (^<{VALOR_NS}fromFactor>/<{VALOR_NS}toFactor>)+ ?factor .
   }}
 }}
 """
