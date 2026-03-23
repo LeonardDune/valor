@@ -433,6 +433,32 @@ _CAUSA_NS = f"{VALOR_NS}causa#"
 _CAPAX_NS = f"{VALOR_NS}capax#"
 
 
+async def get_asis_condition_coverage(ds_id: str) -> list[dict]:
+    """Berekent ConditionCoverage vanuit de asis-graph zonder opslag (voor visualisatie).
+
+    Retourneert alleen claims MET een hasManifestationCondition.
+    """
+    asis_graph = _ds_asis_graph(ds_id)
+    rows = await sparql_select_global(f"""
+SELECT ?baseId (BOUND(?rt) AS ?hasRealised) WHERE {{
+  GRAPH <{asis_graph}> {{
+    ?tessera a <{VALOR_NS}Tessera> ;
+             <{VALOR_NS}baseId> ?baseId ;
+             <{VALOR_NS}fromFactor> ?fromFactor ;
+             <{_CAUSA_NS}hasManifestationCondition> ?cond .
+    OPTIONAL {{ ?tessera <{_CAUSA_NS}realisedBy> ?rt }}
+  }}
+}}
+""")
+    return [
+        {
+            "claim_id": row["baseId"],
+            "coverage": "Full" if str(row.get("hasRealised", "false")).lower() == "true" else "Partial",
+        }
+        for row in rows
+    ]
+
+
 async def get_condition_coverage(ds_id: str, alt_id: str) -> list[dict]:
     """Berekent capax:ConditionCoverage per CausalClaim voor het gegeven alternatief.
 

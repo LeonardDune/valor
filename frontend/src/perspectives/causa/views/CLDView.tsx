@@ -42,6 +42,7 @@ interface CLDViewProps {
     designSpaceId?: string;
     canResolveThread?: boolean;
     cycleNodeIds?: Set<string>;
+    coverageMap?: Map<string, 'Full' | 'Partial' | 'None'>;
 }
 
 
@@ -72,6 +73,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     designSpaceId,
     canResolveThread = false,
     cycleNodeIds = new Set(),
+    coverageMap = new Map(),
 }) => {
     // React Flow State
     const [rfInstance, setRfInstance] = useState<any>(null);
@@ -251,7 +253,8 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                         version_id: cl.version_id,
                         evidence_text: cl.evidence_text,
                         evidence_url: cl.evidence_url,
-                        onOpenThread: handleOpenThread
+                        onOpenThread: handleOpenThread,
+                        coverage: coverageMap.get(cl.id) ?? null,
                     }
                 };
             });
@@ -263,7 +266,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
             runner.updateData(session.getNodes(), session.getLinks());
         }
 
-    }, [causalNodes, causalLinks, session, setNodes, setEdges, layoutMode, runner, threadStats, cycleNodeIds]);
+    }, [causalNodes, causalLinks, session, setNodes, setEdges, layoutMode, runner, threadStats, cycleNodeIds, coverageMap]);
 
 
     // Fit View on Layout Mode Change

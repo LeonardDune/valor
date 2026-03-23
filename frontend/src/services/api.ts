@@ -575,6 +575,11 @@ export const api = {
     },
 
     // DesignSpace
+    getAsisCoverage: async (dsId: string): Promise<{ claim_id: string; coverage: 'Full' | 'Partial' | 'None' }[]> => {
+        const response = await apiClient.get(`/designspace/${dsId}/coverage`);
+        return response.data;
+    },
+
     getConditionCoverage: async (dsId: string, altId: string): Promise<{ claim_id: string; coverage: 'Full' | 'Partial' | 'None' }[]> => {
         const response = await apiClient.get(`/designspace/${dsId}/alternative/${altId}/coverage`);
         return response.data;

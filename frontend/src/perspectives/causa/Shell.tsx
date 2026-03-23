@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Layers } from "lucide-react";
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getNodesBounds } from 'reactflow';
@@ -82,6 +82,22 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
     });
 
     const [isStartingSession, setIsStartingSession] = useState(false);
+    const [showCoverageOverlay, setShowCoverageOverlay] = useState(false);
+    const [coverageMap, setCoverageMap] = useState<Map<string, 'Full' | 'Partial' | 'None'>>(new Map());
+
+    useEffect(() => {
+        if (!showCoverageOverlay || !designSpaceId) {
+            setCoverageMap(new Map());
+            return;
+        }
+        api.getAsisCoverage(designSpaceId).then(items => {
+            const map = new Map<string, 'Full' | 'Partial' | 'None'>();
+            items.forEach(item => map.set(item.claim_id, item.coverage as 'Full' | 'Partial' | 'None'));
+            setCoverageMap(map);
+        }).catch(err => {
+            console.warn('[CausaShell] Coverage overlay mislukt:', err);
+        });
+    }, [showCoverageOverlay, designSpaceId]);
 
     // Helpers for Export
     const getExportConfig = () => {
@@ -316,6 +332,24 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
 
                 <ClaimViewToggle value={viewFilter} onChange={setViewFilter} />
 
+                {designSpaceId && (
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    size="sm"
+                                    variant={showCoverageOverlay ? "secondary" : "ghost"}
+                                    className="h-8 w-8 p-0"
+                                    onClick={() => setShowCoverageOverlay(v => !v)}
+                                >
+                                    <Layers className="h-4 w-4" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Conditiedekking overlay</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                )}
+
             </PerspectiveToolbar>
 
             {/* View */}
@@ -336,6 +370,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                 designSpaceId={designSpaceId}
                 canResolveThread={canResolveThread}
                 cycleNodeIds={cycleNodeIds}
+                coverageMap={coverageMap}
             />
 
             {/* Modals */}

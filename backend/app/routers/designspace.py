@@ -22,7 +22,7 @@ from app.models.domain import (
     ParticipantAdd, ParticipantResponse,
 )
 from app.ontology import VALOR_NS
-from app.db.fuseki_knowledge import get_condition_coverage, create_claim_coverage_assessment
+from app.db.fuseki_knowledge import get_condition_coverage, create_claim_coverage_assessment, get_asis_condition_coverage
 from app.services.fuseki import (
     initialize_design_space_graphs, initialize_alternative_graph,
     sparql_proxy_query, sparql_select, sparql_update,
@@ -210,6 +210,21 @@ async def get_alternative_coverage(
         "ConditionCoverage berekend voor DesignSpace %s / alternatief %s door %s — %d claims",
         design_space_id, alternative_id, user_id, len(items),
     )
+    return [ConditionCoverageItem(**item) for item in items]
+
+
+@router.get("/{design_space_id}/coverage", response_model=list[ConditionCoverageItem])
+async def get_asis_coverage(
+    design_space_id: str,
+    user: dict = Depends(get_current_user),
+) -> list[ConditionCoverageItem]:
+    """Berekent ConditionCoverage vanuit de asis-graph (geen alternatief nodig, voor overlay-visualisatie)."""
+    user_id = user["id"]
+
+    if not await check_permission(user_id, design_space_id, Role.VIEWER):
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    items = await get_asis_condition_coverage(design_space_id)
     return [ConditionCoverageItem(**item) for item in items]
 
 
