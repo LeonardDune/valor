@@ -30,6 +30,7 @@ router = APIRouter(
 )
 
 XSD_NS = "http://www.w3.org/2001/XMLSchema#"
+CAUSA_NS = f"{VALOR_NS}causa#"
 
 
 def _normalize_status(raw: str) -> str:
@@ -60,6 +61,7 @@ class CreateTesseraRequest(BaseModel):
     uncertainty_level: Optional[str] = None  # PAMS: "StatisticalRisk" | "Scenario" | "DeepUncertainty" | "Ignorance"
     in_alternative: Optional[str] = None
     in_phase: Optional[str] = None
+    manifestation_condition: Optional[str] = None
 
 
 class TesseraResponse(BaseModel):
@@ -74,6 +76,7 @@ class TesseraResponse(BaseModel):
     uncertainty_level: Optional[str] = None
     in_alternative: Optional[str] = None
     in_phase: Optional[str] = None
+    manifestation_condition: Optional[str] = None
 
 
 class CreateEvidenceRequest(BaseModel):
@@ -165,6 +168,9 @@ async def create_tessera(
     if request.in_phase:
         phase_uri = f"urn:valor:phase:{request.in_phase}"
         optional_triples += f"      <{tessera_uri}> <{VALOR_NS}inPhase> <{phase_uri}> .\n"
+    if request.manifestation_condition:
+        escaped_condition = request.manifestation_condition.replace("\\", "\\\\").replace('"', '\\"')
+        optional_triples += f'      <{tessera_uri}> <{CAUSA_NS}hasManifestationCondition> "{escaped_condition}"@nl .\n'
 
     escaped_content = request.claim_content.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -206,6 +212,7 @@ INSERT DATA {{
         uncertainty_level=request.uncertainty_level,
         in_alternative=request.in_alternative,
         in_phase=request.in_phase,
+        manifestation_condition=request.manifestation_condition,
     )
 
 
@@ -225,7 +232,7 @@ async def get_tessera(
     graph_uri = named_graph_uri(design_space_id)
 
     rows = await sparql_select(
-        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase WHERE {{
+        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase ?manifestationCondition WHERE {{
           GRAPH <{graph_uri}> {{
             <{tessera_uri}> a <{VALOR_NS}Tessera> ;
               <{VALOR_NS}claimContent> ?content ;
@@ -236,6 +243,7 @@ async def get_tessera(
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}uncertaintyLevel> ?uncertaintyLevel . }}
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inAlternative> ?inAlternative . }}
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inPhase> ?inPhase . }}
+            OPTIONAL {{ <{tessera_uri}> <{CAUSA_NS}hasManifestationCondition> ?manifestationCondition . }}
           }}
         }}""",
         design_space_id,
@@ -265,6 +273,7 @@ async def get_tessera(
         uncertainty_level=uncertainty_level,
         in_alternative=row.get("inAlternative"),
         in_phase=row.get("inPhase"),
+        manifestation_condition=row.get("manifestationCondition"),
     )
 
 
