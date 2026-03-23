@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 from pydantic import BaseModel
 import logging
@@ -35,11 +35,20 @@ class ClaimUpdate(BaseModel):
     evidence_url: Optional[str] = None
 
 
+_VALID_CLAIM_TYPES = {"AsIsType", "ToBeType"}
+
+
 @router.get("/designspace/{ds_id}/claims")
-async def list_designspace_claims(ds_id: str, user: dict = Depends(get_current_user)):
+async def list_designspace_claims(
+    ds_id: str,
+    claim_type: Optional[str] = Query(None, description="Filter op claimType: 'AsIsType' of 'ToBeType'"),
+    user: dict = Depends(get_current_user),
+):
+    if claim_type is not None and claim_type not in _VALID_CLAIM_TYPES:
+        raise HTTPException(status_code=422, detail=f"Ongeldig claim_type '{claim_type}'. Toegestane waarden: {sorted(_VALID_CLAIM_TYPES)}")
     if not await check_permission(user["id"], ds_id, Role.MEMBER):
         raise HTTPException(status_code=403, detail="Geen toegang tot deze DesignSpace")
-    return await fuseki_knowledge._sparql_get_claims(ds_id)
+    return await fuseki_knowledge._sparql_get_claims(ds_id, claim_type=claim_type)
 
 
 @router.post("/claims_manual")
