@@ -32,6 +32,7 @@ _participant_role_data: dict[str, dict] = {}
 _rbac_role_weights: dict[str, int] = {}
 _disc_contribution_type_label_to_uri: dict[str, str] = {}  # "Vraag" → URI
 _status_uri_to_nl_label: dict[str, str] = {}  # URI → "Betwist" etc.
+_system_situation_uris: set[str] = set()
 
 
 _DISC_GRAPH = f"{VALOR_NS}disc"
@@ -42,6 +43,7 @@ async def load_ontology_cache() -> None:
     global _valid_transitions, _requires_decision_episode, _argue_label_to_uri
     global _uncertainty_label_to_uri, _participant_role_data, _rbac_role_weights
     global _disc_contribution_type_label_to_uri, _status_uri_to_nl_label
+    global _system_situation_uris
 
     logger.info("[ontology-cache] Ontologie-data laden van Fuseki...")
 
@@ -196,6 +198,19 @@ async def load_ontology_cache() -> None:
     _disc_contribution_type_label_to_uri = {row["label"]: row["uri"] for row in disc_type_rows}
     logger.info("[ontology-cache] Bijdragetypes (disc): %s", list(_disc_contribution_type_label_to_uri.keys()))
 
+    SYSONT_NS = f"{VALOR_NS}sysont#"
+    SYSONT_GRAPH = f"{VALOR_NS}sysont"
+    sysont_rows = await sparql_select_global(f"""
+        PREFIX sysont: <{SYSONT_NS}>
+        SELECT ?uri WHERE {{
+          GRAPH <{SYSONT_GRAPH}> {{
+            ?uri a sysont:SystemSituation .
+          }}
+        }}
+    """)
+    _system_situation_uris = {row["uri"] for row in sysont_rows}
+    logger.info("[ontology-cache] SystemSituation URIs: %d geladen", len(_system_situation_uris))
+
     if not _evidence_label_to_uri or not _status_label_to_uri or not _valid_transitions:
         logger.warning(
             "[ontology-cache] Ontologie-cache onvolledig. "
@@ -272,3 +287,7 @@ def rbac_to_valor_role(rbac_role: str) -> str:
             best_label = label
             best_weight = data["weight"]
     return best_label
+
+
+def get_system_situation_uris() -> set[str]:
+    return _system_situation_uris
