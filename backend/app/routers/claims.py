@@ -51,6 +51,14 @@ async def list_designspace_claims(
     return await fuseki_knowledge._sparql_get_claims(ds_id, claim_type=claim_type)
 
 
+@router.get("/designspace/{ds_id}/cycles")
+async def detect_designspace_cycles(ds_id: str, user: dict = Depends(get_current_user)):
+    if not await check_permission(user["id"], ds_id, Role.MEMBER):
+        raise HTTPException(status_code=403, detail="Geen toegang tot deze DesignSpace")
+    cycle_ids = await fuseki_knowledge.detect_cycles(ds_id)
+    return {"cycle_node_ids": cycle_ids}
+
+
 @router.post("/claims_manual")
 async def create_claim(claim: ClaimManualCreate, user: dict = Depends(get_current_user)):
     logger.info("Creating claim by %s in ds %s", user["id"], claim.ds_id)

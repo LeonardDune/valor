@@ -41,6 +41,7 @@ interface CLDViewProps {
     isReadOnly?: boolean;
     designSpaceId?: string;
     canResolveThread?: boolean;
+    cycleNodeIds?: Set<string>;
 }
 
 
@@ -70,6 +71,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     isReadOnly = false,
     designSpaceId,
     canResolveThread = false,
+    cycleNodeIds = new Set(),
 }) => {
     // React Flow State
     const [rfInstance, setRfInstance] = useState<any>(null);
@@ -159,7 +161,8 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                         threadCount: (cn.version_id && threadStats[cn.version_id]) || 0,
                         version_id: cn.version_id,
                         onOpenThread: handleOpenThread,
-                        isReadOnly
+                        isReadOnly,
+                        isInCycle: cycleNodeIds.has(cn.id)
                     }
                 };
             });
@@ -260,7 +263,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
             runner.updateData(session.getNodes(), session.getLinks());
         }
 
-    }, [causalNodes, causalLinks, session, setNodes, setEdges, layoutMode, runner, threadStats]);
+    }, [causalNodes, causalLinks, session, setNodes, setEdges, layoutMode, runner, threadStats, cycleNodeIds]);
 
 
     // Fit View on Layout Mode Change

@@ -8,6 +8,7 @@ interface CausaData {
     links: CausalLink[];
     factors: Factor[]; // Raw data for Modals
     claims: Claim[];   // Raw data for Modals
+    cycleNodeIds: Set<string>;
     loading: boolean;
     error: Error | null;
     refresh: (force?: boolean) => Promise<void>;
@@ -20,6 +21,7 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
     const [links, setLinks] = useState<CausalLink[]>([]);
     const [factors, setFactors] = useState<Factor[]>([]);
     const [claims, setClaims] = useState<Claim[]>([]);
+    const [cycleNodeIds, setCycleNodeIds] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
     const [viewFilter, setViewFilter] = useState<ClaimViewType | null>(null);
@@ -55,6 +57,13 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
             setNodes(mapFactors(factorsData));
             setLinks(mapClaims(claimsData));
             setError(null);
+
+            // Non-blocking cycle detectie na de hoofd-refresh
+            api.detectCycles(themeId).then(ids => {
+                setCycleNodeIds(new Set(ids));
+            }).catch(err => {
+                console.warn('[useCausaData] Cycle detectie mislukt:', err);
+            });
         } catch (err) {
             console.error('Failed to load Causa data:', err);
             setError(err as Error);
@@ -76,5 +85,5 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
         ? links
         : links.filter(link => (link as any).claimType === viewFilter || !(link as any).claimType);
 
-    return { nodes, links: filteredLinks, factors, claims, loading, error, refresh, viewFilter, setViewFilter };
+    return { nodes, links: filteredLinks, factors, claims, cycleNodeIds, loading, error, refresh, viewFilter, setViewFilter };
 };

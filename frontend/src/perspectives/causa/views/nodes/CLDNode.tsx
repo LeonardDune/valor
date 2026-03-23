@@ -59,6 +59,7 @@ const CARD_HEIGHT = '100px';
 const CLDNode: FunctionComponent<NodeProps> = ({ id, data, selected }) => {
     const role = (data.role || 'systeemelement').toLowerCase() as keyof typeof iconMap;
     const isReadOnly = data.isReadOnly || false;
+    const isInCycle = data.isInCycle || false;
     const epistemicStatus = (data.epistemicStatus || 'Proposed') as EpistemicStatus;
 
     const Icon = iconMap[role] || iconMap.unknown;
@@ -71,7 +72,8 @@ const CLDNode: FunctionComponent<NodeProps> = ({ id, data, selected }) => {
                 'group bg-white rounded-panel relative hover:shadow-lg transition-all',
                 'flex flex-col border border-border-standard border-l-4',
                 statusStyle.borderLeft,
-                selected ? 'ring-2 ring-blue-500 border-transparent' : ''
+                selected ? 'ring-2 ring-blue-500 border-transparent' : '',
+                isInCycle && !selected ? 'ring-2 ring-amber-400' : ''
             )}
             style={{
                 width: CARD_WIDTH,

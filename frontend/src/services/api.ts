@@ -466,6 +466,11 @@ export const api = {
         return response.data;
     },
 
+    detectCycles: async (dsId: string): Promise<string[]> => {
+        const response = await apiClient.get<{ cycle_node_ids: string[] }>(`/designspace/${dsId}/cycles`);
+        return response.data.cycle_node_ids;
+    },
+
     getThemeVersionClaims: async (dsId: string) => {
         const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`);
         return response.data;
