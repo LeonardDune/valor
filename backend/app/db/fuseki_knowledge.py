@@ -391,3 +391,29 @@ WHERE {{
   GRAPH <{asis_graph}> {{ <{tessera_uri}> ?p ?o . }}
 }}"""
     await sparql_update(sparql, ds_id)
+
+
+# ---------------------------------------------------------------------------
+# Cycle detection (SPARQL property path)
+# ---------------------------------------------------------------------------
+
+async def detect_cycles(ds_id: str) -> list[str]:
+    """Detecteert feedback-loops in de causale graaf via SPARQL property path.
+
+    Retourneert een lijst van base_ids van factors die deel uitmaken van een cyclus.
+    Een factor zit in een cyclus als hij zichzelf kan bereiken via de claim-keten:
+    ^valor:fromFactor / valor:toFactor (minimaal één stap).
+    """
+    asis_graph = _ds_asis_graph(ds_id)
+    cycle_query = f"""
+SELECT DISTINCT ?baseId WHERE {{
+  GRAPH <{asis_graph}> {{
+    ?factor a <{VALOR_NS}Tessera> ;
+            <{VALOR_NS}baseId> ?baseId .
+    FILTER NOT EXISTS {{ ?factor <{VALOR_NS}fromFactor> ?x }}
+    ?factor ^<{VALOR_NS}fromFactor>/<{VALOR_NS}toFactor>+ ?factor .
+  }}
+}}
+"""
+    rows = await sparql_select_global(cycle_query)
+    return [row["baseId"] for row in rows]

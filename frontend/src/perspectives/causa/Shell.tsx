@@ -123,7 +123,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
 
     // B. Fetch Data
     // console.log('[CausaShell] Props:', { themeId, versionId, activeVersionId: themeState.activeVersion?.id });
-    const { nodes, links, factors, refresh, loading } = useCausaData(themeId, versionId || themeState.activeVersion?.id);
+    const { nodes, links, factors, cycleNodeIds, refresh, loading } = useCausaData(themeId, versionId || themeState.activeVersion?.id);
 
     // C. Initialize Session
     // Re-create session ONLY when layoutMode changes
@@ -333,6 +333,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                 isReadOnly={effectiveIsReadOnly}
                 designSpaceId={designSpaceId}
                 canResolveThread={canResolveThread}
+                cycleNodeIds={cycleNodeIds}
             />
 
             {/* Modals */}
