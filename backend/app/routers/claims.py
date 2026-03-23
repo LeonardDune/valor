@@ -33,6 +33,7 @@ class ClaimUpdate(BaseModel):
     target_id: Optional[str] = None
     evidence_text: Optional[str] = None
     evidence_url: Optional[str] = None
+    manifestation_condition: Optional[str] = None
 
 
 _VALID_CLAIM_TYPES = {"AsIsType", "ToBeType"}
@@ -111,6 +112,7 @@ async def update_claim_route(claim_id: str, claim: ClaimUpdate, user: dict = Dep
         polarity=claim.polarity,
         confidence=claim.confidence,
         evidence_text=claim.evidence_text,
+        manifestation_condition=claim.manifestation_condition,
     )
 
     project_id = await fuseki_knowledge.get_project_id_for_designspace(ds_id)

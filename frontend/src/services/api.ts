@@ -524,6 +524,7 @@ export const api = {
         target_id?: string;
         evidence_text?: string;
         evidence_url?: string;
+        manifestation_condition?: string;
     }) => {
         const response = await apiClient.patch(`/claims/${id}`, data);
         return response.data;

@@ -46,6 +46,7 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
     const [targetId, setTargetId] = useState('');
     const [evidenceText, setEvidenceText] = useState('');
     const [evidenceUrl, setEvidenceUrl] = useState('');
+    const [manifestationCondition, setManifestationCondition] = useState('');
 
     const [isSaving, setIsSaving] = useState(false);
     const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -93,6 +94,7 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
             setTargetId(data.target_id || data.target || '');
             setEvidenceText(data.evidence_text || '');
             setEvidenceUrl(data.evidence_url || '');
+            setManifestationCondition(data.manifestation_condition || '');
         }
     }, [selection, open]);
 
@@ -110,7 +112,8 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
                     source_id: sourceId,
                     target_id: targetId,
                     evidence_text: evidenceText,
-                    evidence_url: evidenceUrl
+                    evidence_url: evidenceUrl,
+                    manifestation_condition: manifestationCondition || undefined,
                 });
             }
             toast.success("Wijzigingen opgeslagen.");
@@ -322,6 +325,17 @@ export const EditFactorDetailModal: React.FC<EditFactorDetailModalProps> = ({
                                 <div className="grid gap-2">
                                     <Label htmlFor="evidenceText">Bewijs / Context</Label>
                                     <Textarea id="evidenceText" value={evidenceText} onChange={e => setEvidenceText(e.target.value)} disabled={readOnly} placeholder="Geciteerde tekst of toelichting..." />
+                                </div>
+                                <div className="grid gap-2">
+                                    <Label htmlFor="manifestationCondition">Manifesteringsconditie</Label>
+                                    <Textarea
+                                        id="manifestationCondition"
+                                        value={manifestationCondition}
+                                        onChange={e => setManifestationCondition(e.target.value)}
+                                        disabled={readOnly}
+                                        placeholder="Welke systeemconditie moet aanwezig zijn voor deze relatie om te manifesteren?"
+                                        className="text-sm"
+                                    />
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="grid gap-2">

@@ -236,7 +236,7 @@ async def _sparql_get_claims(ds_id: str, claim_type: Optional[str] = None) -> li
     rows = await sparql_select_global(f"""
 SELECT ?tessera ?baseId ?statement ?polarity ?confidence
        ?fromFactor ?sourceBaseId ?toFactor ?targetBaseId
-       ?evidenceText ?claimedAt WHERE {{
+       ?evidenceText ?claimedAt ?manifestationCondition WHERE {{
   GRAPH <{asis_graph}> {{
     ?tessera a <{VALOR_NS}Tessera> ;
              <{VALOR_NS}baseId> ?baseId ;
@@ -250,6 +250,7 @@ SELECT ?tessera ?baseId ?statement ?polarity ?confidence
     OPTIONAL {{ ?tessera <{VALOR_NS}confidence>   ?confidence }}
     OPTIONAL {{ ?tessera <{VALOR_NS}evidenceText> ?evidenceText }}
     OPTIONAL {{ ?tessera <{VALOR_NS}claimedAt>    ?claimedAt }}
+    OPTIONAL {{ ?tessera <{_CAUSA_NS}hasManifestationCondition> ?manifestationCondition }}
   }}
 }}
 """)
@@ -272,6 +273,7 @@ SELECT ?tessera ?baseId ?statement ?polarity ?confidence
             "created_at": row.get("claimedAt"),
             "created_by": None,
             "status": None,
+            "manifestation_condition": row.get("manifestationCondition"),
         }
         for row in rows
     ]
@@ -341,6 +343,7 @@ async def update_claim_fuseki(
     polarity: Optional[str] = None,
     confidence: Optional[float] = None,
     evidence_text: Optional[str] = None,
+    manifestation_condition: Optional[str] = None,
 ) -> None:
     """Werkt een bestaande Claim-Tessera bij in Fuseki (alleen opgegeven velden)."""
     tessera_uri = _tessera_uri(tessera_id)
@@ -367,6 +370,12 @@ async def update_claim_fuseki(
         deletes.append(f"<{tessera_uri}> <{VALOR_NS}evidenceText> ?oldEvid .")
         inserts.append(f'<{tessera_uri}> <{VALOR_NS}evidenceText> "{_escape(evidence_text)}"@nl .')
         optionals.append(f"OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}evidenceText> ?oldEvid }}")
+
+    if manifestation_condition is not None:
+        deletes.append(f"<{tessera_uri}> <{_CAUSA_NS}hasManifestationCondition> ?oldMc .")
+        if manifestation_condition:
+            inserts.append(f'<{tessera_uri}> <{_CAUSA_NS}hasManifestationCondition> "{_escape(manifestation_condition)}"@nl .')
+        optionals.append(f"OPTIONAL {{ <{tessera_uri}> <{_CAUSA_NS}hasManifestationCondition> ?oldMc }}")
 
     if not deletes:
         return
