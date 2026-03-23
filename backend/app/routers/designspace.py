@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 
 from app.auth import get_current_user
@@ -21,6 +22,7 @@ from app.models.domain import (
     ParticipantAdd, ParticipantResponse,
 )
 from app.ontology import VALOR_NS
+from app.db.fuseki_knowledge import get_condition_coverage
 from app.services.fuseki import (
     initialize_design_space_graphs, initialize_alternative_graph,
     sparql_proxy_query, sparql_select, sparql_update,
@@ -181,6 +183,34 @@ async def list_alternatives(
             created_at=row.get("createdAt", ""),
         ))
     return result
+
+
+class ConditionCoverageItem(BaseModel):
+    claim_id: str
+    coverage: str  # "Full" | "Partial" | "None"
+
+
+@router.get("/{design_space_id}/alternative/{alternative_id}/coverage", response_model=list[ConditionCoverageItem])
+async def get_alternative_coverage(
+    design_space_id: str,
+    alternative_id: str,
+    user: dict = Depends(get_current_user),
+) -> list[ConditionCoverageItem]:
+    """Berekent en retourneert capax:ConditionCoverage per CausalClaim voor het gegeven alternatief."""
+    user_id = user["id"]
+
+    if not await check_permission(user_id, design_space_id, Role.VIEWER):
+        raise HTTPException(
+            status_code=403,
+            detail="Onvoldoende rechten voor deze DesignSpace.",
+        )
+
+    items = await get_condition_coverage(design_space_id, alternative_id)
+    logger.info(
+        "ConditionCoverage berekend voor DesignSpace %s / alternatief %s door %s — %d claims",
+        design_space_id, alternative_id, user_id, len(items),
+    )
+    return [ConditionCoverageItem(**item) for item in items]
 
 
 @router.get("/{design_space_id}/sparql")
