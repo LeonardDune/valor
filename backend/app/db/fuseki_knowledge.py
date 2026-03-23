@@ -226,8 +226,13 @@ WHERE {{
 # Claim reads (SPARQL)
 # ---------------------------------------------------------------------------
 
-async def _sparql_get_claims(ds_id: str) -> list[dict]:
+async def _sparql_get_claims(ds_id: str, claim_type: Optional[str] = None) -> list[dict]:
     asis_graph = _ds_asis_graph(ds_id)
+    if claim_type is not None:
+        claim_type_uri = f"{VALOR_NS}{claim_type}"
+        claim_type_filter = f"?tessera <{VALOR_NS}claimType> <{claim_type_uri}> ."
+    else:
+        claim_type_filter = ""
     rows = await sparql_select_global(f"""
 SELECT ?tessera ?baseId ?statement ?polarity ?confidence
        ?fromFactor ?sourceBaseId ?toFactor ?targetBaseId
@@ -238,6 +243,7 @@ SELECT ?tessera ?baseId ?statement ?polarity ?confidence
              <{VALOR_NS}claimContent> ?statement ;
              <{VALOR_NS}fromFactor> ?fromFactor ;
              <{VALOR_NS}toFactor> ?toFactor .
+    {claim_type_filter}
     ?fromFactor <{VALOR_NS}baseId> ?sourceBaseId .
     ?toFactor   <{VALOR_NS}baseId> ?targetBaseId .
     OPTIONAL {{ ?tessera <{VALOR_NS}polarity>     ?polarity }}

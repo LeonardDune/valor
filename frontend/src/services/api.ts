@@ -32,6 +32,7 @@ apiClient.interceptors.response.use(
 );
 
 export type FactorType = 'middel' | 'extern' | 'systeemelement' | 'criterium';
+export type ClaimViewType = 'AsIsType' | 'ToBeType';
 
 export interface Claim {
     id: string;
@@ -459,8 +460,9 @@ export const api = {
         return response.data;
     },
 
-    getThemeClaims: async (dsId: string) => {
-        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`);
+    getThemeClaims: async (dsId: string, claimType?: ClaimViewType) => {
+        const params = claimType ? { claim_type: claimType } : undefined;
+        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`, { params });
         return response.data;
     },
 
