@@ -423,3 +423,87 @@ SELECT DISTINCT ?baseId WHERE {{
 """
     rows = await sparql_select_global(cycle_query)
     return [row["baseId"] for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# ConditionCoverage (CAUSA-engine, US-4.7)
+# ---------------------------------------------------------------------------
+
+_CAUSA_NS = f"{VALOR_NS}causa#"
+_CAPAX_NS = f"{VALOR_NS}capax#"
+
+
+async def get_condition_coverage(ds_id: str, alt_id: str) -> list[dict]:
+    """Berekent capax:ConditionCoverage per CausalClaim voor het gegeven alternatief.
+
+    Logica (voor CAPAX-integratie in Epic 9):
+    - Full    : claim heeft causa:hasManifestationCondition EN causa:realisedBy
+    - Partial : claim heeft causa:hasManifestationCondition maar GEEN causa:realisedBy
+    - None    : claim heeft geen causa:hasManifestationCondition
+
+    Resultaat wordt opgeslagen als capax:ConditionCoverage triple in de alternative graph.
+    Retourneert lijst van { claim_id, coverage }.
+    """
+    asis_graph = _ds_asis_graph(ds_id)
+    alt_graph = f"urn:valor:ds:{ds_id}/alternative/{alt_id}"
+    computed_at = datetime.now(timezone.utc).isoformat()
+
+    rows = await sparql_select_global(f"""
+SELECT ?baseId (BOUND(?cond) AS ?hasCondition) (BOUND(?rt) AS ?hasRealised) WHERE {{
+  GRAPH <{asis_graph}> {{
+    ?tessera a <{VALOR_NS}Tessera> ;
+             <{VALOR_NS}baseId> ?baseId ;
+             <{VALOR_NS}fromFactor> ?fromFactor .
+    OPTIONAL {{ ?tessera <{_CAUSA_NS}hasManifestationCondition> ?cond }}
+    OPTIONAL {{ ?tessera <{_CAUSA_NS}realisedBy> ?rt }}
+  }}
+}}
+""")
+
+    result = []
+    insert_triples = []
+
+    for row in rows:
+        claim_id = row["baseId"]
+        has_condition = str(row.get("hasCondition", "false")).lower() == "true"
+        has_realised = str(row.get("hasRealised", "false")).lower() == "true"
+
+        if has_condition and has_realised:
+            coverage = "Full"
+        elif has_condition:
+            coverage = "Partial"
+        else:
+            coverage = "None"
+
+        coverage_uri = f"urn:valor:coverage:{ds_id}:{alt_id}:{claim_id}"
+        tessera_uri = _tessera_uri(claim_id)
+        insert_triples.append(
+            f"<{coverage_uri}> a <{_CAPAX_NS}ConditionCoverage> ; "
+            f"<{VALOR_NS}forClaim> <{tessera_uri}> ; "
+            f'<{_CAPAX_NS}coverageOutcome> <{_CAPAX_NS}{coverage}> ; '
+            f'<{VALOR_NS}computedAt> "{computed_at}"^^<{_XSD}dateTime> .'
+        )
+        result.append({"claim_id": claim_id, "coverage": coverage})
+
+    if insert_triples:
+        # Verwijder eerder berekende coverage voor dit alternatief, dan schrijf nieuw
+        delete_sparql = f"""DELETE {{
+  GRAPH <{alt_graph}> {{ ?cov ?p ?o }}
+}}
+WHERE {{
+  GRAPH <{alt_graph}> {{
+    ?cov a <{_CAPAX_NS}ConditionCoverage> ;
+         ?p ?o .
+  }}
+}}"""
+        await sparql_update(delete_sparql, ds_id)
+
+        triples_str = "\n    ".join(insert_triples)
+        insert_sparql = f"""INSERT DATA {{
+  GRAPH <{alt_graph}> {{
+    {triples_str}
+  }}
+}}"""
+        await sparql_update(insert_sparql, ds_id)
+
+    return result
