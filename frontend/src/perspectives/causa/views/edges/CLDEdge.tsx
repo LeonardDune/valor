@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { type EdgeProps, getBezierPath, EdgeLabelRenderer, BaseEdge } from 'reactflow';
-import { PlusCircle, MinusCircle, MessageSquare, FileText } from 'lucide-react';
+import { PlusCircle, MinusCircle, MessageSquare, FileText, KeyRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { EpistemicStatus } from '../../types';
 
@@ -34,6 +34,9 @@ const CLDEdge = ({
         targetPosition,
     });
 
+    const coverage = data?.coverage as 'Full' | 'Partial' | 'None' | undefined;
+    const coverageStroke = coverage === 'Full' ? '#22c55e' : coverage === 'Partial' ? '#f97316' : undefined;
+
     const polarity = data?.polarity || '+';
     const isPositive = polarity === '+' || polarity === 'positive';
     const Icon = isPositive ? PlusCircle : MinusCircle;
@@ -46,7 +49,7 @@ const CLDEdge = ({
 
     return (
         <>
-            <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={{ ...style, stroke: strokeColor, strokeOpacity }} />
+            <BaseEdge id={id} path={edgePath} markerEnd={markerEnd} style={{ ...style, stroke: coverageStroke ?? strokeColor, strokeOpacity, strokeWidth: coverageStroke ? 3 : 2 }} />
             <EdgeLabelRenderer>
                 <div
                     style={{
@@ -70,6 +73,21 @@ const CLDEdge = ({
                             strokeWidth={2}
                         />
                     </div>
+
+                    {/* ManifestationCondition Indicator */}
+                    {coverage && (
+                        <div
+                            className="bg-white rounded-full p-[3px] shadow-sm ring-1 flex items-center justify-center pointer-events-none"
+                            style={{ border: `1px solid ${coverageStroke}` }}
+                            title={
+                                coverage === 'Full'
+                                    ? 'Manifesteringsconditie gedekt'
+                                    : 'Manifesteringsconditie niet volledig gedekt'
+                            }
+                        >
+                            <KeyRound size={12} strokeWidth={2.5} style={{ color: coverageStroke }} />
+                        </div>
+                    )}
 
                     {/* Evidence Indicator */}
                     {(data?.evidence_text || data?.evidence_url) && (
