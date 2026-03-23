@@ -41,6 +41,8 @@ interface CLDViewProps {
     isReadOnly?: boolean;
     designSpaceId?: string;
     canResolveThread?: boolean;
+    cycleNodeIds?: Set<string>;
+    coverageMap?: Map<string, 'Full' | 'Partial' | 'None'>;
 }
 
 
@@ -70,6 +72,8 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
     isReadOnly = false,
     designSpaceId,
     canResolveThread = false,
+    cycleNodeIds = new Set(),
+    coverageMap = new Map(),
 }) => {
     // React Flow State
     const [rfInstance, setRfInstance] = useState<any>(null);
@@ -159,7 +163,8 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                         threadCount: (cn.version_id && threadStats[cn.version_id]) || 0,
                         version_id: cn.version_id,
                         onOpenThread: handleOpenThread,
-                        isReadOnly
+                        isReadOnly,
+                        isInCycle: cycleNodeIds.has(cn.id)
                     }
                 };
             });
@@ -248,7 +253,8 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                         version_id: cl.version_id,
                         evidence_text: cl.evidence_text,
                         evidence_url: cl.evidence_url,
-                        onOpenThread: handleOpenThread
+                        onOpenThread: handleOpenThread,
+                        coverage: coverageMap.get(cl.id) ?? null,
                     }
                 };
             });
@@ -260,7 +266,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
             runner.updateData(session.getNodes(), session.getLinks());
         }
 
-    }, [causalNodes, causalLinks, session, setNodes, setEdges, layoutMode, runner, threadStats]);
+    }, [causalNodes, causalLinks, session, setNodes, setEdges, layoutMode, runner, threadStats, cycleNodeIds, coverageMap]);
 
 
     // Fit View on Layout Mode Change

@@ -226,24 +226,31 @@ WHERE {{
 # Claim reads (SPARQL)
 # ---------------------------------------------------------------------------
 
-async def _sparql_get_claims(ds_id: str) -> list[dict]:
+async def _sparql_get_claims(ds_id: str, claim_type: Optional[str] = None) -> list[dict]:
     asis_graph = _ds_asis_graph(ds_id)
+    if claim_type is not None:
+        claim_type_uri = f"{VALOR_NS}{claim_type}"
+        claim_type_filter = f"?tessera <{VALOR_NS}claimType> <{claim_type_uri}> ."
+    else:
+        claim_type_filter = ""
     rows = await sparql_select_global(f"""
 SELECT ?tessera ?baseId ?statement ?polarity ?confidence
        ?fromFactor ?sourceBaseId ?toFactor ?targetBaseId
-       ?evidenceText ?claimedAt WHERE {{
+       ?evidenceText ?claimedAt ?manifestationCondition WHERE {{
   GRAPH <{asis_graph}> {{
     ?tessera a <{VALOR_NS}Tessera> ;
              <{VALOR_NS}baseId> ?baseId ;
              <{VALOR_NS}claimContent> ?statement ;
              <{VALOR_NS}fromFactor> ?fromFactor ;
              <{VALOR_NS}toFactor> ?toFactor .
+    {claim_type_filter}
     ?fromFactor <{VALOR_NS}baseId> ?sourceBaseId .
     ?toFactor   <{VALOR_NS}baseId> ?targetBaseId .
     OPTIONAL {{ ?tessera <{VALOR_NS}polarity>     ?polarity }}
     OPTIONAL {{ ?tessera <{VALOR_NS}confidence>   ?confidence }}
     OPTIONAL {{ ?tessera <{VALOR_NS}evidenceText> ?evidenceText }}
     OPTIONAL {{ ?tessera <{VALOR_NS}claimedAt>    ?claimedAt }}
+    OPTIONAL {{ ?tessera <{_CAUSA_NS}hasManifestationCondition> ?manifestationCondition }}
   }}
 }}
 """)
@@ -266,6 +273,7 @@ SELECT ?tessera ?baseId ?statement ?polarity ?confidence
             "created_at": row.get("claimedAt"),
             "created_by": None,
             "status": None,
+            "manifestation_condition": row.get("manifestationCondition"),
         }
         for row in rows
     ]
@@ -335,6 +343,7 @@ async def update_claim_fuseki(
     polarity: Optional[str] = None,
     confidence: Optional[float] = None,
     evidence_text: Optional[str] = None,
+    manifestation_condition: Optional[str] = None,
 ) -> None:
     """Werkt een bestaande Claim-Tessera bij in Fuseki (alleen opgegeven velden)."""
     tessera_uri = _tessera_uri(tessera_id)
@@ -361,6 +370,12 @@ async def update_claim_fuseki(
         deletes.append(f"<{tessera_uri}> <{VALOR_NS}evidenceText> ?oldEvid .")
         inserts.append(f'<{tessera_uri}> <{VALOR_NS}evidenceText> "{_escape(evidence_text)}"@nl .')
         optionals.append(f"OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}evidenceText> ?oldEvid }}")
+
+    if manifestation_condition is not None:
+        deletes.append(f"<{tessera_uri}> <{_CAUSA_NS}hasManifestationCondition> ?oldMc .")
+        if manifestation_condition:
+            inserts.append(f'<{tessera_uri}> <{_CAUSA_NS}hasManifestationCondition> "{_escape(manifestation_condition)}"@nl .')
+        optionals.append(f"OPTIONAL {{ <{tessera_uri}> <{_CAUSA_NS}hasManifestationCondition> ?oldMc }}")
 
     if not deletes:
         return
@@ -391,3 +406,194 @@ WHERE {{
   GRAPH <{asis_graph}> {{ <{tessera_uri}> ?p ?o . }}
 }}"""
     await sparql_update(sparql, ds_id)
+
+
+# ---------------------------------------------------------------------------
+# Cycle detection (SPARQL property path)
+# ---------------------------------------------------------------------------
+
+async def detect_cycles(ds_id: str) -> list[str]:
+    """Detecteert feedback-loops in de causale graaf via SPARQL property path.
+
+    Retourneert een lijst van base_ids van factors die deel uitmaken van een cyclus.
+    Een factor zit in een cyclus als hij zichzelf kan bereiken via de claim-keten:
+    ^valor:fromFactor / valor:toFactor (minimaal één stap).
+    """
+    asis_graph = _ds_asis_graph(ds_id)
+    cycle_query = f"""
+SELECT DISTINCT ?baseId WHERE {{
+  GRAPH <{asis_graph}> {{
+    ?factor a <{VALOR_NS}Tessera> ;
+            <{VALOR_NS}baseId> ?baseId .
+    FILTER NOT EXISTS {{ ?factor <{VALOR_NS}fromFactor> ?x }}
+    ?factor (^<{VALOR_NS}fromFactor>/<{VALOR_NS}toFactor>)+ ?factor .
+  }}
+}}
+"""
+    rows = await sparql_select_global(cycle_query)
+    return [row["baseId"] for row in rows]
+
+
+# ---------------------------------------------------------------------------
+# ConditionCoverage (CAUSA-engine, US-4.7)
+# ---------------------------------------------------------------------------
+
+_CAUSA_NS = f"{VALOR_NS}causa#"
+_CAPAX_NS = f"{VALOR_NS}capax#"
+
+
+async def get_asis_condition_coverage(ds_id: str) -> list[dict]:
+    """Berekent ConditionCoverage vanuit de asis-graph zonder opslag (voor visualisatie).
+
+    Retourneert alleen claims MET een hasManifestationCondition.
+    """
+    asis_graph = _ds_asis_graph(ds_id)
+    rows = await sparql_select_global(f"""
+SELECT ?baseId (BOUND(?rt) AS ?hasRealised) WHERE {{
+  GRAPH <{asis_graph}> {{
+    ?tessera a <{VALOR_NS}Tessera> ;
+             <{VALOR_NS}baseId> ?baseId ;
+             <{VALOR_NS}fromFactor> ?fromFactor ;
+             <{_CAUSA_NS}hasManifestationCondition> ?cond .
+    OPTIONAL {{ ?tessera <{_CAUSA_NS}realisedBy> ?rt }}
+  }}
+}}
+""")
+    return [
+        {
+            "claim_id": row["baseId"],
+            "coverage": "Full" if str(row.get("hasRealised", "false")).lower() == "true" else "Partial",
+        }
+        for row in rows
+    ]
+
+
+async def get_condition_coverage(ds_id: str, alt_id: str) -> list[dict]:
+    """Berekent capax:ConditionCoverage per CausalClaim voor het gegeven alternatief.
+
+    Logica (voor CAPAX-integratie in Epic 9):
+    - Full    : claim heeft causa:hasManifestationCondition EN causa:realisedBy
+    - Partial : claim heeft causa:hasManifestationCondition maar GEEN causa:realisedBy
+    - None    : claim heeft geen causa:hasManifestationCondition
+
+    Resultaat wordt opgeslagen als capax:ConditionCoverage triple in de alternative graph.
+    Retourneert lijst van { claim_id, coverage }.
+    """
+    asis_graph = _ds_asis_graph(ds_id)
+    alt_graph = f"urn:valor:ds:{ds_id}/alternative/{alt_id}"
+    computed_at = datetime.now(timezone.utc).isoformat()
+
+    rows = await sparql_select_global(f"""
+SELECT ?baseId (BOUND(?cond) AS ?hasCondition) (BOUND(?rt) AS ?hasRealised) WHERE {{
+  GRAPH <{asis_graph}> {{
+    ?tessera a <{VALOR_NS}Tessera> ;
+             <{VALOR_NS}baseId> ?baseId ;
+             <{VALOR_NS}fromFactor> ?fromFactor .
+    OPTIONAL {{ ?tessera <{_CAUSA_NS}hasManifestationCondition> ?cond }}
+    OPTIONAL {{ ?tessera <{_CAUSA_NS}realisedBy> ?rt }}
+  }}
+}}
+""")
+
+    result = []
+    insert_triples = []
+
+    for row in rows:
+        claim_id = row["baseId"]
+        has_condition = str(row.get("hasCondition", "false")).lower() == "true"
+        has_realised = str(row.get("hasRealised", "false")).lower() == "true"
+
+        if has_condition and has_realised:
+            coverage = "Full"
+        elif has_condition:
+            coverage = "Partial"
+        else:
+            coverage = "None"
+
+        coverage_uri = f"urn:valor:coverage:{ds_id}:{alt_id}:{claim_id}"
+        tessera_uri = _tessera_uri(claim_id)
+        insert_triples.append(
+            f"<{coverage_uri}> a <{_CAPAX_NS}ConditionCoverage> ; "
+            f"<{VALOR_NS}forClaim> <{tessera_uri}> ; "
+            f'<{_CAPAX_NS}coverageOutcome> <{_CAPAX_NS}{coverage}> ; '
+            f'<{VALOR_NS}computedAt> "{computed_at}"^^<{_XSD}dateTime> .'
+        )
+        result.append({"claim_id": claim_id, "coverage": coverage})
+
+    if insert_triples:
+        # Verwijder eerder berekende coverage voor dit alternatief, dan schrijf nieuw
+        delete_sparql = f"""DELETE {{
+  GRAPH <{alt_graph}> {{ ?cov ?p ?o }}
+}}
+WHERE {{
+  GRAPH <{alt_graph}> {{
+    ?cov a <{_CAPAX_NS}ConditionCoverage> ;
+         ?p ?o .
+  }}
+}}"""
+        await sparql_update(delete_sparql, ds_id)
+
+        triples_str = "\n    ".join(insert_triples)
+        insert_sparql = f"""INSERT DATA {{
+  GRAPH <{alt_graph}> {{
+    {triples_str}
+  }}
+}}"""
+        await sparql_update(insert_sparql, ds_id)
+
+    return result
+
+
+async def create_claim_coverage_assessment(ds_id: str, alt_id: str, user_id: str) -> dict:
+    """Aggregeert ConditionCoverage-oordelen en slaat een causa:ClaimCoverageAssessment op.
+
+    Aggregatielogica:
+    - Geen claims met conditie, of alle conditioned claims Full  → FullyCovered
+    - Enige conditioned claim Partial                            → PartiallyCovered
+    - (NotCovered gereserveerd voor CAPAX-integratie, Epic 9)
+
+    Retourneert: { assessment_id, assessment_uri, outcome }
+    """
+    alt_graph = f"urn:valor:ds:{ds_id}/alternative/{alt_id}"
+    proposed_uri = f"{VALOR_NS}ProposedStatus"
+    user_uri = f"urn:valor:user:{user_id}"
+    created_at = datetime.now(timezone.utc).isoformat()
+
+    # Bereken huidige coverage
+    coverage_items = await get_condition_coverage(ds_id, alt_id)
+    conditioned = [c for c in coverage_items if c["coverage"] != "None"]
+
+    if all(c["coverage"] == "Full" for c in conditioned):
+        outcome = "FullyCovered"
+    else:
+        outcome = "PartiallyCovered"
+
+    assessment_id = str(uuid.uuid4())
+    assessment_uri = f"urn:valor:assessment:{assessment_id}"
+    outcome_uri = f"{_CAUSA_NS}{outcome}"
+
+    # Verwijder eerder aangemaakte assessment voor dit alternatief
+    delete_sparql = f"""DELETE {{
+  GRAPH <{alt_graph}> {{ ?a ?p ?o }}
+}}
+WHERE {{
+  GRAPH <{alt_graph}> {{
+    ?a a <{_CAUSA_NS}ClaimCoverageAssessment> ;
+       ?p ?o .
+  }}
+}}"""
+    await sparql_update(delete_sparql, ds_id)
+
+    insert_sparql = f"""INSERT DATA {{
+  GRAPH <{alt_graph}> {{
+    <{assessment_uri}> a <{_CAUSA_NS}ClaimCoverageAssessment> ;
+      <{_CAUSA_NS}coverageOutcome> <{outcome_uri}> ;
+      <{VALOR_NS}epistemicStatus> <{proposed_uri}> ;
+      <{VALOR_NS}claimedBy> <{user_uri}> ;
+      <{VALOR_NS}claimedAt> "{created_at}"^^<{_XSD}dateTime> ;
+      <{VALOR_NS}inDesignSpace> <urn:valor:ds:{ds_id}> .
+  }}
+}}"""
+    await sparql_update(insert_sparql, ds_id)
+
+    return {"assessment_id": assessment_id, "assessment_uri": assessment_uri, "outcome": outcome}

@@ -32,6 +32,7 @@ apiClient.interceptors.response.use(
 );
 
 export type FactorType = 'middel' | 'extern' | 'systeemelement' | 'criterium';
+export type ClaimViewType = 'AsIsType' | 'ToBeType';
 
 export interface Claim {
     id: string;
@@ -459,9 +460,15 @@ export const api = {
         return response.data;
     },
 
-    getThemeClaims: async (dsId: string) => {
-        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`);
+    getThemeClaims: async (dsId: string, claimType?: ClaimViewType) => {
+        const params = claimType ? { claim_type: claimType } : undefined;
+        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`, { params });
         return response.data;
+    },
+
+    detectCycles: async (dsId: string): Promise<string[]> => {
+        const response = await apiClient.get<{ cycle_node_ids: string[] }>(`/designspace/${dsId}/cycles`);
+        return response.data.cycle_node_ids;
     },
 
     getThemeVersionClaims: async (dsId: string) => {
@@ -517,6 +524,7 @@ export const api = {
         target_id?: string;
         evidence_text?: string;
         evidence_url?: string;
+        manifestation_condition?: string;
     }) => {
         const response = await apiClient.patch(`/claims/${id}`, data);
         return response.data;
@@ -568,6 +576,21 @@ export const api = {
     },
 
     // DesignSpace
+    getAsisCoverage: async (dsId: string): Promise<{ claim_id: string; coverage: 'Full' | 'Partial' | 'None' }[]> => {
+        const response = await apiClient.get(`/designspace/${dsId}/coverage`);
+        return response.data;
+    },
+
+    getConditionCoverage: async (dsId: string, altId: string): Promise<{ claim_id: string; coverage: 'Full' | 'Partial' | 'None' }[]> => {
+        const response = await apiClient.get(`/designspace/${dsId}/alternative/${altId}/coverage`);
+        return response.data;
+    },
+
+    createClaimCoverageAssessment: async (dsId: string, altId: string): Promise<{ assessment_id: string; assessment_uri: string; outcome: string }> => {
+        const response = await apiClient.post(`/designspace/${dsId}/alternative/${altId}/assessment/coverage`);
+        return response.data;
+    },
+
     getDesignSpacesByProject: async (projectId: string, themeId?: string): Promise<{ id: string; name: string; status: string; current_phase: string }[]> => {
         const response = await apiClient.get(`/designspace/by-project/${projectId}`, {
             params: themeId ? { theme_id: themeId } : undefined,

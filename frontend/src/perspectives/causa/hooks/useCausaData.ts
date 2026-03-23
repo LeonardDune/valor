@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { api, type Factor, type Claim } from '../../../services/api';
+import { api, type Factor, type Claim, type ClaimViewType } from '../../../services/api';
 import { mapFactors, mapClaims } from '../layout/mappers';
 import type { CausalNode, CausalLink } from '../types';
 
@@ -8,9 +8,12 @@ interface CausaData {
     links: CausalLink[];
     factors: Factor[]; // Raw data for Modals
     claims: Claim[];   // Raw data for Modals
+    cycleNodeIds: Set<string>;
     loading: boolean;
     error: Error | null;
     refresh: (force?: boolean) => Promise<void>;
+    viewFilter: ClaimViewType | null;
+    setViewFilter: (filter: ClaimViewType | null) => void;
 }
 
 export const useCausaData = (themeId: string, versionId?: string): CausaData => {
@@ -18,8 +21,10 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
     const [links, setLinks] = useState<CausalLink[]>([]);
     const [factors, setFactors] = useState<Factor[]>([]);
     const [claims, setClaims] = useState<Claim[]>([]);
+    const [cycleNodeIds, setCycleNodeIds] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<Error | null>(null);
+    const [viewFilter, setViewFilter] = useState<ClaimViewType | null>(null);
 
     const lastFetchRef = useRef<string | null>(null);
 
@@ -52,6 +57,13 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
             setNodes(mapFactors(factorsData));
             setLinks(mapClaims(claimsData));
             setError(null);
+
+            // Non-blocking cycle detectie na de hoofd-refresh
+            api.detectCycles(themeId).then(ids => {
+                setCycleNodeIds(new Set(ids));
+            }).catch(err => {
+                console.warn('[useCausaData] Cycle detectie mislukt:', err);
+            });
         } catch (err) {
             console.error('Failed to load Causa data:', err);
             setError(err as Error);
@@ -68,5 +80,10 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
         }
     }, [refresh]);
 
-    return { nodes, links, factors, claims, loading, error, refresh };
+    // Lokale filter: nodes altijd zichtbaar, links gefilterd op claimType
+    const filteredLinks = viewFilter === null
+        ? links
+        : links.filter(link => (link as any).claimType === viewFilter || !(link as any).claimType);
+
+    return { nodes, links: filteredLinks, factors, claims, cycleNodeIds, loading, error, refresh, viewFilter, setViewFilter };
 };

@@ -30,6 +30,7 @@ router = APIRouter(
 )
 
 XSD_NS = "http://www.w3.org/2001/XMLSchema#"
+CAUSA_NS = f"{VALOR_NS}causa#"
 
 
 def _normalize_status(raw: str) -> str:
@@ -60,6 +61,7 @@ class CreateTesseraRequest(BaseModel):
     uncertainty_level: Optional[str] = None  # PAMS: "StatisticalRisk" | "Scenario" | "DeepUncertainty" | "Ignorance"
     in_alternative: Optional[str] = None
     in_phase: Optional[str] = None
+    manifestation_condition: Optional[str] = None
 
 
 class TesseraResponse(BaseModel):
@@ -74,6 +76,20 @@ class TesseraResponse(BaseModel):
     uncertainty_level: Optional[str] = None
     in_alternative: Optional[str] = None
     in_phase: Optional[str] = None
+    manifestation_condition: Optional[str] = None
+    realised_by: Optional[str] = None
+
+
+class RealiseRequest(BaseModel):
+    design_space_id: str
+    transaction_type_uri: str  # URI van het causa:TransactionType
+
+
+class RealiseResponse(BaseModel):
+    tessera_id: str
+    tessera_uri: str
+    transaction_type_uri: str
+    realised_by_uri: str  # de gemaakte causa:realisedBy triple URI (property URI)
 
 
 class CreateEvidenceRequest(BaseModel):
@@ -165,6 +181,9 @@ async def create_tessera(
     if request.in_phase:
         phase_uri = f"urn:valor:phase:{request.in_phase}"
         optional_triples += f"      <{tessera_uri}> <{VALOR_NS}inPhase> <{phase_uri}> .\n"
+    if request.manifestation_condition:
+        escaped_condition = request.manifestation_condition.replace("\\", "\\\\").replace('"', '\\"')
+        optional_triples += f'      <{tessera_uri}> <{CAUSA_NS}hasManifestationCondition> "{escaped_condition}"@nl .\n'
 
     escaped_content = request.claim_content.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -206,26 +225,95 @@ INSERT DATA {{
         uncertainty_level=request.uncertainty_level,
         in_alternative=request.in_alternative,
         in_phase=request.in_phase,
+        manifestation_condition=request.manifestation_condition,
     )
+
+
+@router.get("/missing-realisation-basis", response_model=list[TesseraResponse])
+async def get_missing_realisation_basis(
+    design_space_id: str,
+    alternative_id: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
+    """Geeft alle Intervention-Tesserae terug zonder causa:realisedBy koppeling."""
+    user_id = user["id"]
+
+    if not await check_permission(user_id, design_space_id, Role.VIEWER):
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    if alternative_id:
+        graph_uri = f"urn:valor:ds:{design_space_id}/alternative/{alternative_id}"
+    else:
+        graph_uri = named_graph_uri(design_space_id)
+
+    rows = await sparql_select(
+        f"""SELECT ?tessera ?content ?claimType ?status ?claimedBy ?claimedAt ?uncertaintyLevel ?inAlternative ?inPhase WHERE {{
+          GRAPH <{graph_uri}> {{
+            ?tessera a <{VALOR_NS}Tessera> ;
+              <{VALOR_NS}claimContent> ?content ;
+              <{VALOR_NS}epistemicStatus> ?status ;
+              <{VALOR_NS}claimedBy> ?claimedBy ;
+              <{VALOR_NS}claimedAt> ?claimedAt .
+            OPTIONAL {{ ?tessera <{VALOR_NS}claimType> ?claimType . }}
+            OPTIONAL {{ ?tessera <{VALOR_NS}uncertaintyLevel> ?uncertaintyLevel . }}
+            OPTIONAL {{ ?tessera <{VALOR_NS}inAlternative> ?inAlternative . }}
+            OPTIONAL {{ ?tessera <{VALOR_NS}inPhase> ?inPhase . }}
+            FILTER NOT EXISTS {{ ?tessera <{CAUSA_NS}realisedBy> ?any . }}
+          }}
+        }}""",
+        design_space_id,
+    )
+
+    uncertainty_label_to_uri = get_uncertainty_label_to_uri()
+    uncertainty_uri_to_label = {v: k for k, v in uncertainty_label_to_uri.items()}
+
+    results = []
+    for row in rows:
+        tessera_uri = row["tessera"]
+        tessera_id = tessera_uri.rsplit(":", 1)[-1]
+        raw_claim_type = row.get("claimType", "")
+        claim_type = _claim_type_label_from_raw(raw_claim_type) if raw_claim_type else "AsIs"
+        raw_uncertainty = row.get("uncertaintyLevel", "")
+        uncertainty_level = uncertainty_uri_to_label.get(raw_uncertainty) if raw_uncertainty else None
+        results.append(TesseraResponse(
+            tessera_id=tessera_id,
+            tessera_uri=tessera_uri,
+            design_space_id=design_space_id,
+            claim_content=row["content"],
+            claim_type=claim_type,
+            epistemic_status=_normalize_status(row["status"]),
+            claimed_by=row["claimedBy"].rsplit(":", 1)[-1],
+            claimed_at=row["claimedAt"],
+            uncertainty_level=uncertainty_level,
+            in_alternative=row.get("inAlternative"),
+            in_phase=row.get("inPhase"),
+            realised_by=None,
+        ))
+
+    return results
 
 
 @router.get("/{tessera_id}", response_model=TesseraResponse)
 async def get_tessera(
     tessera_id: str,
     design_space_id: str,
+    alternative_id: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):
     user_id = user["id"]
 
-    has_permission = await check_permission(user_id, design_space_id, Role.VIEWER)
-    if not has_permission:
+    if not await check_permission(user_id, design_space_id, Role.VIEWER):
         raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
 
     tessera_uri = f"urn:valor:tessera:{tessera_id}"
-    graph_uri = named_graph_uri(design_space_id)
+
+    if alternative_id:
+        graph_uri = f"urn:valor:ds:{design_space_id}/alternative/{alternative_id}"
+    else:
+        graph_uri = named_graph_uri(design_space_id)
 
     rows = await sparql_select(
-        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase WHERE {{
+        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase ?manifestationCondition ?realisedBy WHERE {{
           GRAPH <{graph_uri}> {{
             <{tessera_uri}> a <{VALOR_NS}Tessera> ;
               <{VALOR_NS}claimContent> ?content ;
@@ -236,6 +324,8 @@ async def get_tessera(
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}uncertaintyLevel> ?uncertaintyLevel . }}
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inAlternative> ?inAlternative . }}
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inPhase> ?inPhase . }}
+            OPTIONAL {{ <{tessera_uri}> <{CAUSA_NS}hasManifestationCondition> ?manifestationCondition . }}
+            OPTIONAL {{ <{tessera_uri}> <{CAUSA_NS}realisedBy> ?realisedBy . }}
           }}
         }}""",
         design_space_id,
@@ -265,6 +355,78 @@ async def get_tessera(
         uncertainty_level=uncertainty_level,
         in_alternative=row.get("inAlternative"),
         in_phase=row.get("inPhase"),
+        manifestation_condition=row.get("manifestationCondition"),
+        realised_by=row.get("realisedBy"),
+    )
+
+
+@router.post("/{tessera_id}/realise", response_model=RealiseResponse, status_code=201)
+async def realise_tessera(
+    tessera_id: str,
+    request: RealiseRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Koppelt een Intervention-Tessera aan een causa:TransactionType via causa:realisedBy."""
+    user_id = user["id"]
+
+    if not await check_permission(user_id, request.design_space_id, Role.MEMBER):
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    tessera_uri = f"urn:valor:tessera:{tessera_id}"
+    graph_uri = named_graph_uri(request.design_space_id)
+
+    # Controleer dat de Tessera bestaat
+    rows = await sparql_select(
+        f"""SELECT ?t WHERE {{
+          GRAPH <{graph_uri}> {{
+            <{tessera_uri}> a <{VALOR_NS}Tessera> .
+            BIND(<{tessera_uri}> AS ?t)
+          }}
+        }}""",
+        request.design_space_id,
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Tessera niet gevonden in deze DesignSpace.")
+
+    # Idempotent: verwijder eventuele bestaande realisedBy koppeling en schrijf de nieuwe
+    escaped_transaction_uri = request.transaction_type_uri.replace("\\", "\\\\").replace('"', '\\"')
+
+    update = f"""DELETE {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> <{CAUSA_NS}realisedBy> ?prev .
+  }}
+}}
+INSERT {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> <{CAUSA_NS}realisedBy> <{escaped_transaction_uri}> .
+  }}
+}}
+WHERE {{
+  GRAPH <{graph_uri}> {{
+    OPTIONAL {{ <{tessera_uri}> <{CAUSA_NS}realisedBy> ?prev . }}
+  }}
+}}"""
+
+    await sparql_update(update, request.design_space_id)
+
+    await record_provenance_activity(
+        request.design_space_id,
+        "RealisedByLinked",
+        f"urn:valor:user:{user_id}",
+        used=[tessera_uri],
+        extra_props=[(f"{CAUSA_NS}realisedBy", request.transaction_type_uri)],
+    )
+
+    logger.info(
+        "Tessera %s gekoppeld aan TransactionType %s door %s",
+        tessera_uri, request.transaction_type_uri, user_id,
+    )
+
+    return RealiseResponse(
+        tessera_id=tessera_id,
+        tessera_uri=tessera_uri,
+        transaction_type_uri=request.transaction_type_uri,
+        realised_by_uri=f"{CAUSA_NS}realisedBy",
     )
 
 

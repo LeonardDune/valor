@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Layers } from "lucide-react";
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getNodesBounds } from 'reactflow';
@@ -13,6 +13,7 @@ import { PerspectiveToolbar } from '@/components/shell/PerspectiveToolbar';
 import { ExportMenu } from '@/components/shell/ExportMenu';
 import { useDomExport } from '@/hooks/useDomExport';
 import { CLDView } from './views/CLDView';
+import { ClaimViewToggle } from './views/ClaimViewToggle';
 import { useCausaData } from './hooks/useCausaData';
 import { LayoutSession } from './layout/session';
 import { ForceRunner } from './layout/runners/force';
@@ -81,6 +82,22 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
     });
 
     const [isStartingSession, setIsStartingSession] = useState(false);
+    const [showCoverageOverlay, setShowCoverageOverlay] = useState(false);
+    const [coverageMap, setCoverageMap] = useState<Map<string, 'Full' | 'Partial' | 'None'>>(new Map());
+
+    useEffect(() => {
+        if (!showCoverageOverlay || !designSpaceId) {
+            setCoverageMap(new Map());
+            return;
+        }
+        api.getAsisCoverage(designSpaceId).then(items => {
+            const map = new Map<string, 'Full' | 'Partial' | 'None'>();
+            items.forEach(item => map.set(item.claim_id, item.coverage as 'Full' | 'Partial' | 'None'));
+            setCoverageMap(map);
+        }).catch(err => {
+            console.warn('[CausaShell] Coverage overlay mislukt:', err);
+        });
+    }, [showCoverageOverlay, designSpaceId]);
 
     // Helpers for Export
     const getExportConfig = () => {
@@ -123,7 +140,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
 
     // B. Fetch Data
     // console.log('[CausaShell] Props:', { themeId, versionId, activeVersionId: themeState.activeVersion?.id });
-    const { nodes, links, factors, refresh, loading } = useCausaData(themeId, versionId || themeState.activeVersion?.id);
+    const { nodes, links, factors, cycleNodeIds, refresh, loading, viewFilter, setViewFilter } = useCausaData(themeId, versionId || themeState.activeVersion?.id);
 
     // C. Initialize Session
     // Re-create session ONLY when layoutMode changes
@@ -313,6 +330,25 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                     </TooltipProvider>
                 )}
 
+                <ClaimViewToggle value={viewFilter} onChange={setViewFilter} />
+
+                {designSpaceId && (
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button
+                                    size="sm"
+                                    variant={showCoverageOverlay ? "secondary" : "ghost"}
+                                    className="h-8 w-8 p-0"
+                                    onClick={() => setShowCoverageOverlay(v => !v)}
+                                >
+                                    <Layers className="h-4 w-4" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Conditiedekking overlay</TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                )}
 
             </PerspectiveToolbar>
 
@@ -333,6 +369,8 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                 isReadOnly={effectiveIsReadOnly}
                 designSpaceId={designSpaceId}
                 canResolveThread={canResolveThread}
+                cycleNodeIds={cycleNodeIds}
+                coverageMap={coverageMap}
             />
 
             {/* Modals */}

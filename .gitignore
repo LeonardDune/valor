@@ -1,6 +1,7 @@
 _bmad
 .agent/workflows/bmad
 .claude/
+!.claude/settings.json
 .clinerules/
 .github/
 !.github/ISSUE_TEMPLATE/
