@@ -25,6 +25,7 @@ _status_uri_to_label: dict[str, str] = {}
 _valid_transitions: dict[str, set[str]] = {}
 _requires_decision_episode: set[str] = set()
 _argue_label_to_uri: dict[str, str] = {}        # "undermines" → URI
+_argue_uri_to_labels: dict[str, dict] = {}      # URI → {en, nl}
 _uncertainty_label_to_uri: dict[str, str] = {}  # "StatisticalRisk" → URI
 # Participant roles: label → {uri, rbac_role, weight, voting_right}
 _participant_role_data: dict[str, dict] = {}
@@ -40,7 +41,7 @@ _DISC_GRAPH = f"{VALOR_NS}disc"
 
 async def load_ontology_cache() -> None:
     global _evidence_label_to_uri, _status_label_to_uri, _status_uri_to_label
-    global _valid_transitions, _requires_decision_episode, _argue_label_to_uri
+    global _valid_transitions, _requires_decision_episode, _argue_label_to_uri, _argue_uri_to_labels
     global _uncertainty_label_to_uri, _participant_role_data, _rbac_role_weights
     global _disc_contribution_type_label_to_uri, _status_uri_to_nl_label
     global _system_situation_uris
@@ -123,17 +124,21 @@ async def load_ontology_cache() -> None:
         PREFIX valor: <{VALOR_NS}>
         PREFIX owl:   <{PREFIX_OWL}>
         PREFIX rdfs:  <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT ?uri ?label WHERE {{
+        SELECT ?uri ?labelEn ?labelNl WHERE {{
           GRAPH <{_TESSERA_GRAPH}> {{
             ?uri a owl:ObjectProperty ;
                  rdfs:domain valor:Tessera ;
-                 rdfs:range  valor:Tessera ;
-                 rdfs:label ?label .
-            FILTER(lang(?label) = "en")
+                 rdfs:range  valor:Tessera .
+            ?uri rdfs:label ?labelEn . FILTER(lang(?labelEn) = "en")
+            OPTIONAL {{ ?uri rdfs:label ?labelNl . FILTER(lang(?labelNl) = "nl") }}
           }}
         }}
     """)
-    _argue_label_to_uri = {row["label"]: row["uri"] for row in argue_rows}
+    _argue_label_to_uri = {row["labelEn"]: row["uri"] for row in argue_rows}
+    _argue_uri_to_labels = {
+        row["uri"]: {"en": row["labelEn"], "nl": row.get("labelNl", row["labelEn"])}
+        for row in argue_rows
+    }
     logger.info("[ontology-cache] Argumentatierelaties: %s", list(_argue_label_to_uri.keys()))
 
     uncertainty_rows = await sparql_select_global(f"""
@@ -240,6 +245,10 @@ def requires_decision_episode(status_uri: str) -> bool:
 
 def get_argue_label_to_uri() -> dict[str, str]:
     return _argue_label_to_uri
+
+
+def get_argue_uri_to_labels() -> dict[str, dict]:
+    return _argue_uri_to_labels
 
 
 def get_uncertainty_label_to_uri() -> dict[str, str]:

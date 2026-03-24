@@ -19,6 +19,7 @@ import { VersionLayout } from './components/layout/VersionLayout';
 import { VersionDashboard } from './pages/VersionDashboard';
 import { VersionChat } from './pages/VersionChat';
 import { RefinementBoardComponent } from './components/deliberation/RefinementBoard';
+import { ArgumentationDiagram } from './components/deliberation/ArgumentationDiagram';
 import { DesignSpaceProvider } from './context/DesignSpaceContext';
 
 function App() {
@@ -122,6 +123,7 @@ function App() {
             <Route element={<VersionLayout />}>
               <Route path="overview" element={<VersionDashboard />} />
               <Route path="claims" element={<RefinementBoardComponent />} />
+              <Route path="argumentatie" element={<ArgumentationDiagram />} />
               <Route path="chat" element={<VersionChat />} />
               <Route path="members" element={<div className="p-8">Members (Coming Soon)</div>} />
               <Route path="settings" element={<div className="p-8">Version Settings (Coming Soon)</div>} />

@@ -649,6 +649,40 @@ export const api = {
         return response.data;
     },
 
+    // Argue-relatietypes uit de ontologie — US-5.1
+    getArgueTypes: async (): Promise<ArgueType[]> => {
+        const response = await apiClient.get<ArgueType[]>('/tessera/argue-types');
+        return response.data;
+    },
+
+    // Argumentatiediagram (IBIS-stijl) — US-5.1
+    getArgumentationNetwork: async (dsId: string, argueTypes: ArgueType[]): Promise<ArgumentationNetwork> => {
+        const VALOR_NS = 'https://valor-ecosystem.nl/ontology/';
+        const uriValues = argueTypes.map(t => `<${t.uri}>`).join('\n    ');
+        const query = `
+PREFIX valor: <${VALOR_NS}>
+SELECT ?source ?sourceContent ?sourceStatus ?sourceType ?rel ?target ?targetContent ?targetStatus ?targetType
+WHERE {
+  ?source a valor:Tessera ;
+          valor:claimContent ?sourceContent ;
+          valor:epistemicStatus ?sourceStatus .
+  OPTIONAL { ?source valor:claimType ?sourceType . }
+  ?source ?rel ?target .
+  ?target a valor:Tessera ;
+          valor:claimContent ?targetContent ;
+          valor:epistemicStatus ?targetStatus .
+  OPTIONAL { ?target valor:claimType ?targetType . }
+  VALUES ?rel {
+    ${uriValues}
+  }
+}`.trim();
+        const response = await apiClient.get<ArgumentationNetworkRaw>(
+            `/designspace/${dsId}/sparql`,
+            { params: { query } }
+        );
+        return parseArgumentationNetwork(response.data, argueTypes);
+    },
+
     advanceSession: async (sessionId: string) => {
         const response = await apiClient.post(`/sessions/${sessionId}/advance`);
         return response.data;
@@ -691,6 +725,100 @@ export interface DiscContribution {
     contributed_by_name: string;
     contributed_at: string;
     evidence_id: string | null;
+}
+
+// Argumentatiediagram types (US-5.1)
+export type ArgueRelationType = string;
+
+export interface ArgueType {
+    uri: string;
+    label_en: string;
+    label_nl: string;
+}
+
+export interface TesseraNode {
+    id: string;
+    uri: string;
+    claimContent: string;
+    epistemicStatus: string;
+    claimType: string;
+}
+
+export interface ArgumentEdge {
+    sourceId: string;
+    targetId: string;
+    relationType: ArgueRelationType;
+    relationUri: string;
+    relationLabel: string;
+}
+
+export interface ArgumentationNetwork {
+    nodes: TesseraNode[];
+    edges: ArgumentEdge[];
+}
+
+interface SparqlBinding {
+    type: string;
+    value: string;
+    'xml:lang'?: string;
+}
+
+interface ArgumentationNetworkRaw {
+    results: {
+        bindings: Array<{
+            source: SparqlBinding;
+            sourceContent: SparqlBinding;
+            sourceStatus: SparqlBinding;
+            sourceType?: SparqlBinding;
+            rel: SparqlBinding;
+            target: SparqlBinding;
+            targetContent: SparqlBinding;
+            targetStatus: SparqlBinding;
+            targetType?: SparqlBinding;
+        }>;
+    };
+}
+
+function parseArgumentationNetwork(raw: ArgumentationNetworkRaw, argueTypes: ArgueType[]): ArgumentationNetwork {
+    const uriToLabel = new Map(argueTypes.map(t => [t.uri, t.label_nl]));
+    const nodesMap = new Map<string, TesseraNode>();
+    const edges: ArgumentEdge[] = [];
+
+    for (const b of raw.results.bindings) {
+        const sourceUri = b.source.value;
+        const sourceId = sourceUri.split(':').pop() ?? sourceUri;
+        const targetUri = b.target.value;
+        const targetId = targetUri.split(':').pop() ?? targetUri;
+
+        if (!nodesMap.has(sourceId)) {
+            nodesMap.set(sourceId, {
+                id: sourceId,
+                uri: sourceUri,
+                claimContent: b.sourceContent.value,
+                epistemicStatus: b.sourceStatus.value.split('/').pop()?.split('#').pop() ?? b.sourceStatus.value,
+                claimType: b.sourceType ? (b.sourceType.value.split('/').pop() ?? 'AsIs') : 'AsIs',
+            });
+        }
+        if (!nodesMap.has(targetId)) {
+            nodesMap.set(targetId, {
+                id: targetId,
+                uri: targetUri,
+                claimContent: b.targetContent.value,
+                epistemicStatus: b.targetStatus.value.split('/').pop()?.split('#').pop() ?? b.targetStatus.value,
+                claimType: b.targetType ? (b.targetType.value.split('/').pop() ?? 'AsIs') : 'AsIs',
+            });
+        }
+
+        edges.push({
+            sourceId,
+            targetId,
+            relationType: b.rel.value.split('/').pop() ?? b.rel.value,
+            relationUri: b.rel.value,
+            relationLabel: uriToLabel.get(b.rel.value) ?? b.rel.value.split('/').pop() ?? b.rel.value,
+        });
+    }
+
+    return { nodes: Array.from(nodesMap.values()), edges };
 }
 
 export type LifecycleStatus = 'draft' | 'proposed' | 'accepted' | 'rejected' | 'deprecated';

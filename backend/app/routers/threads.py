@@ -198,29 +198,20 @@ async def resolve_thread(
     graph_uri = named_graph_uri(request.design_space_id)
     status_rows = await sparql_select(
         f"""SELECT ?status WHERE {{
-          <{tessera_uri}> <{VALOR_NS}epistemicStatus> ?status .
+          GRAPH <{graph_uri}> {{
+            <{tessera_uri}> <{VALOR_NS}epistemicStatus> ?status .
+          }}
         }}""",
         request.design_space_id,
     )
-    if not status_rows:
-        raise HTTPException(status_code=404, detail="Tessera niet gevonden in deze DesignSpace.")
+    # Als de tessera nog geen epistemicStatus heeft (bijv. Neo4j-factor waarvoor nog geen
+    # Fuseki-Tessera bestaat), val terug op "Proposed" als initiële status.
+    proposed_uri = status_label_to_uri.get("Proposed", f"{VALOR_NS}ProposedStatus")
 
-    current_uri = status_rows[0]["status"]
-    current_label = get_status_uri_to_label().get(current_uri, current_uri)
-
-    # Schrijf disc:ThreadResolution naar Fuseki
-    resolution_id = await create_thread_resolution(
-        thread_id=thread_id,
-        design_space_id=request.design_space_id,
-        user_id=user_id,
-        resolution_outcome_uri=new_status_uri,
-        resolution_rationale=request.resolution_rationale,
-        tessera_uri=tessera_uri,
-    )
-
-    # Wijzig epistemische status van de Tessera
-    await sparql_update(
-        f"""DELETE {{
+    if status_rows:
+        current_uri = status_rows[0]["status"]
+        current_label = get_status_uri_to_label().get(current_uri, current_uri)
+        status_sparql = f"""DELETE {{
   GRAPH <{graph_uri}> {{
     <{tessera_uri}> <{VALOR_NS}epistemicStatus> <{current_uri}> .
   }}
@@ -234,9 +225,28 @@ WHERE {{
   GRAPH <{graph_uri}> {{
     <{tessera_uri}> <{VALOR_NS}epistemicStatus> <{current_uri}> .
   }}
-}}""",
-        request.design_space_id,
+}}"""
+    else:
+        current_uri = proposed_uri
+        current_label = "Proposed"
+        status_sparql = f"""INSERT DATA {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> <{VALOR_NS}epistemicStatus> <{new_status_uri}> .
+  }}
+}}"""
+
+    # Schrijf disc:ThreadResolution naar Fuseki
+    resolution_id = await create_thread_resolution(
+        thread_id=thread_id,
+        design_space_id=request.design_space_id,
+        user_id=user_id,
+        resolution_outcome_uri=new_status_uri,
+        resolution_rationale=request.resolution_rationale,
+        tessera_uri=tessera_uri,
     )
+
+    # Wijzig epistemische status van de Tessera
+    await sparql_update(status_sparql, request.design_space_id)
 
     # PROV-O record
     await record_provenance_activity(
