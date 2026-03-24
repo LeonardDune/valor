@@ -649,6 +649,34 @@ export const api = {
         return response.data;
     },
 
+    // DecisionTimeline (US-5.4)
+    getDecisionTimeline: async (dsId: string): Promise<DecisionEpisodeRaw[]> => {
+        const query = `
+PREFIX valor: <https://valor-ecosystem.nl/ontology/>
+PREFIX prov: <https://www.w3.org/ns/prov#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?episode ?type ?phase ?startedAt ?startedBy ?vote ?voteType ?castBy ?onTessera WHERE {
+  ?episode a ?type .
+  FILTER(?type IN (valor:DecisionEpisode, valor:PhaseTransition))
+  OPTIONAL { ?episode valor:forPhase ?phase }
+  OPTIONAL { ?episode prov:startedAtTime ?startedAt }
+  OPTIONAL { ?episode prov:wasStartedBy ?startedBy }
+  OPTIONAL {
+    ?episode valor:hasVote ?vote .
+    ?vote valor:voteType ?voteType ;
+          valor:castBy ?castBy .
+    OPTIONAL { ?vote valor:onTessera ?onTessera }
+  }
+}
+ORDER BY DESC(?startedAt)`.trim();
+        const response = await apiClient.get<DecisionTimelineRaw>(
+            `/designspace/${dsId}/sparql`,
+            { params: { query } }
+        );
+        return parseDecisionTimeline(response.data);
+    },
+
     // Argue-relatietypes uit de ontologie — US-5.1
     getArgueTypes: async (): Promise<ArgueType[]> => {
         const response = await apiClient.get<ArgueType[]>('/tessera/argue-types');
@@ -819,6 +847,79 @@ function parseArgumentationNetwork(raw: ArgumentationNetworkRaw, argueTypes: Arg
     }
 
     return { nodes: Array.from(nodesMap.values()), edges };
+}
+
+// DecisionTimeline types (US-5.4)
+export interface DecisionVote {
+    voteUri: string;
+    voteType: string;
+    castBy: string;
+    onTessera: string | null;
+}
+
+export interface DecisionEpisodeRaw {
+    episodeUri: string;
+    type: 'DecisionEpisode' | 'PhaseTransition';
+    phase: string | null;
+    startedAt: string | null;
+    startedBy: string | null;
+    votes: DecisionVote[];
+}
+
+interface DecisionTimelineSparqlBinding {
+    episode: SparqlBinding;
+    type: SparqlBinding;
+    phase?: SparqlBinding;
+    startedAt?: SparqlBinding;
+    startedBy?: SparqlBinding;
+    vote?: SparqlBinding;
+    voteType?: SparqlBinding;
+    castBy?: SparqlBinding;
+    onTessera?: SparqlBinding;
+}
+
+interface DecisionTimelineRaw {
+    results: {
+        bindings: DecisionTimelineSparqlBinding[];
+    };
+}
+
+function parseDecisionTimeline(raw: DecisionTimelineRaw): DecisionEpisodeRaw[] {
+    const episodesMap = new Map<string, DecisionEpisodeRaw>();
+
+    for (const b of raw.results.bindings) {
+        const episodeUri = b.episode.value;
+        const typeFragment = b.type.value.split('/').pop()?.split('#').pop() ?? 'DecisionEpisode';
+        const episodeType: 'DecisionEpisode' | 'PhaseTransition' =
+            typeFragment === 'PhaseTransition' ? 'PhaseTransition' : 'DecisionEpisode';
+
+        if (!episodesMap.has(episodeUri)) {
+            episodesMap.set(episodeUri, {
+                episodeUri,
+                type: episodeType,
+                phase: b.phase ? (b.phase.value.split('/').pop() ?? b.phase.value) : null,
+                startedAt: b.startedAt?.value ?? null,
+                startedBy: b.startedBy?.value ?? null,
+                votes: [],
+            });
+        }
+
+        const episode = episodesMap.get(episodeUri)!;
+        if (b.vote && b.voteType && b.castBy) {
+            const voteUri = b.vote.value;
+            const alreadyAdded = episode.votes.some(v => v.voteUri === voteUri);
+            if (!alreadyAdded) {
+                episode.votes.push({
+                    voteUri,
+                    voteType: b.voteType.value.split('/').pop() ?? b.voteType.value,
+                    castBy: b.castBy.value,
+                    onTessera: b.onTessera?.value ?? null,
+                });
+            }
+        }
+    }
+
+    return Array.from(episodesMap.values());
 }
 
 export type LifecycleStatus = 'draft' | 'proposed' | 'accepted' | 'rejected' | 'deprecated';

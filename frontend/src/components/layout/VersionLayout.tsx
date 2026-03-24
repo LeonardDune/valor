@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Sidebar, type NavItem } from '@/components/ui/Sidebar';
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader';
-import { LayoutDashboard, MessageSquare, FileText, Settings, Users, GitBranch } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, FileText, Settings, Users, GitBranch, Clock } from 'lucide-react';
 import { useParams, Outlet } from 'react-router-dom';
 
 interface VersionLayoutProps {
@@ -30,6 +30,12 @@ export const VersionLayout: React.FC<VersionLayoutProps> = ({ children }) => {
             icon: GitBranch,
             label: 'Argumentatie',
             path: `/designspace/${dsId}/argumentatie`
+        },
+        {
+            id: 'tijdlijn',
+            icon: Clock,
+            label: 'Tijdlijn',
+            path: `/designspace/${dsId}/tijdlijn`
         },
         {
             id: 'chat',
