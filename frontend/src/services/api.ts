@@ -649,37 +649,38 @@ export const api = {
         return response.data;
     },
 
+    // Argue-relatietypes uit de ontologie — US-5.1
+    getArgueTypes: async (): Promise<ArgueType[]> => {
+        const response = await apiClient.get<ArgueType[]>('/tessera/argue-types');
+        return response.data;
+    },
+
     // Argumentatiediagram (IBIS-stijl) — US-5.1
-    getArgumentationNetwork: async (dsId: string): Promise<ArgumentationNetwork> => {
+    getArgumentationNetwork: async (dsId: string, argueTypes: ArgueType[]): Promise<ArgumentationNetwork> => {
         const VALOR_NS = 'https://valor-ecosystem.nl/ontology/';
+        const uriValues = argueTypes.map(t => `<${t.uri}>`).join('\n    ');
         const query = `
 PREFIX valor: <${VALOR_NS}>
-SELECT ?source ?sourceContent ?sourceStatus ?sourceType ?rel ?relLabel ?target ?targetContent ?targetStatus ?targetType
+SELECT ?source ?sourceContent ?sourceStatus ?sourceType ?rel ?target ?targetContent ?targetStatus ?targetType
 WHERE {
-  GRAPH <urn:valor:ds:${dsId}> {
-    ?source a valor:Tessera ;
-            valor:claimContent ?sourceContent ;
-            valor:epistemicStatus ?sourceStatus .
-    OPTIONAL { ?source valor:claimType ?sourceType . }
-    ?source ?rel ?target .
-    ?target a valor:Tessera ;
-            valor:claimContent ?targetContent ;
-            valor:epistemicStatus ?targetStatus .
-    OPTIONAL { ?target valor:claimType ?targetType . }
-  }
-  GRAPH <urn:valor:tessera> {
-    ?rel a <http://www.w3.org/2002/07/owl#ObjectProperty> ;
-         <http://www.w3.org/2000/01/rdf-schema#domain> valor:Tessera ;
-         <http://www.w3.org/2000/01/rdf-schema#range> valor:Tessera ;
-         <http://www.w3.org/2000/01/rdf-schema#label> ?relLabel .
-    FILTER(lang(?relLabel) = "en")
+  ?source a valor:Tessera ;
+          valor:claimContent ?sourceContent ;
+          valor:epistemicStatus ?sourceStatus .
+  OPTIONAL { ?source valor:claimType ?sourceType . }
+  ?source ?rel ?target .
+  ?target a valor:Tessera ;
+          valor:claimContent ?targetContent ;
+          valor:epistemicStatus ?targetStatus .
+  OPTIONAL { ?target valor:claimType ?targetType . }
+  VALUES ?rel {
+    ${uriValues}
   }
 }`.trim();
         const response = await apiClient.get<ArgumentationNetworkRaw>(
             `/designspace/${dsId}/sparql`,
             { params: { query } }
         );
-        return parseArgumentationNetwork(response.data);
+        return parseArgumentationNetwork(response.data, argueTypes);
     },
 
     advanceSession: async (sessionId: string) => {
@@ -727,7 +728,13 @@ export interface DiscContribution {
 }
 
 // Argumentatiediagram types (US-5.1)
-export type ArgueRelationType = 'supports' | 'undermines' | 'qualifies' | 'presupposes';
+export type ArgueRelationType = string;
+
+export interface ArgueType {
+    uri: string;
+    label_en: string;
+    label_nl: string;
+}
 
 export interface TesseraNode {
     id: string;
@@ -742,6 +749,7 @@ export interface ArgumentEdge {
     targetId: string;
     relationType: ArgueRelationType;
     relationUri: string;
+    relationLabel: string;
 }
 
 export interface ArgumentationNetwork {
@@ -763,7 +771,6 @@ interface ArgumentationNetworkRaw {
             sourceStatus: SparqlBinding;
             sourceType?: SparqlBinding;
             rel: SparqlBinding;
-            relLabel: SparqlBinding;
             target: SparqlBinding;
             targetContent: SparqlBinding;
             targetStatus: SparqlBinding;
@@ -772,7 +779,8 @@ interface ArgumentationNetworkRaw {
     };
 }
 
-function parseArgumentationNetwork(raw: ArgumentationNetworkRaw): ArgumentationNetwork {
+function parseArgumentationNetwork(raw: ArgumentationNetworkRaw, argueTypes: ArgueType[]): ArgumentationNetwork {
+    const uriToLabel = new Map(argueTypes.map(t => [t.uri, t.label_nl]));
     const nodesMap = new Map<string, TesseraNode>();
     const edges: ArgumentEdge[] = [];
 
@@ -804,8 +812,9 @@ function parseArgumentationNetwork(raw: ArgumentationNetworkRaw): ArgumentationN
         edges.push({
             sourceId,
             targetId,
-            relationType: b.relLabel.value as ArgueRelationType,
+            relationType: b.rel.value.split('/').pop() ?? b.rel.value,
             relationUri: b.rel.value,
+            relationLabel: uriToLabel.get(b.rel.value) ?? b.rel.value.split('/').pop() ?? b.rel.value,
         });
     }
 

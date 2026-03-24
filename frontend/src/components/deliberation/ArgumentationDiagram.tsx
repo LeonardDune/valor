@@ -16,22 +16,15 @@ import 'reactflow/dist/style.css';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import { api, type TesseraNode, type ArgueRelationType } from '@/services/api';
+import { api, type TesseraNode } from '@/services/api';
 import { TesseraDetailPanel } from '@/components/deliberation/TesseraDetailPanel';
 
-// Kleurcodering per relatietype
-const RELATION_COLORS: Record<ArgueRelationType | string, string> = {
+// Kleurcodering per relatietype (op basis van EN label / URI-fragment)
+const RELATION_COLORS: Record<string, string> = {
     supports: '#22c55e',    // groen
     undermines: '#ef4444',  // rood
     qualifies: '#f59e0b',   // amber
     presupposes: '#8b5cf6', // paars
-};
-
-const RELATION_LABELS_NL: Record<ArgueRelationType | string, string> = {
-    supports: 'Ondersteunt',
-    undermines: 'Ondermijnt',
-    qualifies: 'Nuanceert',
-    presupposes: 'Veronderstelt',
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -69,10 +62,15 @@ export const ArgumentationDiagram: React.FC<ArgumentationDiagramProps> = ({ dsId
     const { dsId: dsParam } = useParams<{ dsId: string }>();
     const dsId = dsProp ?? dsParam ?? '';
 
+    const { data: argueTypes = [] } = useQuery({
+        queryKey: ['argue-types'],
+        queryFn: () => api.getArgueTypes(),
+    });
+
     const { data, isLoading, isError } = useQuery({
-        queryKey: ['argumentation-network', dsId],
-        queryFn: () => api.getArgumentationNetwork(dsId),
-        enabled: !!dsId,
+        queryKey: ['argumentation-network', dsId, argueTypes.length],
+        queryFn: () => api.getArgumentationNetwork(dsId, argueTypes),
+        enabled: !!dsId && argueTypes.length > 0,
     });
 
     const [selectedTessera, setSelectedTessera] = useState<TesseraNode | null>(null);
@@ -120,7 +118,7 @@ export const ArgumentationDiagram: React.FC<ArgumentationDiagramProps> = ({ dsId
                 source: e.sourceId,
                 target: e.targetId,
                 type: 'smoothstep',
-                label: RELATION_LABELS_NL[e.relationType] ?? e.relationType,
+                label: e.relationLabel,
                 labelStyle: { fill: color, fontWeight: 500, fontSize: 11 },
                 labelBgStyle: { fill: 'hsl(var(--background))', fillOpacity: 0.85 },
                 style: { stroke: color, strokeWidth: 2 },
@@ -178,21 +176,25 @@ export const ArgumentationDiagram: React.FC<ArgumentationDiagramProps> = ({ dsId
             {/* Legenda */}
             <div className="flex items-center gap-4 px-4 py-2 border-b bg-background flex-wrap">
                 <span className="text-xs font-medium text-muted-foreground">Relatietype:</span>
-                {(Object.entries(RELATION_LABELS_NL) as [ArgueRelationType, string][]).map(([type, label]) => (
-                    <div key={type} className="flex items-center gap-1.5">
-                        <span
-                            className="inline-block w-3 h-0.5 rounded-full"
-                            style={{ backgroundColor: RELATION_COLORS[type], height: 3 }}
-                        />
-                        <Badge
-                            variant="outline"
-                            className="text-xs px-1.5 py-0"
-                            style={{ borderColor: RELATION_COLORS[type], color: RELATION_COLORS[type] }}
-                        >
-                            {label}
-                        </Badge>
-                    </div>
-                ))}
+                {argueTypes.map((t) => {
+                    const typeKey = t.uri.split('/').pop() ?? t.uri;
+                    const color = RELATION_COLORS[typeKey] ?? '#94a3b8';
+                    return (
+                        <div key={t.uri} className="flex items-center gap-1.5">
+                            <span
+                                className="inline-block w-3 rounded-full"
+                                style={{ backgroundColor: color, height: 3 }}
+                            />
+                            <Badge
+                                variant="outline"
+                                className="text-xs px-1.5 py-0"
+                                style={{ borderColor: color, color }}
+                            >
+                                {t.label_nl}
+                            </Badge>
+                        </div>
+                    );
+                })}
             </div>
 
             {/* React Flow canvas */}

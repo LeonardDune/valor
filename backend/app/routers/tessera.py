@@ -17,6 +17,7 @@ from app.services.ontology_cache import (
     get_valid_transitions,
     requires_decision_episode,
     get_argue_label_to_uri,
+    get_argue_uri_to_labels,
     get_shacl_shapes_graph,
     get_uncertainty_label_to_uri,
 )
@@ -227,6 +228,15 @@ INSERT DATA {{
         in_phase=request.in_phase,
         manifestation_condition=request.manifestation_condition,
     )
+
+
+@router.get("/argue-types")
+async def get_argue_types(user: dict = Depends(get_current_user)) -> list[dict]:
+    """Retourneert alle argue-relatietypes uit de ontologie met EN én NL labels."""
+    return [
+        {"uri": uri, "label_en": labels["en"], "label_nl": labels["nl"]}
+        for uri, labels in get_argue_uri_to_labels().items()
+    ]
 
 
 @router.get("/missing-realisation-basis", response_model=list[TesseraResponse])

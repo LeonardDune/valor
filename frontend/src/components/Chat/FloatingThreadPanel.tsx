@@ -87,6 +87,7 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
     const [resolveRationale, setResolveRationale] = useState('');
     const [resolving, setResolving] = useState(false);
     const [resolveResult, setResolveResult] = useState<{ label_nl: string } | null>(null);
+    const [resolveError, setResolveError] = useState<string | null>(null);
 
     useEffect(() => {
         if (designSpaceId) loadThreads();
@@ -168,6 +169,7 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
         e.preventDefault();
         if (!activeThread || !resolveOutcome || !resolveRationale.trim()) return;
         setResolving(true);
+        setResolveError(null);
         try {
             await api.resolveDiscThread(activeThread.thread_id, {
                 design_space_id: designSpaceId!,
@@ -176,8 +178,11 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
             });
             const status = epistemicStatuses.find(s => s.label_en === resolveOutcome);
             setResolveResult({ label_nl: status?.label_nl ?? resolveOutcome });
-        } catch (e) {
-            console.error('[FloatingThreadPanel] handleResolve:', e);
+        } catch (err: unknown) {
+            console.error('[FloatingThreadPanel] handleResolve:', err);
+            const msg = (err as { response?: { data?: { detail?: string } }; message?: string })
+                ?.response?.data?.detail ?? (err as { message?: string })?.message ?? 'Onbekende fout';
+            setResolveError(msg);
         } finally {
             setResolving(false);
         }
@@ -424,6 +429,9 @@ export const FloatingThreadPanel: React.FC<FloatingThreadPanelProps> = ({
                                     <Gavel className="h-3 w-3 mr-1.5" />
                                     {resolving ? 'Bezig...' : 'Thread Afsluiten'}
                                 </Button>
+                                {resolveError && (
+                                    <p className="text-[10px] text-destructive">{resolveError}</p>
+                                )}
                             </form>
                         )}
                     </>
