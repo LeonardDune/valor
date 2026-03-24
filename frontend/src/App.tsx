@@ -199,7 +199,7 @@ const WorkspaceWrapper = () => {
         projectName={found.project.name}
         dsId={found.theme.id}
         themeName={found.theme.name}
-        onBack={() => navigate(-1)}
+        onBack={() => window.history.length > 1 ? navigate(-1) : navigate('/')}
       />
     </DesignSpaceProvider>
   );
