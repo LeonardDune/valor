@@ -57,8 +57,8 @@ export const VotingRanking: React.FC<VotingRankingProps> = ({ sessionId, onCompl
             const rankedIds = new Set();
             existingRankings.forEach((r) => {
                 if (initialItems[r.category as Category]) {
-                    initialItems[r.category as Category].push(r.claim_version_id);
-                    rankedIds.add(r.claim_version_id);
+                    initialItems[r.category as Category].push(r.tessera_base_id);
+                    rankedIds.add(r.tessera_base_id);
                 }
             });
 

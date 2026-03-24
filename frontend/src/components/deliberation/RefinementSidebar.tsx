@@ -28,7 +28,7 @@ export const RefinementSidebar: React.FC<RefinementSidebarProps> = ({
     const getClaimStatus = (claimVersionId: string) => {
         if (!currentUserId || currentUserId === 'anon') return 'pending';
         const feedback = feedbackData.find(f =>
-            f.claim_version_id === claimVersionId &&
+            f.tessera_base_id === claimVersionId &&
             f.user_id === currentUserId
         );
         return feedback ? (feedback.color as 'green' | 'amber' | 'red') : 'pending';
@@ -37,7 +37,7 @@ export const RefinementSidebar: React.FC<RefinementSidebarProps> = ({
     const getFullFeedback = (claimVersionId: string) => {
         if (!currentUserId || currentUserId === 'anon') return null;
         return feedbackData.find(f =>
-            f.claim_version_id === claimVersionId &&
+            f.tessera_base_id === claimVersionId &&
             f.user_id === currentUserId
         ) || null;
     };

@@ -11,17 +11,17 @@ async def submit_feedback(feedback: Feedback) -> bool:
     driver = get_driver()
     query = """
     MATCH (s:VotingSession {id: $sid})
-    MATCH (cv:ClaimVersion {id: $cvid})
     MATCH (u:User {id: $uid})
-    
-    // Delete existing feedback from this user for this claim in this session
-    OPTIONAL MATCH (u)-[old:GAVE_FEEDBACK]->(f_old:Feedback)-[:ON_CLAIM]->(cv)
-    WHERE f_old.session_id = $sid
+
+    // Delete existing feedback from this user for this tessera in this session
+    OPTIONAL MATCH (u)-[old:GAVE_FEEDBACK]->(f_old:Feedback)
+    WHERE f_old.session_id = $sid AND f_old.tessera_base_id = $tbid
     DETACH DELETE f_old
-    
+
     MERGE (f:Feedback {id: $fid})
-    ON CREATE SET 
+    ON CREATE SET
         f.session_id = $sid,
+        f.tessera_base_id = $tbid,
         f.color = $color,
         f.motivation = $motivation,
         f.created_at = datetime($now)
@@ -29,9 +29,8 @@ async def submit_feedback(feedback: Feedback) -> bool:
         f.color = $color,
         f.motivation = $motivation,
         f.updated_at = datetime($now)
-        
+
     MERGE (u)-[:GAVE_FEEDBACK]->(f)
-    MERGE (f)-[:ON_CLAIM]->(cv)
     MERGE (s)-[:COLLECTED]->(f)
     RETURN f.id
     """
@@ -39,7 +38,7 @@ async def submit_feedback(feedback: Feedback) -> bool:
         with driver.session() as session:
             session.run(query, {
                 "sid": feedback.session_id,
-                "cvid": feedback.claim_version_id,
+                "tbid": feedback.tessera_base_id,
                 "uid": feedback.user_id,
                 "fid": feedback.id,
                 "color": feedback.color,
@@ -54,9 +53,9 @@ async def submit_feedback(feedback: Feedback) -> bool:
 async def get_session_feedback(session_id: str) -> List[Dict[str, Any]]:
     driver = get_driver()
     query = """
-    MATCH (s:VotingSession {id: $sid})-[:COLLECTED]->(f:Feedback)-[:ON_CLAIM]->(cv:ClaimVersion)
+    MATCH (s:VotingSession {id: $sid})-[:COLLECTED]->(f:Feedback)
     MATCH (u:User)-[:GAVE_FEEDBACK]->(f)
-    RETURN cv.id as claim_version_id, f.color as color, f.motivation as motivation, u.id as user_id, u.name as user_name
+    RETURN f.tessera_base_id as tessera_base_id, f.color as color, f.motivation as motivation, u.id as user_id, u.name as user_name
     """
     try:
         with driver.session() as session:
@@ -70,25 +69,24 @@ async def submit_ranking(ranking: Ranking) -> bool:
     driver = get_driver()
     query = """
     MATCH (s:VotingSession {id: $sid})
-    MATCH (cv:ClaimVersion {id: $cvid})
     MATCH (u:User {id: $uid})
-    
-    // Delete existing ranking
-    OPTIONAL MATCH (u)-[old:RANKED]->(r_old:Ranking)-[:RANKED_CLAIM]->(cv)
-    WHERE r_old.session_id = $sid
+
+    // Delete existing ranking for this tessera in this session
+    OPTIONAL MATCH (u)-[old:RANKED]->(r_old:Ranking)
+    WHERE r_old.session_id = $sid AND r_old.tessera_base_id = $tbid
     DETACH DELETE r_old
-    
+
     MERGE (r:Ranking {id: $rid})
     ON CREATE SET
         r.session_id = $sid,
+        r.tessera_base_id = $tbid,
         r.category = $category,
         r.created_at = datetime($now)
     ON MATCH SET
         r.category = $category,
         r.updated_at = datetime($now)
-        
+
     MERGE (u)-[:RANKED]->(r)
-    MERGE (r)-[:RANKED_CLAIM]->(cv)
     MERGE (s)-[:COLLECTED]->(r)
     RETURN r.id
     """
@@ -96,7 +94,7 @@ async def submit_ranking(ranking: Ranking) -> bool:
         with driver.session() as session:
             session.run(query, {
                 "sid": ranking.session_id,
-                "cvid": ranking.claim_version_id,
+                "tbid": ranking.tessera_base_id,
                 "uid": ranking.user_id,
                 "rid": ranking.id,
                 "category": ranking.category,
@@ -110,8 +108,8 @@ async def submit_ranking(ranking: Ranking) -> bool:
 async def get_session_rankings(session_id: str) -> List[Dict[str, Any]]:
     driver = get_driver()
     query = """
-    MATCH (s:VotingSession {id: $sid})-[:COLLECTED]->(r:Ranking)-[:RANKED_CLAIM]->(cv:ClaimVersion)
-    RETURN cv.id as claim_version_id, r.category as category, count(r) as count
+    MATCH (s:VotingSession {id: $sid})-[:COLLECTED]->(r:Ranking)
+    RETURN r.tessera_base_id as tessera_base_id, r.category as category, count(r) as count
     ORDER BY count DESC
     """
     try:
@@ -139,15 +137,15 @@ async def update_session_stage(session_id: str, stage: str) -> bool:
 
 async def get_eligible_claims_for_ranking(session_id: str) -> List[Dict[str, Any]]:
     """
-    Returns claims that have had no objections (red feedback) in the refinement phase.
+    Returns tessera_base_ids that have had no objections (red feedback) in the refinement phase.
     """
     driver = get_driver()
     query = """
     MATCH (s:VotingSession {id: $sid})
-    MATCH (s)-[:COLLECTED]->(f:Feedback)-[:ON_CLAIM]->(cv:ClaimVersion)
-    WITH cv, collect(f.color) as colors
+    MATCH (s)-[:COLLECTED]->(f:Feedback)
+    WITH f.tessera_base_id as tessera_base_id, collect(f.color) as colors
     WHERE NOT 'red' IN colors
-    RETURN DISTINCT cv.id as id, cv.statement as statement, cv.polarity as polarity, cv.confidence as confidence
+    RETURN DISTINCT tessera_base_id
     """
     try:
         with driver.session() as session:
@@ -168,24 +166,23 @@ async def get_consent_shortlist(session_id: str, user_id: Optional[str] = None) 
     driver = get_driver()
     query = """
     MATCH (s:VotingSession {id: $sid})
-    MATCH (s)-[:COLLECTED]->(r:Ranking)-[:RANKED_CLAIM]->(cv:ClaimVersion)
-    WITH cv,
+    MATCH (s)-[:COLLECTED]->(r:Ranking)
+    WITH r.tessera_base_id as tessera_base_id,
          count(r) as total_votes,
          count(CASE WHEN r.category = 'high' THEN 1 END) as high_count,
          count(CASE WHEN r.category IN ['high', 'medium'] THEN 1 END) as combined_count,
          count(CASE WHEN r.category = 'discard' THEN 1 END) as discard_count
-    WITH cv, total_votes,
+    WITH tessera_base_id, total_votes,
          (toFloat(high_count) / total_votes) as high_p,
          (toFloat(combined_count) / total_votes) as combined_p,
          (toFloat(discard_count) / total_votes) as discard_p
-    
-    // Check if current user voted
-    OPTIONAL MATCH (u:User {id: $uid})-[:VOTED_CONSENT]->(v:ConsentVote)-[:VOTE_ON]->(cv)
-    WHERE v.session_id = $sid
-    
-    RETURN cv.id as id, 
-           cv.statement as statement,
-           CASE 
+
+    // Check if current user voted consent on this tessera
+    OPTIONAL MATCH (u:User {id: $uid})-[:VOTED_CONSENT]->(v:ConsentVote)
+    WHERE v.session_id = $sid AND v.tessera_base_id = tessera_base_id
+
+    RETURN tessera_base_id,
+           CASE
                WHEN discard_p >= 0.3 THEN 'rejected'
                WHEN high_p >= 0.4 OR combined_p >= 0.6 THEN 'positive'
                ELSE 'contested'
@@ -209,17 +206,17 @@ async def submit_consent_vote(vote: ConsentVote) -> bool:
     driver = get_driver()
     query = """
     MATCH (s:VotingSession {id: $sid})
-    MATCH (cv:ClaimVersion {id: $cvid})
     MATCH (u:User {id: $uid})
-    
-    // Delete existing consent vote
-    OPTIONAL MATCH (u)-[old:VOTED_CONSENT]->(v_old:ConsentVote)-[:VOTE_ON]->(cv)
-    WHERE v_old.session_id = $sid
+
+    // Delete existing consent vote for this tessera in this session
+    OPTIONAL MATCH (u)-[old:VOTED_CONSENT]->(v_old:ConsentVote)
+    WHERE v_old.session_id = $sid AND v_old.tessera_base_id = $tbid
     DETACH DELETE v_old
-    
+
     MERGE (v:ConsentVote {id: $vid})
     ON CREATE SET
         v.session_id = $sid,
+        v.tessera_base_id = $tbid,
         v.vote = $vote,
         v.motivation = $motivation,
         v.created_at = datetime($now)
@@ -227,9 +224,8 @@ async def submit_consent_vote(vote: ConsentVote) -> bool:
         v.vote = $vote,
         v.motivation = $motivation,
         v.updated_at = datetime($now)
-        
+
     MERGE (u)-[:VOTED_CONSENT]->(v)
-    MERGE (v)-[:VOTE_ON]->(cv)
     MERGE (s)-[:COLLECTED]->(v)
     RETURN v.id
     """
@@ -237,7 +233,7 @@ async def submit_consent_vote(vote: ConsentVote) -> bool:
         with driver.session() as session:
             session.run(query, {
                 "sid": vote.session_id,
-                "cvid": vote.claim_version_id,
+                "tbid": vote.tessera_base_id,
                 "uid": vote.user_id,
                 "vid": vote.id,
                 "vote": vote.vote,
@@ -275,21 +271,21 @@ async def get_session_participation(session_id: str) -> List[Dict[str, Any]]:
     query = """
     MATCH (s:VotingSession {id: $sid})<-[:HAS_SESSION]-(ds:DesignSpace)
     MATCH (u:User)-[:HAS_ROLE]->(ds)
-    
+
     WITH DISTINCT u, s
-    
+
     OPTIONAL MATCH (u)-[:GAVE_FEEDBACK]->(f:Feedback) WHERE f.session_id = $sid
     OPTIONAL MATCH (u)-[:RANKED]->(r:Ranking) WHERE r.session_id = $sid
     OPTIONAL MATCH (u)-[:VOTED_CONSENT]->(v:ConsentVote) WHERE v.session_id = $sid
-    
+
     // Check for explicit completion
     OPTIONAL MATCH (u)-[c_refine:COMPLETED_PHASE {phase: 'refine'}]->(s)
     OPTIONAL MATCH (u)-[c_ranking:COMPLETED_PHASE {phase: 'ranking'}]->(s)
     OPTIONAL MATCH (u)-[c_consent:COMPLETED_PHASE {phase: 'consent'}]->(s)
-    
-    RETURN u.email as email, 
-           coalesce(u.name, u.email) as name, 
-           u.id as user_id, 
+
+    RETURN u.email as email,
+           coalesce(u.name, u.email) as name,
+           u.id as user_id,
            count(DISTINCT f) > 0 as has_feedback,
            count(DISTINCT r) > 0 as has_ranking,
            count(DISTINCT v) > 0 as has_consent,
@@ -342,7 +338,7 @@ async def validate_phase_transition(session_id: str, current_stage: str, target_
         }
     """
     driver = get_driver()
-    
+
     # 1. Refine -> Ranking
     if target_stage == 'ranking':
         query = """
@@ -352,14 +348,14 @@ async def validate_phase_transition(session_id: str, current_stage: str, target_
         """
         with driver.session() as session:
             count = session.run(query, {"sid": session_id}).single()["count"]
-            
+
         if count == 0:
             return {
                 "allowed": True, # Non-blocking warning
                 "type": "warning",
                 "message": "Er is nog geen feedback gegeven. Weet je zeker dat je wilt doorgaan?"
             }
-            
+
     # 2. Ranking -> Consent (STRICT GATEKEEPER)
     if target_stage == 'consent':
         query = """
@@ -369,7 +365,7 @@ async def validate_phase_transition(session_id: str, current_stage: str, target_
         """
         with driver.session() as session:
             count = session.run(query, {"sid": session_id}).single()["count"]
-            
+
         if count == 0:
             return {
                 "allowed": False, # BLOCKING
@@ -386,13 +382,7 @@ async def validate_phase_transition(session_id: str, current_stage: str, target_
         """
         with driver.session() as session:
             count = session.run(query, {"sid": session_id}).single()["count"]
-        
-        # We might want to allow force-close if really stuck, but for now strict.
-        # Actually, let's make it a warning if manual finalized via update_stage, 
-        # but finalize_deliberation endpoint might have its own checks.
-        # The user dashboard calls 'finalize' endpoint for Consent->Closed.
-        # This validator is mostly for the 'Advance Stage' button logic.
-        
+
         if count == 0:
              return {
                 "allowed": False,

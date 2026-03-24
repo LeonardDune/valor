@@ -22,7 +22,7 @@ async def main():
     f = Feedback(
         id=str(uuid.uuid4()),
         session_id=sid,
-        claim_version_id=cvid,
+        tessera_base_id=cvid,
         user_id=uid,
         color='green',
         motivation='Looks promising for the pilot.',
@@ -41,7 +41,7 @@ async def main():
     r = Ranking(
         id=str(uuid.uuid4()),
         session_id=sid,
-        claim_version_id=cvid,
+        tessera_base_id=cvid,
         user_id=uid,
         category='high',
         created_at=datetime.now()

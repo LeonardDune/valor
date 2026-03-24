@@ -48,7 +48,7 @@ export const sessionService: SessionService = {
     async submitFeedback(sessionId: string, claimVersionId: string, color: string, motivation?: string): Promise<void> {
         await apiClient.post('/deliberation/feedback', {
             session_id: sessionId,
-            claim_version_id: claimVersionId,
+            tessera_base_id: claimVersionId,
             color,
             motivation
         });
@@ -66,7 +66,7 @@ export const sessionService: SessionService = {
     async submitRanking(sessionId: string, claimVersionId: string, category: string): Promise<void> {
         await apiClient.post('/deliberation/rank', {
             session_id: sessionId,
-            claim_version_id: claimVersionId,
+            tessera_base_id: claimVersionId,
             category
         });
     },

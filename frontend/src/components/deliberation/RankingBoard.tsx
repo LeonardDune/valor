@@ -56,8 +56,8 @@ export const RankingBoard: React.FC<RankingBoardProps> = ({ sessionId, onClose, 
             const rankedIds = new Set();
             existingRankings.forEach((r: any) => {
                 if (initialItems[r.category as Category]) {
-                    initialItems[r.category as Category].push(r.claim_version_id);
-                    rankedIds.add(r.claim_version_id);
+                    initialItems[r.category as Category].push(r.tessera_base_id);
+                    rankedIds.add(r.tessera_base_id);
                 }
             });
 
