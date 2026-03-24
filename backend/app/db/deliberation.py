@@ -307,8 +307,9 @@ async def get_session_participation(session_id: str) -> List[Dict[str, Any]]:
         return []
 
 async def finalize_deliberation(session_id: str, user_id: str) -> Dict[str, Any]:
-    """Sluit de deliberatiesessie af en registreert de consensus in de DesignSpace."""
-    from app.db.sessions import get_session_context
+    """Sluit de deliberatiesessie af en zet de DesignSpace door naar de volgende fase."""
+    from app.db.sessions import get_session_context, get_ds_id_for_session
+    from app.db.designspace import get_design_space_meta, set_design_space_phase, PHASE_SEQUENCE
 
     driver = get_driver()
 
@@ -325,7 +326,19 @@ async def finalize_deliberation(session_id: str, user_id: str) -> Dict[str, Any]
         with driver.session() as sess:
             sess.run(query_close, {"sid": session_id})
 
-        return {"status": "success", "session_id": session_id}
+        # Zet DesignSpace door naar de volgende fase
+        ds_id = await get_ds_id_for_session(session_id)
+        next_phase = None
+        if ds_id:
+            meta = get_design_space_meta(ds_id)
+            current_phase = (meta or {}).get("current_phase", "exploration")
+            if current_phase in PHASE_SEQUENCE:
+                idx = PHASE_SEQUENCE.index(current_phase)
+                if idx + 1 < len(PHASE_SEQUENCE):
+                    next_phase = PHASE_SEQUENCE[idx + 1]
+                    set_design_space_phase(ds_id, next_phase)
+
+        return {"status": "success", "session_id": session_id, "next_phase": next_phase}
 
     except Exception as e:
         logger.error(f"Error finalizing deliberation: {e}")
