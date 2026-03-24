@@ -312,3 +312,27 @@ class ConsentVote(BaseModel):
     vote: ConsentVoteType
     motivation: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
+
+
+# --- Tessera Voting (US-5.2) ---
+
+class TesseraVoteType(str, Enum):
+    ACCEPT = "Accept"
+    REJECT = "Reject"
+    DEFER = "Defer"
+
+
+class CastVoteRequest(BaseModel):
+    design_space_id: str
+    vote_type: TesseraVoteType
+    alternative_id: Optional[str] = None  # aanwezig als Tessera in een DesignAlternative zit
+
+
+class VoteResponse(BaseModel):
+    vote_uri: str
+    episode_uri: str
+    tessera_id: str
+    tessera_uri: str
+    vote_type: str
+    quorum_reached: bool
+    new_epistemic_status: Optional[str] = None
