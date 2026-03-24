@@ -67,10 +67,10 @@ export const PhaseConsent: React.FC<PhaseConsentProps> = ({
                                     <div key={p.user_id} className="flex items-center justify-between p-2 rounded-md bg-muted/30">
                                         <div className="flex items-center gap-2">
                                             <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary">
-                                                {p.user_name?.[0]?.toUpperCase() || '?'}
+                                                {p.user_name ?? p.name?.[0]?.toUpperCase() || '?'}
                                             </div>
                                             <div className="text-sm truncate max-w-[150px]">
-                                                {p.user_name || 'Onbekend'}
+                                                {p.user_name ?? p.name || 'Onbekend'}
                                             </div>
                                         </div>
                                         {(p.has_completed_consent || p.has_consent) ? (
