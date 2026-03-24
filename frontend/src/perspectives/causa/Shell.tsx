@@ -55,9 +55,9 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
 
     // Derived state
     const { activeVersion, activeVotingSession } = themeState;
-    // TODO: Verify if activeVersion has role. Use role 'moderator' check if available, or fallback.
-    // Ideally user role should be joined. For now assuming activeVersion carries role context or we check activeVersion.role
-    const isModerator = (activeVersion as any)?.role === 'moderator' || (activeVersion as any)?.role === 'admin';
+    // canResolveThread wordt opgehaald via GET /designspace/{id}/can-resolve in ValorWorkspace
+    // en controleert de MODERATOR-rol — identiek aan wat isModerator nodig heeft.
+    const isModerator = canResolveThread;
 
     // const [showDeliberation, setShowDeliberation] = useState(false); // Removed
     const [showModeratorDashboard, setShowModeratorDashboard] = useState(false);
