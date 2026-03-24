@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { sessionService } from '@/services/sessions';
+import { api } from '@/services/api';
 import type { ShortlistClaim } from '@/services/api';
 import { toast } from 'sonner';
 import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
@@ -12,17 +13,32 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface VotingConsentProps {
     sessionId: string;
+    dsId: string;
     onComplete?: () => void;
 }
 
-export const VotingConsent: React.FC<VotingConsentProps> = ({ sessionId, onComplete }) => {
+export const VotingConsent: React.FC<VotingConsentProps> = ({ sessionId, dsId, onComplete }) => {
     const queryClient = useQueryClient();
     const [objectionTarget, setObjectionTarget] = useState<ShortlistClaim | null>(null);
     const [motivation, setMotivation] = useState('');
 
-    const { data: claims = [], isLoading } = useQuery({
+    const { data: shortlist = [], isLoading: isLoadingShortlist } = useQuery({
         queryKey: ['consent-shortlist', sessionId],
         queryFn: () => sessionService.getConsentShortlist(sessionId)
+    });
+
+    const { data: allClaims = [], isLoading: isLoadingClaims } = useQuery({
+        queryKey: ['claims', dsId],
+        queryFn: () => api.getThemeVersionClaims(dsId),
+        enabled: !!dsId,
+    });
+
+    const isLoading = isLoadingShortlist || isLoadingClaims;
+
+    // Merge statements from full claims into shortlist items
+    const claims: ShortlistClaim[] = shortlist.map(item => {
+        const full = allClaims.find(c => c.id === item.id);
+        return { ...item, statement: full?.statement ?? item.statement ?? '' };
     });
 
     const { mutate: vote, isPending: isVoting } = useMutation({
@@ -46,15 +62,17 @@ export const VotingConsent: React.FC<VotingConsentProps> = ({ sessionId, onCompl
 
     if (isLoading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>;
 
-    const sortedClaims = [...claims].sort((a, b) => {
+    const visibleClaims = claims.filter(c => c.status !== 'rejected');
+
+    const sortedClaims = [...visibleClaims].sort((a, b) => {
         // Unvoted first
         if (!a.user_vote && b.user_vote) return -1;
         if (a.user_vote && !b.user_vote) return 1;
         return 0;
     });
 
-    const voteCount = claims.filter(c => c.user_vote).length;
-    const isComplete = voteCount === claims.length;
+    const voteCount = visibleClaims.filter(c => c.user_vote).length;
+    const isComplete = voteCount === visibleClaims.length && visibleClaims.length > 0;
 
     return (
         <div className="flex flex-col h-full bg-background overflow-hidden relative">
@@ -65,7 +83,7 @@ export const VotingConsent: React.FC<VotingConsentProps> = ({ sessionId, onCompl
 
             <ScrollArea className="flex-1 p-4">
                 <div className="space-y-4">
-                    {sortedClaims.filter(c => c.status !== 'rejected').map(claim => (
+                    {sortedClaims.map(claim => (
                         <Card key={claim.id} className={`transition-all ${claim.user_vote ? 'opacity-70' : ''}`}>
                             <CardContent className="p-4 space-y-3">
                                 <div className="flex justify-between items-start gap-2">
@@ -136,7 +154,7 @@ export const VotingConsent: React.FC<VotingConsentProps> = ({ sessionId, onCompl
             <div className="p-4 border-t bg-background flex flex-col gap-2">
                 {!isComplete && (
                     <p className="text-[10px] text-muted-foreground text-center px-2 leading-tight">
-                        Stem op alle {claims.length} claims om af te kunnen ronden ({claims.length - voteCount} te gaan).
+                        Stem op alle {visibleClaims.length} claims om af te kunnen ronden ({visibleClaims.length - voteCount} te gaan).
                     </p>
                 )}
                 <div className="flex justify-end w-full">

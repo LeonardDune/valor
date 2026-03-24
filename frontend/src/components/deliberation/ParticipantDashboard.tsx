@@ -77,6 +77,7 @@ export const ParticipantDashboard: React.FC<ParticipantDashboardProps> = ({
                 return (
                     <VotingConsent
                         sessionId={sessionId}
+                        dsId={versionId}
                         onComplete={() => handlePhaseComplete('consent')}
                     />
                 );

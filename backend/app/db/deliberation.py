@@ -195,7 +195,11 @@ async def get_consent_shortlist(session_id: str, user_id: Optional[str] = None) 
     try:
         with driver.session() as session:
             result = session.run(query, {"sid": session_id, "uid": user_id})
-            return [dict(record) for record in result]
+            rows = [dict(record) for record in result]
+            # Voeg 'id' toe zodat frontend claim.id kan gebruiken als tessera_base_id
+            for row in rows:
+                row["id"] = row["tessera_base_id"]
+            return rows
     except Exception as e:
         logger.error(f"Error getting consent shortlist: {e}")
         return []
