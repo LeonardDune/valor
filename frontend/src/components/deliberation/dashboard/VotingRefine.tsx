@@ -86,6 +86,7 @@ export const VotingRefine: React.FC<RefinementViewProps> = ({ sessionId, version
                     claim={selectedClaim}
                     allClaims={claims}
                     factors={factors}
+                    designSpaceId={versionId}
                 />
             </main>
 

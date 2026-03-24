@@ -28,7 +28,7 @@ export const RefinementBoardComponent: React.FC<RefinementBoardProps> = ({
     currentUserId,
     isModerator
 }) => {
-    const { versionId: routeVersionId } = useParams<{ versionId: string }>();
+    const { versionId: routeVersionId, dsId } = useParams<{ versionId: string; dsId: string }>();
     const versionId = propVersionId || routeVersionId;
     const navigate = useNavigate();
     const queryClient = useQueryClient();
@@ -187,6 +187,7 @@ export const RefinementBoardComponent: React.FC<RefinementBoardProps> = ({
                     claim={selectedClaim}
                     allClaims={claims}
                     factors={factors}
+                    designSpaceId={dsId}
                 />
             </main>
 
