@@ -16,7 +16,7 @@ interface DesignSpaceContextType {
     refreshVersions: () => Promise<void>;
 }
 
-const DesignSpaceContext = createContext<DesignSpaceContextType | undefined>(undefined);
+export const DesignSpaceContext = createContext<DesignSpaceContextType | undefined>(undefined);
 
 interface DesignSpaceProviderProps {
     dsId: string;
