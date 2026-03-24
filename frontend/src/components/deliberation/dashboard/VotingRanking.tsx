@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from "@/components/ui/button";
 import { sessionService } from '@/services/sessions';
+import { api } from '@/services/api';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -11,6 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface VotingRankingProps {
     sessionId: string;
+    dsId: string;
     onComplete?: () => void;
 }
 
@@ -23,7 +25,7 @@ const CATEGORIES: { id: Category; label: string; color: string }[] = [
     { id: 'discard', label: 'Verwijderen', color: 'bg-red-500/10 border-red-500/20 text-red-700' }
 ];
 
-export const VotingRanking: React.FC<VotingRankingProps> = ({ sessionId, onComplete }) => {
+export const VotingRanking: React.FC<VotingRankingProps> = ({ sessionId, dsId, onComplete }) => {
     const queryClient = useQueryClient();
     const [items, setItems] = useState<Record<Category, string[]>>({
         high: [],
@@ -32,21 +34,40 @@ export const VotingRanking: React.FC<VotingRankingProps> = ({ sessionId, onCompl
         discard: []
     });
 
-    const { data: claims = [], isLoading } = useQuery({
+    // Fetch full claim objects (id + statement) from the DesignSpace
+    const { data: allClaims = [], isLoading: isLoadingClaims } = useQuery({
+        queryKey: ['claims', dsId],
+        queryFn: () => api.getThemeVersionClaims(dsId),
+        enabled: !!dsId,
+    });
+
+    // Fetch eligible claim IDs (claims without red feedback)
+    const { data: eligibleRaw = [], isLoading: isLoadingEligible } = useQuery({
         queryKey: ['eligible-claims', sessionId],
-        queryFn: () => sessionService.getEligibleClaims(sessionId)
+        queryFn: () => sessionService.getEligibleClaims(sessionId),
     });
 
     const { data: existingRankings = [] } = useQuery({
         queryKey: ['rankings', sessionId],
-        queryFn: () => sessionService.getRankings(sessionId)
+        queryFn: () => sessionService.getRankings(sessionId),
     });
+
+    // Build eligible claim set from the raw IDs
+    const eligibleIds = new Set(eligibleRaw.map((r: any) => r.tessera_base_id));
+
+    // Filter full claims to only those eligible
+    const claims = allClaims.filter(c => eligibleIds.has(c.id));
+
+    const isLoading = isLoadingClaims || isLoadingEligible;
 
     const isInitializedRef = useRef(false);
 
-    // Initialize items
+    // Initialize items — wait until both queries have finished loading
     useEffect(() => {
-        if (claims.length > 0 && !isInitializedRef.current) {
+        if (!isLoadingClaims && !isLoadingEligible && !isInitializedRef.current) {
+            const ids = new Set(eligibleRaw.map((r: any) => r.tessera_base_id));
+            const eligible = allClaims.filter(c => ids.has(c.id));
+
             const initialItems: Record<Category, string[]> = {
                 high: [],
                 medium: [],
@@ -54,15 +75,15 @@ export const VotingRanking: React.FC<VotingRankingProps> = ({ sessionId, onCompl
                 discard: []
             };
 
-            const rankedIds = new Set();
-            existingRankings.forEach((r) => {
+            const rankedIds = new Set<string>();
+            existingRankings.forEach((r: any) => {
                 if (initialItems[r.category as Category]) {
                     initialItems[r.category as Category].push(r.tessera_base_id);
                     rankedIds.add(r.tessera_base_id);
                 }
             });
 
-            claims.forEach(c => {
+            eligible.forEach(c => {
                 if (!rankedIds.has(c.id)) {
                     initialItems.backlog.push(c.id);
                 }
@@ -71,7 +92,7 @@ export const VotingRanking: React.FC<VotingRankingProps> = ({ sessionId, onCompl
             setItems(initialItems);
             isInitializedRef.current = true;
         }
-    }, [claims, existingRankings]);
+    }, [isLoadingClaims, isLoadingEligible, allClaims, eligibleRaw, existingRankings]);
 
     const { mutate: submitRankings, isPending } = useMutation({
         mutationFn: async () => {
@@ -111,8 +132,9 @@ export const VotingRanking: React.FC<VotingRankingProps> = ({ sessionId, onCompl
 
     if (isLoading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>;
 
-    const categorizedCount = Object.values(items).reduce((acc, curr) => acc + curr.length, 0);
-    const isComplete = categorizedCount === claims.length;
+    const totalItems = Object.values(items).reduce((acc, curr) => acc + curr.length, 0);
+    const backlogCount = items.backlog.length;
+    const isComplete = totalItems === claims.length && backlogCount < claims.length;
 
     return (
         <div className="flex flex-col h-full bg-background p-4 gap-4">
@@ -121,7 +143,7 @@ export const VotingRanking: React.FC<VotingRankingProps> = ({ sessionId, onCompl
                 <div className="flex items-center gap-2">
                     {!isComplete && (
                         <span className="text-xs text-muted-foreground">
-                            {claims.length - categorizedCount} items te plaatsen
+                            {backlogCount} items te plaatsen
                         </span>
                     )}
                     <Button size="sm" onClick={() => submitRankings()} disabled={isPending || !isComplete}>
