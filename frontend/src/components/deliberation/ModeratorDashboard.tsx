@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { Button } from '@/components/ui/button';
-import { useContext } from 'react';
 import { DesignSpaceContext } from '@/context/DesignSpaceContext';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/services/api';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { X, Shield } from 'lucide-react';
 import { useSessionParticipation, useUpdateSessionStage, useFinalizeDeliberation, useSessionValidation } from '@/hooks/queries/useSessions';
@@ -29,6 +30,13 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({
 }) => {
     const designSpace = useContext(DesignSpaceContext);
     const refreshVersions = designSpace?.refreshVersions ?? (() => Promise.resolve());
+    const dsId = designSpace?.dsId ?? null;
+
+    const { data: members = [] } = useQuery({
+        queryKey: ['ds-members', dsId],
+        queryFn: () => api.getDesignSpaceMembers(dsId!),
+        enabled: !!dsId,
+    });
 
     // Stage Mapping for Tabs
     const [activeTab, setActiveTab] = useState<string>('start');
@@ -113,7 +121,7 @@ export const ModeratorDashboard: React.FC<ModeratorDashboardProps> = ({
                             <PhaseStart
                                 onStart={(config: VotingSessionConfig) => onStartSession?.(config)}
                                 isStarting={isStartingSession}
-                                participantCount={0} // TODO: Pass potential participants count?
+                                members={members}
                             />
                         ) : (
                             <div className="p-8 text-center border rounded-lg bg-muted/10">

@@ -605,6 +605,11 @@ export const api = {
     },
 
     // Threads (Fuseki-backed disc endpoints, Epic 16)
+    getDesignSpaceMembers: async (dsId: string): Promise<{ id: string; name: string; email: string; role: string }[]> => {
+        const response = await apiClient.get(`/designspace/${dsId}/members`);
+        return response.data;
+    },
+
     getCanResolveThread: async (designSpaceId: string): Promise<{ can_resolve: boolean }> => {
         const response = await apiClient.get<{ can_resolve: boolean }>(`/designspace/${designSpaceId}/can-resolve`);
         return response.data;
