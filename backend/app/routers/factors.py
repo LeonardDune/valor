@@ -28,10 +28,15 @@ class FactorUpdate(BaseModel):
 
 
 @router.get("/designspace/{ds_id}/factors")
-async def list_designspace_factors(ds_id: str, user: dict = Depends(get_current_user)):
+async def list_designspace_factors(
+    ds_id: str,
+    phase: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
     if not await check_permission(user["id"], ds_id, Role.MEMBER):
         raise HTTPException(status_code=403, detail="Geen toegang tot deze DesignSpace")
-    return await fuseki_knowledge._sparql_get_factors(ds_id)
+    graph_uri = f"urn:valor:ds:{ds_id}/phase/{phase}" if phase else None
+    return await fuseki_knowledge._sparql_get_factors(ds_id, graph_uri=graph_uri)
 
 
 @router.post("/factors")

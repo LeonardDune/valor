@@ -43,13 +43,15 @@ _VALID_CLAIM_TYPES = {"AsIsType", "ToBeType"}
 async def list_designspace_claims(
     ds_id: str,
     claim_type: Optional[str] = Query(None, description="Filter op claimType: 'AsIsType' of 'ToBeType'"),
+    phase: Optional[str] = Query(None, description="Session ID van een historische fase-snapshot"),
     user: dict = Depends(get_current_user),
 ):
     if claim_type is not None and claim_type not in _VALID_CLAIM_TYPES:
         raise HTTPException(status_code=422, detail=f"Ongeldig claim_type '{claim_type}'. Toegestane waarden: {sorted(_VALID_CLAIM_TYPES)}")
     if not await check_permission(user["id"], ds_id, Role.MEMBER):
         raise HTTPException(status_code=403, detail="Geen toegang tot deze DesignSpace")
-    return await fuseki_knowledge._sparql_get_claims(ds_id, claim_type=claim_type)
+    graph_uri = f"urn:valor:ds:{ds_id}/phase/{phase}" if phase else None
+    return await fuseki_knowledge._sparql_get_claims(ds_id, claim_type=claim_type, graph_uri=graph_uri)
 
 
 @router.get("/designspace/{ds_id}/cycles")

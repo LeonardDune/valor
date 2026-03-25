@@ -23,6 +23,7 @@ from app.models.domain import (
 )
 from app.ontology import VALOR_NS
 from app.db.fuseki_knowledge import get_condition_coverage, create_claim_coverage_assessment, get_asis_condition_coverage
+from app.db.fuseki_phases import get_phase_snapshots
 from app.services.fuseki import (
     initialize_design_space_graphs, initialize_alternative_graph,
     sparql_proxy_query, sparql_select, sparql_update,
@@ -581,3 +582,13 @@ async def list_participants(
         ))
 
     return results
+
+
+@router.get("/{design_space_id}/phase-snapshots")
+async def list_phase_snapshots(
+    design_space_id: str,
+    user: dict = Depends(get_current_user),
+):
+    if not await check_permission(user["id"], design_space_id, Role.VIEWER):
+        raise HTTPException(status_code=403, detail="Geen toegang tot deze DesignSpace")
+    return await get_phase_snapshots(design_space_id)
