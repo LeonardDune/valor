@@ -471,18 +471,26 @@ export const api = {
         return response.data.cycle_node_ids;
     },
 
-    getThemeVersionClaims: async (dsId: string) => {
-        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`);
+    getThemeVersionClaims: async (dsId: string, phase?: string) => {
+        const params = phase ? { phase } : {};
+        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`, { params });
         return response.data;
     },
 
-    getThemeFactors: async (dsId: string) => {
-        const response = await apiClient.get<Factor[]>(`/designspace/${dsId}/factors`);
+    getThemeFactors: async (dsId: string, phase?: string) => {
+        const params = phase ? { phase } : {};
+        const response = await apiClient.get<Factor[]>(`/designspace/${dsId}/factors`, { params });
         return response.data;
     },
 
-    getThemeVersionFactors: async (dsId: string) => {
-        const response = await apiClient.get<Factor[]>(`/designspace/${dsId}/factors`);
+    getThemeVersionFactors: async (dsId: string, phase?: string) => {
+        const params = phase ? { phase } : {};
+        const response = await apiClient.get<Factor[]>(`/designspace/${dsId}/factors`, { params });
+        return response.data;
+    },
+
+    getPhaseSnapshots: async (dsId: string): Promise<PhaseSnapshot[]> => {
+        const response = await apiClient.get<PhaseSnapshot[]>(`/designspace/${dsId}/phase-snapshots`);
         return response.data;
     },
 
@@ -852,6 +860,15 @@ function parseArgumentationNetwork(raw: ArgumentationNetworkRaw, argueTypes: Arg
     }
 
     return { nodes: Array.from(nodesMap.values()), edges };
+}
+
+// PhaseSnapshot types
+export interface PhaseSnapshot {
+    session_id: string;
+    graph_uri: string;
+    created_at: string;
+    accepted_count: number;
+    rejected_count: number;
 }
 
 // DecisionTimeline types (US-5.4)

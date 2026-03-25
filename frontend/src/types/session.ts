@@ -40,6 +40,7 @@ export interface Ranking {
 export interface Participation {
     user_id: string;
     user_name: string;
+    name?: string;
     has_completed_refinement?: boolean;
     has_completed_ranking?: boolean;
     has_completed_consent?: boolean;
