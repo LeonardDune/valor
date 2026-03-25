@@ -306,10 +306,51 @@ async def get_session_participation(session_id: str) -> List[Dict[str, Any]]:
         logger.error(f"Error getting session participation: {e}")
         return []
 
+async def _get_accepted_rejected_ids(session_id: str) -> tuple[list[str], list[str]]:
+    """Bepaalt welke tesserae geaccepteerd en welke afgewezen zijn op basis van ranking + consent.
+
+    Een tessera is afgewezen als:
+    - discard_p >= 0.3 (afgewezen via ranking), OF
+    - minstens één deelnemer heeft 'reject' gestemd in consent
+
+    Tesserae die nooit geranked zijn, worden niet aangeraakt.
+    """
+    driver = get_driver()
+    query_rankings = """
+    MATCH (s:VotingSession {id: $sid})-[:COLLECTED]->(r:Ranking)
+    WITH r.tessera_base_id AS tid,
+         count(*) AS total,
+         count(CASE WHEN r.category = 'discard' THEN 1 END) AS discard_count
+    RETURN tid, (toFloat(discard_count) / total) AS discard_p
+    """
+    query_consent_rejected = """
+    MATCH (s:VotingSession {id: $sid})-[:COLLECTED]->(v:ConsentVote)
+    WHERE v.vote = 'reject'
+    RETURN DISTINCT v.tessera_base_id AS tid
+    """
+    with driver.session() as sess:
+        rankings = {r["tid"]: r["discard_p"] for r in sess.run(query_rankings, {"sid": session_id})}
+        consent_rejected = {r["tid"] for r in sess.run(query_consent_rejected, {"sid": session_id})}
+
+    accepted, rejected = [], []
+    for tid, discard_p in rankings.items():
+        if discard_p >= 0.3 or tid in consent_rejected:
+            rejected.append(tid)
+        else:
+            accepted.append(tid)
+    return accepted, rejected
+
+
 async def finalize_deliberation(session_id: str, user_id: str) -> Dict[str, Any]:
-    """Sluit de deliberatiesessie af en zet de DesignSpace door naar de volgende fase."""
+    """Sluit de deliberatiesessie af, maakt een fase-snapshot en prunet afgewezen items uit asis."""
     from app.db.sessions import get_session_context, get_ds_id_for_session
     from app.db.designspace import get_design_space_meta, set_design_space_phase, PHASE_SEQUENCE
+    from app.db.fuseki_phases import (
+        copy_asis_to_snapshot,
+        annotate_snapshot,
+        register_snapshot_in_decisions,
+        prune_rejected_from_asis,
+    )
 
     driver = get_driver()
 
@@ -318,6 +359,7 @@ async def finalize_deliberation(session_id: str, user_id: str) -> Dict[str, Any]
         return {"status": "error", "message": "Context niet gevonden"}
 
     try:
+        # 1. Sluit de sessie
         query_close = """
         MATCH (s:VotingSession {id: $sid})
         SET s.status = 'closed', s.stage = 'closed', s.ended_at = datetime()
@@ -326,10 +368,21 @@ async def finalize_deliberation(session_id: str, user_id: str) -> Dict[str, Any]
         with driver.session() as sess:
             sess.run(query_close, {"sid": session_id})
 
-        # Zet DesignSpace door naar de volgende fase
+        # 2. Bepaal geaccepteerde en afgewezen tesserae
+        accepted_ids, rejected_ids = await _get_accepted_rejected_ids(session_id)
+
+        # 3. Fase-snapshot + pruning (alleen als er een DesignSpace is)
         ds_id = await get_ds_id_for_session(session_id)
         next_phase = None
         if ds_id:
+            await copy_asis_to_snapshot(ds_id, session_id)
+            await annotate_snapshot(ds_id, session_id, accepted_ids, rejected_ids)
+            await register_snapshot_in_decisions(
+                ds_id, session_id, len(accepted_ids), len(rejected_ids)
+            )
+            await prune_rejected_from_asis(ds_id, rejected_ids)
+
+            # 4. Zet DesignSpace door naar de volgende fase
             meta = get_design_space_meta(ds_id)
             current_phase = (meta or {}).get("current_phase", "exploration")
             if current_phase in PHASE_SEQUENCE:
@@ -338,7 +391,13 @@ async def finalize_deliberation(session_id: str, user_id: str) -> Dict[str, Any]
                     next_phase = PHASE_SEQUENCE[idx + 1]
                     set_design_space_phase(ds_id, next_phase)
 
-        return {"status": "success", "session_id": session_id, "next_phase": next_phase}
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "accepted": len(accepted_ids),
+            "rejected": len(rejected_ids),
+            "next_phase": next_phase,
+        }
 
     except Exception as e:
         logger.error(f"Error finalizing deliberation: {e}")
