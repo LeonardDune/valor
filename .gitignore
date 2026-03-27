@@ -39,3 +39,4 @@ frontend/lint_output*.txt
 backend/debug_*.py
 backend/deduplicate_db.py
 
+.worktrees/
