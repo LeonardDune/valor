@@ -21,7 +21,6 @@ import { VersionChat } from './pages/VersionChat';
 import { RefinementBoardComponent } from './components/deliberation/RefinementBoard';
 import { ArgumentationDiagram } from './components/deliberation/ArgumentationDiagram';
 import { DecisionTimeline } from './components/deliberation/DecisionTimeline';
-import { DesignSpaceProvider } from './context/DesignSpaceContext';
 
 function App() {
   const { session, isLoading: authLoading } = useAuth();
@@ -118,18 +117,16 @@ function App() {
             </DashboardLayout>
           } />
 
-          {/* DesignSpace Routes */}
-          <Route path="/designspace/:dsId">
+          {/* DesignSpace Routes — VersionLayout wraps alles inclusief workspace */}
+          <Route path="/designspace/:dsId" element={<VersionLayout />}>
             <Route index element={<WorkspaceWrapper />} />
-            <Route element={<VersionLayout />}>
-              <Route path="overview" element={<VersionDashboard />} />
-              <Route path="claims" element={<RefinementBoardComponent />} />
-              <Route path="argumentatie" element={<ArgumentationDiagram />} />
-              <Route path="tijdlijn" element={<DecisionTimeline />} />
-              <Route path="chat" element={<VersionChat />} />
-              <Route path="members" element={<div className="p-8">Members (Coming Soon)</div>} />
-              <Route path="settings" element={<div className="p-8">Version Settings (Coming Soon)</div>} />
-            </Route>
+            <Route path="overview" element={<VersionDashboard />} />
+            <Route path="claims" element={<RefinementBoardComponent />} />
+            <Route path="argumentatie" element={<ArgumentationDiagram />} />
+            <Route path="tijdlijn" element={<DecisionTimeline />} />
+            <Route path="chat" element={<VersionChat />} />
+            <Route path="members" element={<div className="p-8">Leden (Coming Soon)</div>} />
+            <Route path="settings" element={<div className="p-8">Instellingen (Coming Soon)</div>} />
           </Route>
 
 
@@ -174,36 +171,22 @@ const ThemeListWrapper = () => {
 
 const WorkspaceWrapper = () => {
   const { dsId } = useParams();
-  const navigate = useNavigate();
-  const { organizations, isLoading } = useOrganization();
+  const { organizations } = useOrganization();
 
-  const found = organizations.flatMap(org =>
-    org.projects.flatMap(proj =>
-      proj.themes.map(theme => ({
-        project: proj,
-        theme
-      }))
-    )
-  ).find(item => item.theme.id === dsId);
+  const found = organizations
+    .flatMap(org => org.projects.flatMap(proj =>
+      proj.themes.map(theme => ({ project: proj, theme }))
+    ))
+    .find(item => item.theme.id === dsId);
 
-  if (isLoading) {
-    return <div className="flex items-center justify-center h-screen">Laden...</div>;
-  }
-
-  if (!found) {
-    return <div className="flex items-center justify-center h-screen">DesignSpace niet gevonden of geen toegang.</div>;
-  }
+  if (!found) return null;
 
   return (
-    <DesignSpaceProvider dsId={found.theme.id}>
-      <ValorWorkspace
-        projectId={found.project.id}
-        projectName={found.project.name}
-        dsId={found.theme.id}
-        themeName={found.theme.name}
-        onBack={() => navigate(-1)}
-      />
-    </DesignSpaceProvider>
+    <ValorWorkspace
+      projectId={found.project.id}
+      dsId={found.theme.id}
+      themeName={found.theme.name}
+    />
   );
 }
 
