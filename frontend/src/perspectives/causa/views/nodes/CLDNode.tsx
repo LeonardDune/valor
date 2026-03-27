@@ -1,6 +1,6 @@
 import { memo, type FunctionComponent, type MouseEvent } from 'react';
 import { Handle, Position, type NodeProps } from 'reactflow';
-import { Wrench, Cloud, Cpu, Target, HelpCircle, MessageSquare, type LucideProps } from 'lucide-react';
+import { Wrench, Cloud, Cpu, Target, HelpCircle, MessageSquare, TriangleAlert, type LucideProps } from 'lucide-react';
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,6 +61,7 @@ const CLDNode: FunctionComponent<NodeProps> = ({ id, data, selected }) => {
     const isReadOnly = data.isReadOnly || false;
     const isInCycle = data.isInCycle || false;
     const epistemicStatus = (data.epistemicStatus || 'Proposed') as EpistemicStatus;
+    const hasGdiFlag = !!data.gdiFlag;
 
     const Icon = iconMap[role] || iconMap.unknown;
     const styles = roleStyles[role] || roleStyles.unknown;
@@ -135,6 +136,11 @@ const CLDNode: FunctionComponent<NodeProps> = ({ id, data, selected }) => {
 
             {/* Footer: rol-icoon + status-badge */}
             <div className="absolute bottom-2 right-2 flex items-center gap-1">
+                {hasGdiFlag && (
+                    <span title="Epistemisch kwetsbaar — geen bewijs" className="text-amber-500">
+                        <TriangleAlert size={12} />
+                    </span>
+                )}
                 <span
                     className={cn('w-2 h-2 rounded-full', statusStyle.dot)}
                     title={statusStyle.label}

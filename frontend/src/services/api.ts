@@ -54,6 +54,7 @@ export interface Claim {
     status?: string;
     evidence_text?: string;
     evidence_url?: string;
+    gdi_flag?: string;
 }
 
 export interface ValidationResult {
@@ -104,6 +105,7 @@ export interface Factor {
     version_id?: string;
     thread_id?: string;
     epistemic_status?: string;
+    gdi_flag?: string;
 }
 
 export interface Organization {

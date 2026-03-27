@@ -79,6 +79,7 @@ class TesseraResponse(BaseModel):
     in_phase: Optional[str] = None
     manifestation_condition: Optional[str] = None
     realised_by: Optional[str] = None
+    gdi_flag: Optional[str] = None
 
 
 class RealiseRequest(BaseModel):
@@ -205,6 +206,14 @@ INSERT DATA {{
 
     await sparql_update(sparql, request.design_space_id)
 
+    gdi_flag_sparql = f"""PREFIX valor: <{VALOR_NS}>
+INSERT DATA {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> valor:gdiFlag valor:TruthfulnessIssue .
+  }}
+}}"""
+    asyncio.create_task(sparql_update(gdi_flag_sparql, request.design_space_id))
+
     asyncio.create_task(record_provenance_activity(
         request.design_space_id,
         "TesseraCreated",
@@ -227,6 +236,7 @@ INSERT DATA {{
         in_alternative=request.in_alternative,
         in_phase=request.in_phase,
         manifestation_condition=request.manifestation_condition,
+        gdi_flag="TruthfulnessIssue",
     )
 
 
@@ -314,7 +324,7 @@ async def get_tessera(
         graph_uri = named_graph_uri(design_space_id)
 
     rows = await sparql_select(
-        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase ?manifestationCondition ?realisedBy WHERE {{
+        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase ?manifestationCondition ?realisedBy ?gdiFlag WHERE {{
           GRAPH <{graph_uri}> {{
             <{tessera_uri}> a <{VALOR_NS}Tessera> ;
               <{VALOR_NS}claimContent> ?content ;
@@ -327,6 +337,7 @@ async def get_tessera(
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inPhase> ?inPhase . }}
             OPTIONAL {{ <{tessera_uri}> <{CAUSA_NS}hasManifestationCondition> ?manifestationCondition . }}
             OPTIONAL {{ <{tessera_uri}> <{CAUSA_NS}realisedBy> ?realisedBy . }}
+            OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}gdiFlag> ?gdiFlag . }}
           }}
         }}""",
         design_space_id,
@@ -344,6 +355,9 @@ async def get_tessera(
     uncertainty_uri_to_label = {v: k for k, v in uncertainty_label_to_uri.items()}
     uncertainty_level = uncertainty_uri_to_label.get(raw_uncertainty) if raw_uncertainty else None
 
+    raw_gdi = row.get("gdiFlag", "")
+    gdi_flag = raw_gdi.rsplit("/", 1)[-1].rsplit("#", 1)[-1] if raw_gdi else None
+
     return TesseraResponse(
         tessera_id=tessera_id,
         tessera_uri=tessera_uri,
@@ -358,6 +372,7 @@ async def get_tessera(
         in_phase=row.get("inPhase"),
         manifestation_condition=row.get("manifestationCondition"),
         realised_by=row.get("realisedBy"),
+        gdi_flag=gdi_flag,
     )
 
 
@@ -607,6 +622,14 @@ INSERT DATA {{
 }}"""
 
     await sparql_update(sparql, request.design_space_id)
+
+    gdi_remove_sparql = f"""PREFIX valor: <{VALOR_NS}>
+DELETE DATA {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> valor:gdiFlag valor:TruthfulnessIssue .
+  }}
+}}"""
+    asyncio.create_task(sparql_update(gdi_remove_sparql, request.design_space_id))
 
     logger.info("Evidence %s toegevoegd aan Tessera %s door %s", evidence_uri, tessera_uri, user_id)
 
