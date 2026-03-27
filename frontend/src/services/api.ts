@@ -591,6 +591,11 @@ export const api = {
         return response.data;
     },
 
+    getProvenance: async (dsId: string): Promise<{ activity_uri: string; operation_type: string; attributed_to: string; started_at: string; generated?: string; used: string[] }[]> => {
+        const response = await apiClient.get(`/designspace/${dsId}/provenance`);
+        return response.data;
+    },
+
     getDesignSpacesByProject: async (projectId: string, themeId?: string): Promise<{ id: string; name: string; status: string; current_phase: string }[]> => {
         const response = await apiClient.get(`/designspace/by-project/${projectId}`, {
             params: themeId ? { theme_id: themeId } : undefined,

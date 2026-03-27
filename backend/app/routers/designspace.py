@@ -1,6 +1,7 @@
 import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -531,6 +532,77 @@ INSERT DATA {{
         has_voting_right=rol["voting_right"],
         added_at=added_at,
     )
+
+
+class DesignSpaceProvenanceActivity(BaseModel):
+    activity_uri: str
+    operation_type: str
+    attributed_to: str
+    started_at: str
+    generated: Optional[str] = None
+    used: list[str] = []
+
+
+@router.get("/{design_space_id}/provenance", response_model=list[DesignSpaceProvenanceActivity])
+async def get_design_space_provenance(
+    design_space_id: str,
+    user: dict = Depends(get_current_user),
+) -> list[DesignSpaceProvenanceActivity]:
+    """Geeft de volledige PROV-O activiteitenketen terug voor een DesignSpace."""
+    user_id = user["id"]
+
+    if not await check_permission(user_id, design_space_id, Role.VIEWER):
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    prov_graph = f"urn:valor:ds:{design_space_id}/provenance"
+    PROV_NS = "https://www.w3.org/ns/prov#"
+
+    rows = await sparql_select(
+        f"""PREFIX prov: <{PROV_NS}>
+SELECT ?activity ?opType ?agent ?startedAt ?generated WHERE {{
+  GRAPH <{prov_graph}> {{
+    ?activity a prov:Activity ;
+      <urn:valor:operationType> ?opType ;
+      prov:wasAttributedTo ?agent ;
+      prov:startedAtTime ?startedAt .
+    OPTIONAL {{ ?activity prov:generated ?generated . }}
+  }}
+}}
+ORDER BY ?startedAt""",
+        f"{design_space_id}/provenance",
+    )
+
+    used_rows = await sparql_select(
+        f"""PREFIX prov: <{PROV_NS}>
+SELECT ?activity ?used WHERE {{
+  GRAPH <{prov_graph}> {{
+    ?activity a prov:Activity ;
+      prov:used ?used .
+  }}
+}}""",
+        f"{design_space_id}/provenance",
+    )
+
+    used_by_activity: dict[str, list[str]] = {}
+    for r in used_rows:
+        used_by_activity.setdefault(r["activity"], []).append(r["used"])
+
+    results = []
+    for row in rows:
+        activity_uri = row["activity"]
+        op_uri = row["opType"]
+        op_label = op_uri.rsplit(":", 1)[-1]
+        agent = row["agent"].rsplit(":", 1)[-1]
+        results.append(DesignSpaceProvenanceActivity(
+            activity_uri=activity_uri,
+            operation_type=op_label,
+            attributed_to=agent,
+            started_at=row["startedAt"],
+            generated=row.get("generated"),
+            used=used_by_activity.get(activity_uri, []),
+        ))
+
+    return results
 
 
 @router.get("/{design_space_id}/participants", response_model=list[ParticipantResponse])
