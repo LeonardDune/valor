@@ -20,6 +20,7 @@ from app.db.sessions import get_session_context, get_moderator_sessions, get_ds_
 from app.db.permissions import check_permission
 from app.models.domain import Role, Feedback, Ranking, DeliberationStage, ConsentVote, ConsentVoteType
 from app.db.fuseki_decisions import create_phase_transition
+from app.db.fuseki_votes import write_consent_vote_to_fuseki
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from app.services.connection_manager import manager
@@ -28,6 +29,32 @@ import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/deliberation", tags=["deliberation"])
+
+
+async def _safe_fuseki_vote_write(
+    ds_id: str,
+    session_id: str,
+    tessera_base_id: str,
+    user_id: str,
+    vote_type: str,
+    motivation: str | None,
+) -> None:
+    try:
+        await write_consent_vote_to_fuseki(
+            ds_id=ds_id,
+            session_id=session_id,
+            tessera_base_id=tessera_base_id,
+            user_id=user_id,
+            vote_type=vote_type,
+            motivation=motivation,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Fuseki dual-write mislukt voor Vote (session=%s, tessera=%s): %s",
+            session_id,
+            tessera_base_id,
+            exc,
+        )
 
 
 async def _write_phase_transition_safe(
@@ -142,7 +169,20 @@ async def post_consent_vote(session_id: str, data: ConsentVoteRequest, user: dic
     success = await submit_consent_vote(vote_obj)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to submit consent vote")
-        
+
+    ds_id = await get_ds_id_for_session(session_id)
+    if ds_id:
+        asyncio.create_task(
+            _safe_fuseki_vote_write(
+                ds_id=ds_id,
+                session_id=session_id,
+                tessera_base_id=data.tessera_base_id,
+                user_id=user_id,
+                vote_type=str(data.vote),
+                motivation=data.motivation,
+            )
+        )
+
     return {"status": "success"}
 
 @router.patch("/session/{session_id}/stage")
