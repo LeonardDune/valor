@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -204,12 +205,12 @@ INSERT DATA {{
 
     await sparql_update(sparql, request.design_space_id)
 
-    await record_provenance_activity(
+    asyncio.create_task(record_provenance_activity(
         request.design_space_id,
         "TesseraCreated",
         user_uri,
         generated=tessera_uri,
-    )
+    ))
 
     logger.info("Tessera aangemaakt: %s in DesignSpace %s door %s", tessera_uri, request.design_space_id, user_id)
 
@@ -409,13 +410,13 @@ WHERE {{
 
     await sparql_update(update, request.design_space_id)
 
-    await record_provenance_activity(
+    asyncio.create_task(record_provenance_activity(
         request.design_space_id,
         "RealisedByLinked",
         f"urn:valor:user:{user_id}",
         used=[tessera_uri],
         extra_props=[(f"{CAUSA_NS}realisedBy", request.transaction_type_uri)],
-    )
+    ))
 
     logger.info(
         "Tessera %s gekoppeld aan TransactionType %s door %s",
@@ -521,7 +522,7 @@ WHERE {{
 
     status_label_to_uri_map = get_status_label_to_uri()
     old_status_uri = status_label_to_uri_map.get(current_status, current_raw)
-    await record_provenance_activity(
+    asyncio.create_task(record_provenance_activity(
         request.design_space_id,
         "StatusChanged",
         f"urn:valor:user:{user_id}",
@@ -530,7 +531,7 @@ WHERE {{
             (f"{VALOR_NS}previousStatus", old_status_uri),
             (f"{VALOR_NS}newStatus", new_status_uri),
         ],
-    )
+    ))
 
     logger.info(
         "Tessera %s status: %s → %s (door %s)",
@@ -746,13 +747,13 @@ WHERE {{
                     contested_triggered = True
                     logger.info("Tessera %s naar Contested door undermines van %s", target_uri, source_uri)
 
-    await record_provenance_activity(
+    asyncio.create_task(record_provenance_activity(
         request.design_space_id,
         "ArgumentAdded",
         f"urn:valor:user:{user_id}",
         used=[source_uri, target_uri],
         extra_props=[(relation_uri, target_uri)],
-    )
+    ))
 
     logger.info(
         "Argumentatierelatie: %s -[%s]-> %s (door %s)",
