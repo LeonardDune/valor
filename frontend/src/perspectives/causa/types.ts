@@ -13,6 +13,7 @@ export interface CausalNode {
     description?: string;
     epistemicStatus?: EpistemicStatus;
     version_id?: string;
+    gdiFlag?: string;
 }
 
 export interface CausalLink {

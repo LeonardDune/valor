@@ -160,6 +160,7 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                         role: cn.role,
                         description: cn.description,
                         epistemicStatus: cn.epistemicStatus,
+                        gdiFlag: cn.gdiFlag,
                         threadCount: (cn.version_id && threadStats[cn.version_id]) || 0,
                         version_id: cn.version_id,
                         onOpenThread: handleOpenThread,
