@@ -54,7 +54,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
     const [layoutMode, setLayoutMode] = useState<'free' | 'system'>('free');
 
     // Derived state
-    const { activeVersion, activeVotingSession } = themeState;
+    const { activeVersion, activeVotingSession, activePhaseId } = themeState;
     // canResolveThread wordt opgehaald via GET /designspace/{id}/can-resolve in ValorWorkspace
     // en controleert de MODERATOR-rol — identiek aan wat isModerator nodig heeft.
     const isModerator = canResolveThread;
@@ -140,7 +140,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
 
     // B. Fetch Data
     // console.log('[CausaShell] Props:', { themeId, versionId, activeVersionId: themeState.activeVersion?.id });
-    const { nodes, links, factors, cycleNodeIds, refresh, loading, viewFilter, setViewFilter } = useCausaData(themeId, versionId || themeState.activeVersion?.id);
+    const { nodes, links, factors, cycleNodeIds, refresh, loading, viewFilter, setViewFilter } = useCausaData(themeId, versionId || themeState.activeVersion?.id, activePhaseId);
 
     // C. Initialize Session
     // Re-create session ONLY when layoutMode changes

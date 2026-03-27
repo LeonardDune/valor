@@ -29,7 +29,7 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 
 // ... imports
 import { useDesignSpace } from '../../context/DesignSpaceContext';
-import { ThemeContextPanel } from '../Theme/ThemeContextPanel';
+import { PhaseSelector } from '../deliberation/PhaseSelector';
 
 export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, dsId, projectName, themeName, onBack }) => {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -43,7 +43,7 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, dsId,
     const [currentUser, setCurrentUser] = useState<any>(null);
 
     // Context Integration
-    const { currentViewedVersion, isReadOnly, setActiveVotingSession } = useDesignSpace();
+    const { currentViewedVersion, isReadOnly, setActiveVotingSession, phaseSnapshots, activePhaseId, setActivePhaseId } = useDesignSpace();
 
     // dsId IS de ds_id — direct gebruiken, geen lookup nodig
     const activeDesignSpaceId = dsId;
@@ -185,9 +185,11 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, dsId,
                 </div>
 
                 <div className="flex items-center gap-2">
-                    {/* Theme Context Panel (Version Switcher) */}
-                    <ThemeContextPanel />
-
+                    <PhaseSelector
+                        snapshots={phaseSnapshots}
+                        activePhaseId={activePhaseId}
+                        onSelect={setActivePhaseId}
+                    />
                     <Button
                         variant="ghost"
                         size="icon"
@@ -222,7 +224,7 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, dsId,
                                 versionId={currentViewedVersion?.id}
                                 isReadOnly={isReadOnly}
                                 designSpaceId={activeDesignSpaceId}
-                                canResolveThread={userCanResolve}
+                                canResolveThread={userCanResolve && !activePhaseId}
                             />
                         </div>
                     </div>

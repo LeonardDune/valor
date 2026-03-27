@@ -16,7 +16,7 @@ interface CausaData {
     setViewFilter: (filter: ClaimViewType | null) => void;
 }
 
-export const useCausaData = (themeId: string, versionId?: string): CausaData => {
+export const useCausaData = (themeId: string, versionId?: string, phase?: string | null): CausaData => {
     const [nodes, setNodes] = useState<CausalNode[]>([]);
     const [links, setLinks] = useState<CausalLink[]>([]);
     const [factors, setFactors] = useState<Factor[]>([]);
@@ -29,7 +29,7 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
     const lastFetchRef = useRef<string | null>(null);
 
     const refresh = useCallback(async (force = false) => {
-        const fetchKey = `${themeId}-${versionId || 'active'}`;
+        const fetchKey = `${themeId}-${versionId || 'active'}-${phase || 'current'}`;
         if (!force && lastFetchRef.current === fetchKey && !loading) return;
 
         try {
@@ -42,13 +42,13 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
 
             if (versionId) {
                 [claimsData, factorsData] = await Promise.all([
-                    api.getThemeVersionClaims(versionId),
-                    api.getThemeVersionFactors(versionId)
+                    api.getThemeVersionClaims(versionId, phase ?? undefined),
+                    api.getThemeVersionFactors(versionId, phase ?? undefined)
                 ]);
             } else {
                 [claimsData, factorsData] = await Promise.all([
-                    api.getThemeClaims(themeId),
-                    api.getThemeFactors(themeId)
+                    api.getThemeVersionClaims(themeId, phase ?? undefined),
+                    api.getThemeFactors(themeId, phase ?? undefined)
                 ]);
             }
 
@@ -71,7 +71,7 @@ export const useCausaData = (themeId: string, versionId?: string): CausaData => 
         } finally {
             setLoading(false);
         }
-    }, [themeId, versionId]);
+    }, [themeId, versionId, phase]);
 
     // Initial Load
     useEffect(() => {
