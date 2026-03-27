@@ -8,8 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.auth import get_current_user
+from app.db import fuseki_knowledge
 from app.db.permissions import check_permission
 from app.models.domain import Role
+from app.services.connection_manager import manager
 from app.services.fuseki import sparql_select, sparql_update, sparql_shacl_validate, named_graph_uri, record_provenance_activity
 from app.services.ontology_cache import (
     get_evidence_label_to_uri,
@@ -213,6 +215,18 @@ INSERT DATA {{
         user_uri,
         generated=tessera_uri,
     ))
+
+    project_id = await fuseki_knowledge.get_project_id_for_designspace(request.design_space_id)
+    if project_id:
+        await manager.broadcast_data(project_id, {
+            "type": "TESSERA_PROPOSED",
+            "payload": {
+                "tessera_uri": tessera_uri,
+                "design_space_id": request.design_space_id,
+                "epistemic_status": "Proposed",
+                "claimed_by": user_id,
+            },
+        })
 
     logger.info("Tessera aangemaakt: %s in DesignSpace %s door %s", tessera_uri, request.design_space_id, user_id)
 
@@ -540,6 +554,18 @@ WHERE {{
             (f"{VALOR_NS}newStatus", new_status_uri),
         ],
     ))
+
+    if request.new_status == "Contested":
+        project_id = await fuseki_knowledge.get_project_id_for_designspace(request.design_space_id)
+        if project_id:
+            await manager.broadcast_data(project_id, {
+                "type": "TESSERA_CONTESTED",
+                "payload": {
+                    "tessera_uri": tessera_uri,
+                    "design_space_id": request.design_space_id,
+                    "previous_status": current_status,
+                },
+            })
 
     logger.info(
         "Tessera %s status: %s → %s (door %s)",
