@@ -29,7 +29,6 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 
 // ... imports
 import { useDesignSpace } from '../../context/DesignSpaceContext';
-import { ThemeContextPanel } from '../Theme/ThemeContextPanel';
 import { PhaseSelector } from '../deliberation/PhaseSelector';
 
 export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, dsId, projectName, themeName, onBack }) => {
@@ -191,9 +190,6 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, dsId,
                         activePhaseId={activePhaseId}
                         onSelect={setActivePhaseId}
                     />
-                    {/* Theme Context Panel (Version Switcher) */}
-                    <ThemeContextPanel />
-
                     <Button
                         variant="ghost"
                         size="icon"
