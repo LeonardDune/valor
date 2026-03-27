@@ -16,16 +16,43 @@ from app.db.deliberation import (
     finalize_deliberation,
     validate_phase_transition
 )
-from app.db.sessions import get_session_context, get_moderator_sessions
+from app.db.sessions import get_session_context, get_moderator_sessions, get_ds_id_for_session
 from app.db.permissions import check_permission
 from app.models.domain import Role, Feedback, Ranking, DeliberationStage, ConsentVote, ConsentVoteType
+from app.db.fuseki_decisions import create_phase_transition
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from app.services.connection_manager import manager
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/deliberation", tags=["deliberation"])
+
+
+async def _write_phase_transition_safe(
+    design_space_id: str,
+    session_id: str,
+    phase: str,
+    votes: list[dict],
+    user_id: str,
+) -> None:
+    """Fire-and-forget wrapper voor Fuseki dual-write. Logt fouten als WARNING."""
+    try:
+        await create_phase_transition(
+            design_space_id=design_space_id,
+            session_id=session_id,
+            phase=phase,
+            votes=votes,
+            user_id=user_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Fuseki dual-write mislukt voor PhaseTransition (session=%s, phase=%s): %s",
+            session_id,
+            phase,
+            exc,
+        )
 
 class FeedbackRequest(BaseModel):
     session_id: str
@@ -150,6 +177,19 @@ async def update_stage(session_id: str, data: StageUpdateRequest, user: dict = D
             }
         })
 
+    # 5. Dual-write naar Fuseki (fire-and-forget)
+    ds_id = await get_ds_id_for_session(session_id)
+    if ds_id:
+        asyncio.create_task(
+            _write_phase_transition_safe(
+                design_space_id=ds_id,
+                session_id=session_id,
+                phase=str(data.stage),
+                votes=[],
+                user_id=user.get("id", ""),
+            )
+        )
+
     return {"stage": data.stage}
 
 @router.get("/moderator/sessions")
@@ -183,9 +223,32 @@ async def post_finalize(session_id: str, user: dict = Depends(get_current_user))
             "type": "SESSION_FINALIZED",
             "payload": {
                 "session_id": session_id,
-                "next_version_id": result["next_version_id"]
+                "next_version_id": result.get("next_version_id")
             }
         })
+
+    # 5. Dual-write naar Fuseki (fire-and-forget)
+    ds_id = await get_ds_id_for_session(session_id)
+    if ds_id:
+        consent_shortlist = await get_consent_shortlist(session_id, user.get("id"))
+        votes_payload = [
+            {
+                "user_id": user.get("id", ""),
+                "tessera_id": item.get("id", ""),
+                "vote_type": item.get("user_vote") or "consent",
+            }
+            for item in consent_shortlist
+            if item.get("user_vote")
+        ]
+        asyncio.create_task(
+            _write_phase_transition_safe(
+                design_space_id=ds_id,
+                session_id=session_id,
+                phase="consent",
+                votes=votes_payload,
+                user_id=user.get("id", ""),
+            )
+        )
 
     return result
 
