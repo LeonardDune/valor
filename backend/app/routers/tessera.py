@@ -200,19 +200,12 @@ INSERT DATA {{
       valor:claimType <{claim_type_uri}> ;
       valor:claimedBy <{user_uri}> ;
       valor:claimedAt "{claimed_at}"^^xsd:dateTime ;
-      valor:inDesignSpace <{graph_uri}> .
+      valor:inDesignSpace <{graph_uri}> ;
+      valor:gdiFlag valor:TruthfulnessIssue .
 {optional_triples}  }}
 }}"""
 
     await sparql_update(sparql, request.design_space_id)
-
-    gdi_flag_sparql = f"""PREFIX valor: <{VALOR_NS}>
-INSERT DATA {{
-  GRAPH <{graph_uri}> {{
-    <{tessera_uri}> valor:gdiFlag valor:TruthfulnessIssue .
-  }}
-}}"""
-    asyncio.create_task(sparql_update(gdi_flag_sparql, request.design_space_id))
 
     asyncio.create_task(record_provenance_activity(
         request.design_space_id,
