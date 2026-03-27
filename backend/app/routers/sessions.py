@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.auth import get_current_user
 from app.db.sessions import create_voting_session, update_voting_session, get_active_session, get_context_ids, get_session_context
+from app.db.deliberation import mark_phase_completed
 from app.db.crud import ensure_user_sync
 from app.db.permissions import check_permission
 from app.models.domain import Role, VotingSession
@@ -99,3 +100,16 @@ async def get_active_session_endpoint(theme_version_id: str, user: dict = Depend
 
     session = await get_active_session(theme_version_id)
     return session
+
+
+class CompletePhaseRequest(BaseModel):
+    phase: str
+
+
+@router.post("/{session_id}/complete-phase")
+async def complete_phase(session_id: str, data: CompletePhaseRequest, user: dict = Depends(get_current_user)):
+    user_id = user.get("id")
+    success = await mark_phase_completed(session_id, user_id, data.phase)
+    if not success:
+        raise HTTPException(status_code=500, detail="Kon fase niet markeren als afgerond")
+    return {"status": "ok"}

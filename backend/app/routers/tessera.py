@@ -8,8 +8,9 @@ from pydantic import BaseModel
 
 from app.auth import get_current_user
 from app.db.permissions import check_permission
-from app.models.domain import Role
+from app.models.domain import Role, CastVoteRequest, VoteResponse
 from app.services.fuseki import sparql_select, sparql_update, sparql_shacl_validate, named_graph_uri, record_provenance_activity
+from app.services.fuseki_decisions import create_or_get_decision_episode, cast_vote, evaluate_quorum
 from app.services.ontology_cache import (
     get_evidence_label_to_uri,
     get_status_label_to_uri,
@@ -17,8 +18,10 @@ from app.services.ontology_cache import (
     get_valid_transitions,
     requires_decision_episode,
     get_argue_label_to_uri,
+    get_argue_uri_to_labels,
     get_shacl_shapes_graph,
     get_uncertainty_label_to_uri,
+    get_participant_role_data,
 )
 from app.ontology import VALOR_NS
 
@@ -227,6 +230,15 @@ INSERT DATA {{
         in_phase=request.in_phase,
         manifestation_condition=request.manifestation_condition,
     )
+
+
+@router.get("/argue-types")
+async def get_argue_types(user: dict = Depends(get_current_user)) -> list[dict]:
+    """Retourneert alle argue-relatietypes uit de ontologie met EN én NL labels."""
+    return [
+        {"uri": uri, "label_en": labels["en"], "label_nl": labels["nl"]}
+        for uri, labels in get_argue_uri_to_labels().items()
+    ]
 
 
 @router.get("/missing-realisation-basis", response_model=list[TesseraResponse])
@@ -854,3 +866,124 @@ SELECT ?activity ?used WHERE {{
         ))
 
     return results
+
+
+# --- Stemmen op een Tessera via DecisionEpisode (US-5.2) ---
+
+_VOTING_VALOR_ROLES = {"Initiator", "Contributor"}
+
+
+@router.post("/{tessera_id}/vote", response_model=VoteResponse, status_code=201)
+async def cast_tessera_vote(
+    tessera_id: str,
+    request: CastVoteRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Brengt een stem (Accept/Reject/Defer) uit op een Tessera via een DecisionEpisode.
+
+    Alleen gebruikers met VALOR-O rol Initiator of Contributor mogen stemmen (HTTP 403 anders).
+    Na elke stem wordt quorum geëvalueerd; bij quorum wijzigt de epistemische status automatisch.
+    """
+    user_id = user["id"]
+    user_uri = f"urn:valor:user:{user_id}"
+
+    # Basis leesrecht op de DesignSpace
+    if not await check_permission(user_id, request.design_space_id, Role.MEMBER):
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    # Controleer stemrecht via VALOR-O rol
+    participant_role_data = get_participant_role_data()
+    voting_role_uris = {
+        data["uri"]
+        for label, data in participant_role_data.items()
+        if label in _VOTING_VALOR_ROLES
+    }
+
+    decisions_graph = f"urn:valor:ds:{request.design_space_id}/decisions"
+    participant_rows = await sparql_select(
+        f"""SELECT ?role WHERE {{
+          GRAPH <{decisions_graph}> {{
+            ?participant <{VALOR_NS}hasUser> <{user_uri}> ;
+                         <{VALOR_NS}hasValorRole> ?role .
+          }}
+        }}""",
+        request.design_space_id,
+    )
+
+    voter_has_right = any(
+        row["role"] in voting_role_uris for row in participant_rows
+    )
+    if not voter_has_right:
+        raise HTTPException(
+            status_code=403,
+            detail="Alleen Initiator of Contributor mag stemmen op een Tessera.",
+        )
+
+    tessera_uri = f"urn:valor:tessera:{tessera_id}"
+
+    # Bepaal de graph waar de Tessera in staat
+    if request.alternative_id:
+        tessera_graph = f"urn:valor:ds:{request.design_space_id}/alternative/{request.alternative_id}"
+    else:
+        tessera_graph = named_graph_uri(request.design_space_id)
+
+    # Controleer dat de Tessera bestaat
+    exist_rows = await sparql_select(
+        f"""SELECT ?t WHERE {{
+          GRAPH <{tessera_graph}> {{
+            <{tessera_uri}> a <{VALOR_NS}Tessera> .
+            BIND(<{tessera_uri}> AS ?t)
+          }}
+        }}""",
+        request.design_space_id,
+    )
+    if not exist_rows:
+        raise HTTPException(status_code=404, detail="Tessera niet gevonden in deze DesignSpace.")
+
+    # DecisionEpisode ophalen of aanmaken
+    episode_uri = await create_or_get_decision_episode(
+        request.design_space_id,
+        tessera_uri,
+        user_uri,
+    )
+
+    # Stem uitbrengen
+    vote_uri = await cast_vote(
+        request.design_space_id,
+        episode_uri,
+        tessera_uri,
+        user_uri,
+        request.vote_type.value,
+    )
+
+    # Provenance vastleggen
+    await record_provenance_activity(
+        request.design_space_id,
+        "VoteCast",
+        user_uri,
+        generated=vote_uri,
+        used=[tessera_uri, episode_uri],
+    )
+
+    # Quorum evalueren
+    new_status = await evaluate_quorum(
+        request.design_space_id,
+        episode_uri,
+        tessera_uri,
+        tessera_graph,
+    )
+
+    logger.info(
+        "Stem uitgebracht: %s op Tessera %s (episode %s) door %s — quorum: %s",
+        request.vote_type.value, tessera_uri, episode_uri, user_id, new_status is not None,
+    )
+
+    return VoteResponse(
+        vote_uri=vote_uri,
+        episode_uri=episode_uri,
+        tessera_id=tessera_id,
+        tessera_uri=tessera_uri,
+        vote_type=request.vote_type.value,
+        quorum_reached=new_status is not None,
+        new_epistemic_status=new_status,
+    )

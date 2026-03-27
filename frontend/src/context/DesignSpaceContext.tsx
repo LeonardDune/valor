@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { api, type ThemeVersion } from '../services/api';
+import { api, type ThemeVersion, type PhaseSnapshot } from '../services/api';
 import { type VotingSession } from '../types/session';
 import { useActiveSession } from '../hooks/queries/useSessions';
 
@@ -14,9 +14,12 @@ interface DesignSpaceContextType {
     setActiveVotingSession: React.Dispatch<React.SetStateAction<VotingSession | null>>;
     switchVersion: (versionId: string) => void;
     refreshVersions: () => Promise<void>;
+    phaseSnapshots: PhaseSnapshot[];
+    activePhaseId: string | null;
+    setActivePhaseId: (id: string | null) => void;
 }
 
-const DesignSpaceContext = createContext<DesignSpaceContextType | undefined>(undefined);
+export const DesignSpaceContext = createContext<DesignSpaceContextType | undefined>(undefined);
 
 interface DesignSpaceProviderProps {
     dsId: string;
@@ -28,19 +31,23 @@ export const DesignSpaceProvider: React.FC<DesignSpaceProviderProps> = ({ dsId, 
     const [currentViewedVersion, setCurrentViewedVersion] = useState<ThemeVersion | null>(null);
     const [versions, setVersions] = useState<ThemeVersion[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [phaseSnapshots, setPhaseSnapshots] = useState<PhaseSnapshot[]>([]);
+    const [activePhaseId, setActivePhaseId] = useState<string | null>(null);
 
     const { data: activeVotingSession } = useActiveSession(activeVersion?.id || null);
 
     const fetchData = useCallback(async () => {
         setIsLoading(true);
         try {
-            const [fetchedActive, fetchedVersions] = await Promise.all([
+            const [fetchedActive, fetchedVersions, fetchedSnapshots] = await Promise.all([
                 api.getThemeActiveVersion(dsId),
-                api.getThemeVersions(dsId)
+                api.getThemeVersions(dsId),
+                api.getPhaseSnapshots(dsId),
             ]);
 
             setActiveVersion(fetchedActive);
             setVersions(fetchedVersions);
+            setPhaseSnapshots(fetchedSnapshots);
 
             if (!currentViewedVersion || !fetchedVersions.find(v => v.id === currentViewedVersion.id)) {
                 setCurrentViewedVersion(fetchedActive);
@@ -71,9 +78,9 @@ export const DesignSpaceProvider: React.FC<DesignSpaceProviderProps> = ({ dsId, 
         }
     };
 
-    const isReadOnly = activeVersion && currentViewedVersion
+    const isReadOnly = (activeVersion && currentViewedVersion
         ? activeVersion.id !== currentViewedVersion.id
-        : false;
+        : false) || activePhaseId !== null;
 
     return (
         <DesignSpaceContext.Provider value={{
@@ -88,7 +95,10 @@ export const DesignSpaceProvider: React.FC<DesignSpaceProviderProps> = ({ dsId, 
                 console.warn("setActiveVotingSession is deprecated. Session state is now managed by React Query.");
             },
             switchVersion,
-            refreshVersions
+            refreshVersions,
+            phaseSnapshots,
+            activePhaseId,
+            setActivePhaseId,
         }}>
             {children}
         </DesignSpaceContext.Provider>

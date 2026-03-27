@@ -72,7 +72,10 @@ async def sparql_proxy_query(query: str, ds_id: str) -> dict[str, Any]:
     zodat de query alleen data van die DesignSpace kan zien (isolatie gegarandeerd).
     UPDATE/INSERT/DELETE queries worden geweigerd.
     """
-    query_type = query.strip().split()[0].lower() if query.strip() else ""
+    # Sla PREFIX/BASE declaraties over om het echte querytype te vinden
+    import re as _re
+    _stripped = _re.sub(r'(PREFIX|BASE)\s+\S*\s*<[^>]*>\s*', '', query, flags=_re.IGNORECASE).strip()
+    query_type = _stripped.split()[0].lower() if _stripped else ""
     if query_type not in _READONLY_QUERY_TYPES:
         raise HTTPException(
             status_code=400,

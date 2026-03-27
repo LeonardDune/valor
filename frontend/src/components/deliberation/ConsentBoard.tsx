@@ -32,7 +32,7 @@ export const ConsentBoard: React.FC<ConsentBoardProps> = ({ sessionId, onClose }
         mutationFn: async ({ claimId, type, motivation }: { claimId: string; type: 'approve' | 'object'; motivation?: string }) => {
             await sessionService.submitConsentVote(sessionId, {
                 session_id: sessionId,
-                claim_version_id: claimId,
+                tessera_base_id: claimId,
                 vote: type,
                 motivation
             });

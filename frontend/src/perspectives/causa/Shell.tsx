@@ -54,10 +54,10 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
     const [layoutMode, setLayoutMode] = useState<'free' | 'system'>('free');
 
     // Derived state
-    const { activeVersion, activeVotingSession } = themeState;
-    // TODO: Verify if activeVersion has role. Use role 'moderator' check if available, or fallback.
-    // Ideally user role should be joined. For now assuming activeVersion carries role context or we check activeVersion.role
-    const isModerator = (activeVersion as any)?.role === 'moderator' || (activeVersion as any)?.role === 'admin';
+    const { activeVersion, activeVotingSession, activePhaseId } = themeState;
+    // canResolveThread wordt opgehaald via GET /designspace/{id}/can-resolve in ValorWorkspace
+    // en controleert de MODERATOR-rol — identiek aan wat isModerator nodig heeft.
+    const isModerator = canResolveThread;
 
     // const [showDeliberation, setShowDeliberation] = useState(false); // Removed
     const [showModeratorDashboard, setShowModeratorDashboard] = useState(false);
@@ -140,7 +140,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
 
     // B. Fetch Data
     // console.log('[CausaShell] Props:', { themeId, versionId, activeVersionId: themeState.activeVersion?.id });
-    const { nodes, links, factors, cycleNodeIds, refresh, loading, viewFilter, setViewFilter } = useCausaData(themeId, versionId || themeState.activeVersion?.id);
+    const { nodes, links, factors, cycleNodeIds, refresh, loading, viewFilter, setViewFilter } = useCausaData(themeId, versionId || themeState.activeVersion?.id, activePhaseId);
 
     // C. Initialize Session
     // Re-create session ONLY when layoutMode changes

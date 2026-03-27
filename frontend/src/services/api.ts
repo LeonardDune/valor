@@ -91,7 +91,7 @@ export type ConsentVoteType = 'approve' | 'object';
 
 export interface ConsentVotePayload {
     session_id: string;
-    claim_version_id: string;
+    tessera_base_id: string;
     vote: ConsentVoteType;
     motivation?: string;
 }
@@ -471,18 +471,26 @@ export const api = {
         return response.data.cycle_node_ids;
     },
 
-    getThemeVersionClaims: async (dsId: string) => {
-        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`);
+    getThemeVersionClaims: async (dsId: string, phase?: string) => {
+        const params = phase ? { phase } : {};
+        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`, { params });
         return response.data;
     },
 
-    getThemeFactors: async (dsId: string) => {
-        const response = await apiClient.get<Factor[]>(`/designspace/${dsId}/factors`);
+    getThemeFactors: async (dsId: string, phase?: string) => {
+        const params = phase ? { phase } : {};
+        const response = await apiClient.get<Factor[]>(`/designspace/${dsId}/factors`, { params });
         return response.data;
     },
 
-    getThemeVersionFactors: async (dsId: string) => {
-        const response = await apiClient.get<Factor[]>(`/designspace/${dsId}/factors`);
+    getThemeVersionFactors: async (dsId: string, phase?: string) => {
+        const params = phase ? { phase } : {};
+        const response = await apiClient.get<Factor[]>(`/designspace/${dsId}/factors`, { params });
+        return response.data;
+    },
+
+    getPhaseSnapshots: async (dsId: string): Promise<PhaseSnapshot[]> => {
+        const response = await apiClient.get<PhaseSnapshot[]>(`/designspace/${dsId}/phase-snapshots`);
         return response.data;
     },
 
@@ -605,6 +613,11 @@ export const api = {
     },
 
     // Threads (Fuseki-backed disc endpoints, Epic 16)
+    getDesignSpaceMembers: async (dsId: string): Promise<{ id: string; name: string; email: string; role: string }[]> => {
+        const response = await apiClient.get(`/designspace/${dsId}/members`);
+        return response.data;
+    },
+
     getCanResolveThread: async (designSpaceId: string): Promise<{ can_resolve: boolean }> => {
         const response = await apiClient.get<{ can_resolve: boolean }>(`/designspace/${designSpaceId}/can-resolve`);
         return response.data;
@@ -649,6 +662,101 @@ export const api = {
         return response.data;
     },
 
+    // DecisionTimeline (US-5.4)
+    getDecisionTimeline: async (dsId: string): Promise<DecisionEpisodeRaw[]> => {
+        const query = `
+PREFIX valor: <https://valor-ecosystem.nl/ontology/>
+PREFIX prov: <https://www.w3.org/ns/prov#>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT ?episode ?type ?phase ?startedAt ?startedBy ?vote ?voteType ?castBy ?onTessera WHERE {
+  ?episode a ?type .
+  FILTER(?type IN (valor:DecisionEpisode, valor:PhaseTransition))
+  OPTIONAL { ?episode valor:forPhase ?phase }
+  OPTIONAL { ?episode prov:startedAtTime ?startedAt }
+  OPTIONAL { ?episode prov:wasStartedBy ?startedBy }
+  OPTIONAL {
+    ?episode valor:hasVote ?vote .
+    ?vote valor:voteType ?voteType ;
+          valor:castBy ?castBy .
+    OPTIONAL { ?vote valor:onTessera ?onTessera }
+  }
+}
+ORDER BY DESC(?startedAt)`.trim();
+        const response = await apiClient.get<DecisionTimelineRaw>(
+            `/designspace/${dsId}/sparql`,
+            { params: { query } }
+        );
+        return parseDecisionTimeline(response.data);
+    },
+
+    // Argue-relatietypes uit de ontologie — US-5.1
+    getArgueTypes: async (): Promise<ArgueType[]> => {
+        const response = await apiClient.get<ArgueType[]>('/tessera/argue-types');
+        return response.data;
+    },
+
+    // Alle Factor-tesserae in een DesignSpace (zonder CausalClaims) — US-5.1
+    getDesignSpaceTesserae: async (dsId: string): Promise<TesseraNode[]> => {
+        const VALOR_NS = 'https://valor-ecosystem.nl/ontology/';
+        const query = `
+PREFIX valor: <${VALOR_NS}>
+SELECT ?node ?content ?status ?type WHERE {
+  ?node a valor:Tessera ;
+        valor:claimContent ?content ;
+        valor:epistemicStatus ?status .
+  OPTIONAL { ?node valor:claimType ?type . }
+  FILTER NOT EXISTS { ?node valor:fromFactor ?any }
+}`.trim();
+        const response = await apiClient.get<{ results: { bindings: Array<{ node: { value: string }; content: { value: string }; status: { value: string }; type?: { value: string } }> } }>(
+            `/designspace/${dsId}/sparql`,
+            { params: { query } }
+        );
+        return response.data.results.bindings.map(b => {
+            const uri = b.node.value;
+            const id = uri.split(':').pop() ?? uri;
+            return {
+                id,
+                uri,
+                claimContent: b.content.value,
+                epistemicStatus: b.status.value.split('/').pop()?.split('#').pop() ?? b.status.value,
+                claimType: b.type ? (b.type.value.split('/').pop() ?? 'AsIs') : 'AsIs',
+            };
+        });
+    },
+
+    // Argumentatiediagram — CAUSA: Factors als nodes, CausalClaims als edges — US-5.1
+    // Structuur conform VALOR-O 00h-causa.trig:
+    //   causa:CausalClaim subclasseert valor:Tessera en heeft valor:fromFactor / valor:toFactor / valor:polarity.
+    //   Elke perspectief-module heeft eigen domein-predicaten; dit patroon geldt voor CAUSA.
+    //   De valor:supports/undermines/qualifies/presupposes predicaten (00j-tessera §E) zijn de
+    //   cross-perspectief epistemische overlay — een apart laag bovenop de domeinstructuur.
+    getArgumentationNetwork: async (dsId: string): Promise<ArgumentationNetwork> => {
+        const VALOR_NS = 'https://valor-ecosystem.nl/ontology/';
+        const query = `
+PREFIX valor: <${VALOR_NS}>
+SELECT ?claim ?claimContent ?claimStatus ?polarity ?source ?sourceContent ?sourceStatus ?target ?targetContent ?targetStatus
+WHERE {
+  ?claim a valor:Tessera ;
+         valor:claimContent ?claimContent ;
+         valor:epistemicStatus ?claimStatus ;
+         valor:fromFactor ?source ;
+         valor:toFactor ?target ;
+         valor:polarity ?polarity .
+  ?source a valor:Tessera ;
+          valor:claimContent ?sourceContent ;
+          valor:epistemicStatus ?sourceStatus .
+  ?target a valor:Tessera ;
+          valor:claimContent ?targetContent ;
+          valor:epistemicStatus ?targetStatus .
+}`.trim();
+        const response = await apiClient.get<CausalNetworkRaw>(
+            `/designspace/${dsId}/sparql`,
+            { params: { query } }
+        );
+        return parseCausalNetwork(response.data);
+    },
+
     advanceSession: async (sessionId: string) => {
         const response = await apiClient.post(`/sessions/${sessionId}/advance`);
         return response.data;
@@ -691,6 +799,188 @@ export interface DiscContribution {
     contributed_by_name: string;
     contributed_at: string;
     evidence_id: string | null;
+}
+
+// Argumentatiediagram types (US-5.1)
+export type ArgueRelationType = string;
+
+export interface ArgueType {
+    uri: string;
+    label_en: string;
+    label_nl: string;
+}
+
+export interface TesseraNode {
+    id: string;
+    uri: string;
+    claimContent: string;
+    epistemicStatus: string;
+    claimType: string;
+}
+
+export interface ArgumentEdge {
+    sourceId: string;
+    targetId: string;
+    relationType: ArgueRelationType;
+    relationUri: string;
+    relationLabel: string;
+}
+
+export interface ArgumentationNetwork {
+    nodes: TesseraNode[];
+    edges: ArgumentEdge[];
+}
+
+interface SparqlBinding {
+    type: string;
+    value: string;
+    'xml:lang'?: string;
+}
+
+// CAUSA-specifiek: CausalClaim-Tesserae als edges tussen Factor-Tesserae
+interface CausalNetworkRaw {
+    results: {
+        bindings: Array<{
+            claim: SparqlBinding;
+            claimContent: SparqlBinding;
+            claimStatus: SparqlBinding;
+            polarity: SparqlBinding;
+            source: SparqlBinding;
+            sourceContent: SparqlBinding;
+            sourceStatus: SparqlBinding;
+            target: SparqlBinding;
+            targetContent: SparqlBinding;
+            targetStatus: SparqlBinding;
+        }>;
+    };
+}
+
+function parseCausalNetwork(raw: CausalNetworkRaw): ArgumentationNetwork {
+    const nodesMap = new Map<string, TesseraNode>();
+    const edges: ArgumentEdge[] = [];
+
+    for (const b of raw.results.bindings) {
+        const sourceUri = b.source.value;
+        const sourceId = sourceUri.split(':').pop() ?? sourceUri;
+        const targetUri = b.target.value;
+        const targetId = targetUri.split(':').pop() ?? targetUri;
+
+        if (!nodesMap.has(sourceId)) {
+            nodesMap.set(sourceId, {
+                id: sourceId,
+                uri: sourceUri,
+                claimContent: b.sourceContent.value,
+                epistemicStatus: b.sourceStatus.value.split('/').pop()?.split('#').pop() ?? b.sourceStatus.value,
+                claimType: 'AsIs',
+            });
+        }
+        if (!nodesMap.has(targetId)) {
+            nodesMap.set(targetId, {
+                id: targetId,
+                uri: targetUri,
+                claimContent: b.targetContent.value,
+                epistemicStatus: b.targetStatus.value.split('/').pop()?.split('#').pop() ?? b.targetStatus.value,
+                claimType: 'AsIs',
+            });
+        }
+
+        const polarity = b.polarity.value;
+        const label = b.claimContent.value.length > 45
+            ? b.claimContent.value.slice(0, 45) + '…'
+            : b.claimContent.value;
+
+        edges.push({
+            sourceId,
+            targetId,
+            relationType: polarity,
+            relationUri: polarity,
+            relationLabel: label,
+        });
+    }
+
+    return { nodes: Array.from(nodesMap.values()), edges };
+}
+
+// PhaseSnapshot types
+export interface PhaseSnapshot {
+    session_id: string;
+    graph_uri: string;
+    created_at: string;
+    accepted_count: number;
+    rejected_count: number;
+}
+
+// DecisionTimeline types (US-5.4)
+export interface DecisionVote {
+    voteUri: string;
+    voteType: string;
+    castBy: string;
+    onTessera: string | null;
+}
+
+export interface DecisionEpisodeRaw {
+    episodeUri: string;
+    type: 'DecisionEpisode' | 'PhaseTransition';
+    phase: string | null;
+    startedAt: string | null;
+    startedBy: string | null;
+    votes: DecisionVote[];
+}
+
+interface DecisionTimelineSparqlBinding {
+    episode: SparqlBinding;
+    type: SparqlBinding;
+    phase?: SparqlBinding;
+    startedAt?: SparqlBinding;
+    startedBy?: SparqlBinding;
+    vote?: SparqlBinding;
+    voteType?: SparqlBinding;
+    castBy?: SparqlBinding;
+    onTessera?: SparqlBinding;
+}
+
+interface DecisionTimelineRaw {
+    results: {
+        bindings: DecisionTimelineSparqlBinding[];
+    };
+}
+
+function parseDecisionTimeline(raw: DecisionTimelineRaw): DecisionEpisodeRaw[] {
+    const episodesMap = new Map<string, DecisionEpisodeRaw>();
+
+    for (const b of raw.results.bindings) {
+        const episodeUri = b.episode.value;
+        const typeFragment = b.type.value.split('/').pop()?.split('#').pop() ?? 'DecisionEpisode';
+        const episodeType: 'DecisionEpisode' | 'PhaseTransition' =
+            typeFragment === 'PhaseTransition' ? 'PhaseTransition' : 'DecisionEpisode';
+
+        if (!episodesMap.has(episodeUri)) {
+            episodesMap.set(episodeUri, {
+                episodeUri,
+                type: episodeType,
+                phase: b.phase ? (b.phase.value.split('/').pop() ?? b.phase.value) : null,
+                startedAt: b.startedAt?.value ?? null,
+                startedBy: b.startedBy?.value ?? null,
+                votes: [],
+            });
+        }
+
+        const episode = episodesMap.get(episodeUri)!;
+        if (b.vote && b.voteType && b.castBy) {
+            const voteUri = b.vote.value;
+            const alreadyAdded = episode.votes.some(v => v.voteUri === voteUri);
+            if (!alreadyAdded) {
+                episode.votes.push({
+                    voteUri,
+                    voteType: b.voteType.value.split('/').pop() ?? b.voteType.value,
+                    castBy: b.castBy.value,
+                    onTessera: b.onTessera?.value ?? null,
+                });
+            }
+        }
+    }
+
+    return Array.from(episodesMap.values());
 }
 
 export type LifecycleStatus = 'draft' | 'proposed' | 'accepted' | 'rejected' | 'deprecated';

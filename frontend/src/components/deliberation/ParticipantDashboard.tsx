@@ -69,6 +69,7 @@ export const ParticipantDashboard: React.FC<ParticipantDashboardProps> = ({
                 return (
                     <VotingRanking
                         sessionId={sessionId}
+                        dsId={versionId}
                         onComplete={() => handlePhaseComplete('ranking')}
                     />
                 );
@@ -76,6 +77,7 @@ export const ParticipantDashboard: React.FC<ParticipantDashboardProps> = ({
                 return (
                     <VotingConsent
                         sessionId={sessionId}
+                        dsId={versionId}
                         onComplete={() => handlePhaseComplete('consent')}
                     />
                 );

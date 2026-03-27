@@ -12,10 +12,11 @@ interface RefinementDetailProps {
     claim: Claim | null;
     allClaims: Claim[];
     factors?: Factor[];
+    designSpaceId?: string;
 }
 
-export const RefinementDetail: React.FC<RefinementDetailProps> = ({ claim, allClaims, factors = [] }) => {
-    const [activeThread, setActiveThread] = React.useState<{ targetId: string; label: string; designSpaceId?: string } | null>(null);
+export const RefinementDetail: React.FC<RefinementDetailProps> = ({ claim, allClaims, factors = [], designSpaceId }) => {
+    const [activeThread, setActiveThread] = React.useState<{ targetId: string; label: string } | null>(null);
 
     const factorMap = React.useMemo(() => {
         const map = new Map<string, string>();
@@ -36,6 +37,7 @@ export const RefinementDetail: React.FC<RefinementDetailProps> = ({ claim, allCl
     }
 
     const openThread = (targetId: string, label: string) => {
+        if (!designSpaceId) return;
         setActiveThread({ targetId, label });
     };
 
@@ -157,10 +159,10 @@ export const RefinementDetail: React.FC<RefinementDetailProps> = ({ claim, allCl
                 </Tabs>
             </div>
 
-            {activeThread && activeThread.designSpaceId && (
+            {activeThread && designSpaceId && (
                 <FloatingThreadPanel
                     tesseraId={activeThread.targetId}
-                    designSpaceId={activeThread.designSpaceId}
+                    designSpaceId={designSpaceId}
                     targetLabel={activeThread.label}
                     onClose={() => setActiveThread(null)}
                     readOnly={true}
