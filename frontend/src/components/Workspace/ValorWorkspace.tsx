@@ -224,7 +224,7 @@ export const ValorWorkspace: React.FC<ValorWorkspaceProps> = ({ projectId, dsId,
                                 versionId={currentViewedVersion?.id}
                                 isReadOnly={isReadOnly}
                                 designSpaceId={activeDesignSpaceId}
-                                canResolveThread={userCanResolve}
+                                canResolveThread={userCanResolve && !activePhaseId}
                             />
                         </div>
                     </div>
