@@ -201,7 +201,7 @@ const WorkspaceWrapper = () => {
         projectName={found.project.name}
         dsId={found.theme.id}
         themeName={found.theme.name}
-        onBack={() => navigate('/')}
+        onBack={() => navigate(-1)}
       />
     </DesignSpaceProvider>
   );
