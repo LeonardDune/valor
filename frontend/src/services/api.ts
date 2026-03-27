@@ -696,6 +696,34 @@ ORDER BY DESC(?startedAt)`.trim();
         return response.data;
     },
 
+    // Alle tesserae in een DesignSpace — US-5.1
+    getDesignSpaceTesserae: async (dsId: string): Promise<TesseraNode[]> => {
+        const VALOR_NS = 'https://valor-ecosystem.nl/ontology/';
+        const query = `
+PREFIX valor: <${VALOR_NS}>
+SELECT ?node ?content ?status ?type WHERE {
+  ?node a valor:Tessera ;
+        valor:claimContent ?content ;
+        valor:epistemicStatus ?status .
+  OPTIONAL { ?node valor:claimType ?type . }
+}`.trim();
+        const response = await apiClient.get<{ results: { bindings: Array<{ node: { value: string }; content: { value: string }; status: { value: string }; type?: { value: string } }> } }>(
+            `/designspace/${dsId}/sparql`,
+            { params: { query } }
+        );
+        return response.data.results.bindings.map(b => {
+            const uri = b.node.value;
+            const id = uri.split(':').pop() ?? uri;
+            return {
+                id,
+                uri,
+                claimContent: b.content.value,
+                epistemicStatus: b.status.value.split('/').pop()?.split('#').pop() ?? b.status.value,
+                claimType: b.type ? (b.type.value.split('/').pop() ?? 'AsIs') : 'AsIs',
+            };
+        });
+    },
+
     // Argumentatiediagram (IBIS-stijl) — US-5.1
     getArgumentationNetwork: async (dsId: string, argueTypes: ArgueType[]): Promise<ArgumentationNetwork> => {
         const VALOR_NS = 'https://valor-ecosystem.nl/ontology/';

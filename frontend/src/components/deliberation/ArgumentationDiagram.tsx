@@ -62,16 +62,35 @@ export const ArgumentationDiagram: React.FC<ArgumentationDiagramProps> = ({ dsId
     const { dsId: dsParam } = useParams<{ dsId: string }>();
     const dsId = dsProp ?? dsParam ?? '';
 
-    const { data: argueTypes = [] } = useQuery({
+    const { data: argueTypes = [], isSuccess: argueTypesLoaded } = useQuery({
         queryKey: ['argue-types'],
         queryFn: () => api.getArgueTypes(),
     });
 
-    const { data, isLoading, isError } = useQuery({
+    const { data: allTesserae = [], isLoading: tesseraeLoading } = useQuery({
+        queryKey: ['design-space-tesserae', dsId],
+        queryFn: () => api.getDesignSpaceTesserae(dsId),
+        enabled: !!dsId,
+    });
+
+    const { data: networkData, isLoading: networkLoading, isError } = useQuery({
         queryKey: ['argumentation-network', dsId, argueTypes.length],
         queryFn: () => api.getArgumentationNetwork(dsId, argueTypes),
-        enabled: !!dsId && argueTypes.length > 0,
+        enabled: !!dsId && argueTypesLoaded && argueTypes.length > 0,
     });
+
+    const isLoading = tesseraeLoading || networkLoading;
+
+    // Combineer: alle tesserae als nodes, argue-relaties als edges
+    const data = React.useMemo(() => {
+        if (allTesserae.length === 0) return null;
+        const connectedIds = new Set(networkData?.nodes.map(n => n.id) ?? []);
+        const extraNodes = allTesserae.filter(t => !connectedIds.has(t.id));
+        return {
+            nodes: [...(networkData?.nodes ?? []), ...extraNodes],
+            edges: networkData?.edges ?? [],
+        };
+    }, [allTesserae, networkData]);
 
     const [selectedTessera, setSelectedTessera] = useState<TesseraNode | null>(null);
     const [sheetOpen, setSheetOpen] = useState(false);
@@ -166,7 +185,7 @@ export const ArgumentationDiagram: React.FC<ArgumentationDiagramProps> = ({ dsId
     if (!data || data.nodes.length === 0) {
         return (
             <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-                Nog geen tesserae of argumentatierelaties gevonden in deze DesignSpace.
+                Nog geen tesserae gevonden in deze DesignSpace.
             </div>
         );
     }
