@@ -19,12 +19,13 @@ import { Badge } from '@/components/ui/badge';
 import { api, type TesseraNode } from '@/services/api';
 import { TesseraDetailPanel } from '@/components/deliberation/TesseraDetailPanel';
 
-// Kleurcodering per relatietype (op basis van EN label / URI-fragment)
+// Kleurcodering per polarity (CAUSA: valor:polarity op CausalClaim-Tessera)
+// Conform VALOR-O 00h-causa.trig: ReinforcingPolarity (+) = supports, BalancingPolarity (-) = undermines
 const RELATION_COLORS: Record<string, string> = {
-    supports: '#22c55e',    // groen
-    undermines: '#ef4444',  // rood
-    qualifies: '#f59e0b',   // amber
-    presupposes: '#8b5cf6', // paars
+    supports: '#22c55e',    // groen  — versterkende causaliteit (+)
+    undermines: '#ef4444',  // rood   — dempende causaliteit (-)
+    qualifies: '#f59e0b',   // amber  — nuancerende argue-relatie (IBIS overlay)
+    presupposes: '#8b5cf6', // paars  — veronderstelde argue-relatie (IBIS overlay)
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -62,24 +63,26 @@ export const ArgumentationDiagram: React.FC<ArgumentationDiagramProps> = ({ dsId
     const { dsId: dsParam } = useParams<{ dsId: string }>();
     const dsId = dsProp ?? dsParam ?? '';
 
-    const { data: argueTypes = [], isSuccess: argueTypesLoaded } = useQuery({
-        queryKey: ['argue-types'],
-        queryFn: () => api.getArgueTypes(),
-    });
-
+    // Factor-tesserae als fallback-nodes (inclusief factors zonder claims)
     const { data: allTesserae = [], isLoading: tesseraeLoading } = useQuery({
         queryKey: ['design-space-tesserae', dsId],
         queryFn: () => api.getDesignSpaceTesserae(dsId),
         enabled: !!dsId,
     });
 
+    // CausalClaim-tesserae als edges tussen Factor-nodes (CAUSA-structuur)
     const { data: networkData, isLoading: networkLoading, isError } = useQuery({
-        queryKey: ['argumentation-network', dsId, argueTypes.length],
-        queryFn: () => api.getArgumentationNetwork(dsId, argueTypes),
-        enabled: !!dsId && argueTypesLoaded && argueTypes.length > 0,
+        queryKey: ['argumentation-network', dsId],
+        queryFn: () => api.getArgumentationNetwork(dsId),
+        enabled: !!dsId,
     });
 
     const isLoading = tesseraeLoading || networkLoading;
+
+    const POLARITY_LEGEND = [
+        { key: 'supports', label: 'Versterkt (+)', color: RELATION_COLORS.supports },
+        { key: 'undermines', label: 'Dempt (-)', color: RELATION_COLORS.undermines },
+    ];
 
     // Combineer: alle tesserae als nodes, argue-relaties als edges
     const data = React.useMemo(() => {
@@ -194,26 +197,22 @@ export const ArgumentationDiagram: React.FC<ArgumentationDiagramProps> = ({ dsId
         <div className="flex flex-col h-full gap-0">
             {/* Legenda */}
             <div className="flex items-center gap-4 px-4 py-2 border-b bg-background flex-wrap">
-                <span className="text-xs font-medium text-muted-foreground">Relatietype:</span>
-                {argueTypes.map((t) => {
-                    const typeKey = t.uri.split('/').pop() ?? t.uri;
-                    const color = RELATION_COLORS[typeKey] ?? '#94a3b8';
-                    return (
-                        <div key={t.uri} className="flex items-center gap-1.5">
-                            <span
-                                className="inline-block w-3 rounded-full"
-                                style={{ backgroundColor: color, height: 3 }}
-                            />
-                            <Badge
-                                variant="outline"
-                                className="text-xs px-1.5 py-0"
-                                style={{ borderColor: color, color }}
-                            >
-                                {t.label_nl}
-                            </Badge>
-                        </div>
-                    );
-                })}
+                <span className="text-xs font-medium text-muted-foreground">Polariteit:</span>
+                {POLARITY_LEGEND.map(({ key, label, color }) => (
+                    <div key={key} className="flex items-center gap-1.5">
+                        <span
+                            className="inline-block w-3 rounded-full"
+                            style={{ backgroundColor: color, height: 3 }}
+                        />
+                        <Badge
+                            variant="outline"
+                            className="text-xs px-1.5 py-0"
+                            style={{ borderColor: color, color }}
+                        >
+                            {label}
+                        </Badge>
+                    </div>
+                ))}
             </div>
 
             {/* React Flow canvas */}

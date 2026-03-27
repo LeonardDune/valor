@@ -696,7 +696,7 @@ ORDER BY DESC(?startedAt)`.trim();
         return response.data;
     },
 
-    // Alle tesserae in een DesignSpace — US-5.1
+    // Alle Factor-tesserae in een DesignSpace (zonder CausalClaims) — US-5.1
     getDesignSpaceTesserae: async (dsId: string): Promise<TesseraNode[]> => {
         const VALOR_NS = 'https://valor-ecosystem.nl/ontology/';
         const query = `
@@ -706,6 +706,7 @@ SELECT ?node ?content ?status ?type WHERE {
         valor:claimContent ?content ;
         valor:epistemicStatus ?status .
   OPTIONAL { ?node valor:claimType ?type . }
+  FILTER NOT EXISTS { ?node valor:fromFactor ?any }
 }`.trim();
         const response = await apiClient.get<{ results: { bindings: Array<{ node: { value: string }; content: { value: string }; status: { value: string }; type?: { value: string } }> } }>(
             `/designspace/${dsId}/sparql`,
@@ -724,32 +725,36 @@ SELECT ?node ?content ?status ?type WHERE {
         });
     },
 
-    // Argumentatiediagram (IBIS-stijl) — US-5.1
-    getArgumentationNetwork: async (dsId: string, argueTypes: ArgueType[]): Promise<ArgumentationNetwork> => {
+    // Argumentatiediagram — CAUSA: Factors als nodes, CausalClaims als edges — US-5.1
+    // Structuur conform VALOR-O 00h-causa.trig:
+    //   causa:CausalClaim subclasseert valor:Tessera en heeft valor:fromFactor / valor:toFactor / valor:polarity.
+    //   Elke perspectief-module heeft eigen domein-predicaten; dit patroon geldt voor CAUSA.
+    //   De valor:supports/undermines/qualifies/presupposes predicaten (00j-tessera §E) zijn de
+    //   cross-perspectief epistemische overlay — een apart laag bovenop de domeinstructuur.
+    getArgumentationNetwork: async (dsId: string): Promise<ArgumentationNetwork> => {
         const VALOR_NS = 'https://valor-ecosystem.nl/ontology/';
-        const uriValues = argueTypes.map(t => `<${t.uri}>`).join('\n    ');
         const query = `
 PREFIX valor: <${VALOR_NS}>
-SELECT ?source ?sourceContent ?sourceStatus ?sourceType ?rel ?target ?targetContent ?targetStatus ?targetType
+SELECT ?claim ?claimContent ?claimStatus ?polarity ?source ?sourceContent ?sourceStatus ?target ?targetContent ?targetStatus
 WHERE {
+  ?claim a valor:Tessera ;
+         valor:claimContent ?claimContent ;
+         valor:epistemicStatus ?claimStatus ;
+         valor:fromFactor ?source ;
+         valor:toFactor ?target ;
+         valor:polarity ?polarity .
   ?source a valor:Tessera ;
           valor:claimContent ?sourceContent ;
           valor:epistemicStatus ?sourceStatus .
-  OPTIONAL { ?source valor:claimType ?sourceType . }
-  ?source ?rel ?target .
   ?target a valor:Tessera ;
           valor:claimContent ?targetContent ;
           valor:epistemicStatus ?targetStatus .
-  OPTIONAL { ?target valor:claimType ?targetType . }
-  VALUES ?rel {
-    ${uriValues}
-  }
 }`.trim();
-        const response = await apiClient.get<ArgumentationNetworkRaw>(
+        const response = await apiClient.get<CausalNetworkRaw>(
             `/designspace/${dsId}/sparql`,
             { params: { query } }
         );
-        return parseArgumentationNetwork(response.data, argueTypes);
+        return parseCausalNetwork(response.data);
     },
 
     advanceSession: async (sessionId: string) => {
@@ -832,24 +837,25 @@ interface SparqlBinding {
     'xml:lang'?: string;
 }
 
-interface ArgumentationNetworkRaw {
+// CAUSA-specifiek: CausalClaim-Tesserae als edges tussen Factor-Tesserae
+interface CausalNetworkRaw {
     results: {
         bindings: Array<{
+            claim: SparqlBinding;
+            claimContent: SparqlBinding;
+            claimStatus: SparqlBinding;
+            polarity: SparqlBinding;
             source: SparqlBinding;
             sourceContent: SparqlBinding;
             sourceStatus: SparqlBinding;
-            sourceType?: SparqlBinding;
-            rel: SparqlBinding;
             target: SparqlBinding;
             targetContent: SparqlBinding;
             targetStatus: SparqlBinding;
-            targetType?: SparqlBinding;
         }>;
     };
 }
 
-function parseArgumentationNetwork(raw: ArgumentationNetworkRaw, argueTypes: ArgueType[]): ArgumentationNetwork {
-    const uriToLabel = new Map(argueTypes.map(t => [t.uri, t.label_nl]));
+function parseCausalNetwork(raw: CausalNetworkRaw): ArgumentationNetwork {
     const nodesMap = new Map<string, TesseraNode>();
     const edges: ArgumentEdge[] = [];
 
@@ -865,7 +871,7 @@ function parseArgumentationNetwork(raw: ArgumentationNetworkRaw, argueTypes: Arg
                 uri: sourceUri,
                 claimContent: b.sourceContent.value,
                 epistemicStatus: b.sourceStatus.value.split('/').pop()?.split('#').pop() ?? b.sourceStatus.value,
-                claimType: b.sourceType ? (b.sourceType.value.split('/').pop() ?? 'AsIs') : 'AsIs',
+                claimType: 'AsIs',
             });
         }
         if (!nodesMap.has(targetId)) {
@@ -874,16 +880,21 @@ function parseArgumentationNetwork(raw: ArgumentationNetworkRaw, argueTypes: Arg
                 uri: targetUri,
                 claimContent: b.targetContent.value,
                 epistemicStatus: b.targetStatus.value.split('/').pop()?.split('#').pop() ?? b.targetStatus.value,
-                claimType: b.targetType ? (b.targetType.value.split('/').pop() ?? 'AsIs') : 'AsIs',
+                claimType: 'AsIs',
             });
         }
+
+        const polarity = b.polarity.value;
+        const label = b.claimContent.value.length > 45
+            ? b.claimContent.value.slice(0, 45) + '…'
+            : b.claimContent.value;
 
         edges.push({
             sourceId,
             targetId,
-            relationType: b.rel.value.split('/').pop() ?? b.rel.value,
-            relationUri: b.rel.value,
-            relationLabel: uriToLabel.get(b.rel.value) ?? b.rel.value.split('/').pop() ?? b.rel.value,
+            relationType: polarity,
+            relationUri: polarity,
+            relationLabel: label,
         });
     }
 
