@@ -453,6 +453,65 @@ WHERE {{
     )
 
 
+async def _detect_conflicts_async(
+    tessera_uri: str,
+    design_space_id: str,
+    accepted_status_uri: str,
+):
+    """
+    Fire-and-forget conflictdetectie na statusovergang naar Accepted.
+    Detecteert valor:undermines conflicten tussen Accepted Tesserae en schrijft
+    een valor:ConflictSignal naar de provenance graph.
+
+    # TODO: semantische conflictdetectie op basis van claimContent (NLP/embeddings) — zie #477
+    """
+    rows = await sparql_select(
+        f"""SELECT DISTINCT ?other WHERE {{
+          {{
+            <{tessera_uri}> <{VALOR_NS}undermines> ?other .
+            ?other <{VALOR_NS}epistemicStatus> <{accepted_status_uri}> .
+          }} UNION {{
+            ?other <{VALOR_NS}undermines> <{tessera_uri}> .
+            ?other <{VALOR_NS}epistemicStatus> <{accepted_status_uri}> .
+          }}
+        }}""",
+        design_space_id,
+    )
+
+    if not rows:
+        return
+
+    prov_graph = f"urn:valor:ds:{design_space_id}/provenance"
+    detected_at = datetime.now(timezone.utc).isoformat()
+
+    for row in rows:
+        other_uri = row["other"]
+        conflict_uri = f"urn:valor:conflict:{uuid.uuid4()}"
+        signal_sparql = f"""PREFIX valor: <{VALOR_NS}>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+INSERT DATA {{
+  GRAPH <{prov_graph}> {{
+    <{conflict_uri}> a valor:ConflictSignal ;
+      valor:conflictingTessera <{tessera_uri}> ;
+      valor:conflictingTessera <{other_uri}> ;
+      valor:detectedAt "{detected_at}"^^xsd:dateTime .
+  }}
+}}"""
+        await sparql_update(signal_sparql, design_space_id)
+        logger.warning("Conflict gesignaleerd: %s ↔ %s in DesignSpace %s", tessera_uri, other_uri, design_space_id)
+
+    project_id = await fuseki_knowledge.get_project_id_for_designspace(design_space_id)
+    if project_id:
+        await manager.broadcast_data(project_id, {
+            "type": "TESSERA_CONFLICT_DETECTED",
+            "payload": {
+                "tessera_uri": tessera_uri,
+                "design_space_id": design_space_id,
+                "conflicting_tesserae": [row["other"] for row in rows],
+            },
+        })
+
+
 @router.patch("/{tessera_id}/status", response_model=PatchTesseraStatusResponse)
 async def patch_tessera_status(
     tessera_id: str,
@@ -554,6 +613,13 @@ WHERE {{
             (f"{VALOR_NS}newStatus", new_status_uri),
         ],
     ))
+
+    if request.new_status == "Accepted":
+        asyncio.create_task(_detect_conflicts_async(
+            tessera_uri,
+            request.design_space_id,
+            new_status_uri,
+        ))
 
     if request.new_status == "Contested":
         project_id = await fuseki_knowledge.get_project_id_for_designspace(request.design_space_id)

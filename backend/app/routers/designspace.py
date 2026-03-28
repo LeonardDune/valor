@@ -26,7 +26,7 @@ from app.ontology import VALOR_NS
 from app.db.fuseki_knowledge import get_condition_coverage, create_claim_coverage_assessment, get_asis_condition_coverage
 from app.services.fuseki import (
     initialize_design_space_graphs, initialize_alternative_graph,
-    sparql_proxy_query, sparql_select, sparql_update,
+    sparql_proxy_query, sparql_select, sparql_select_global, sparql_update,
 )
 
 logger = logging.getLogger(__name__)
@@ -603,6 +603,40 @@ SELECT ?activity ?used WHERE {{
         ))
 
     return results
+
+
+@router.get("/{design_space_id}/conflicts")
+async def get_conflicts(
+    design_space_id: str,
+    user: dict = Depends(get_current_user),
+) -> list[dict]:
+    """Geeft alle actieve valor:ConflictSignal resources terug voor een DesignSpace."""
+    if not await check_permission(user["id"], design_space_id, Role.VIEWER):
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    prov_graph = f"urn:valor:ds:{design_space_id}/provenance"
+    rows = await sparql_select_global(
+        f"""SELECT ?signal ?tessera1 ?tessera2 ?detectedAt WHERE {{
+  GRAPH <{prov_graph}> {{
+    ?signal a <{VALOR_NS}ConflictSignal> ;
+      <{VALOR_NS}conflictingTessera> ?tessera1 ;
+      <{VALOR_NS}conflictingTessera> ?tessera2 ;
+      <{VALOR_NS}detectedAt> ?detectedAt .
+    FILTER(str(?tessera1) < str(?tessera2))
+  }}
+}}
+ORDER BY DESC(?detectedAt)""",
+    )
+
+    return [
+        {
+            "conflict_uri": row["signal"],
+            "tessera_a": row["tessera1"],
+            "tessera_b": row["tessera2"],
+            "detected_at": row["detectedAt"],
+        }
+        for row in rows
+    ]
 
 
 @router.get("/{design_space_id}/participants", response_model=list[ParticipantResponse])
