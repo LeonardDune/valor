@@ -92,13 +92,14 @@ async def _find_tessera_uri_by_base_id(ds_id: str, base_id: str) -> Optional[str
 async def _sparql_get_factors(ds_id: str, graph_uri: Optional[str] = None) -> list[dict]:
     target = graph_uri or _ds_asis_graph(ds_id)
     rows = await sparql_select_global(f"""
-SELECT ?tessera ?baseId ?name ?role ?description ?outcome WHERE {{
+SELECT ?tessera ?baseId ?name ?role ?description ?gdiFlag ?outcome WHERE {{
   GRAPH <{target}> {{
     ?tessera a <{VALOR_NS}Tessera> ;
              <{VALOR_NS}baseId> ?baseId ;
              <{VALOR_NS}claimContent> ?name ;
              <{VALOR_NS}factorRole> ?role .
     OPTIONAL {{ ?tessera <{VALOR_NS}description> ?description }}
+    OPTIONAL {{ ?tessera <{VALOR_NS}gdiFlag> ?gdiFlag }}
     OPTIONAL {{ ?tessera <{VALOR_NS}phaseOutcome> ?outcome }}
     FILTER NOT EXISTS {{ ?tessera <{VALOR_NS}fromFactor> ?x }}
   }}
@@ -113,6 +114,7 @@ SELECT ?tessera ?baseId ?name ?role ?description ?outcome WHERE {{
             "type": row.get("role"),
             "theme_id": None,
             "thread_id": None,
+            "gdi_flag": row["gdiFlag"].rsplit("/", 1)[-1].rsplit("#", 1)[-1] if row.get("gdiFlag") else None,
             "phase_outcome": row["outcome"].split("#")[-1] if row.get("outcome") else None,
         }
         for row in rows
@@ -238,7 +240,7 @@ async def _sparql_get_claims(ds_id: str, claim_type: Optional[str] = None, graph
     rows = await sparql_select_global(f"""
 SELECT ?tessera ?baseId ?statement ?polarity ?confidence
        ?fromFactor ?sourceBaseId ?toFactor ?targetBaseId
-       ?evidenceText ?claimedAt ?manifestationCondition ?outcome WHERE {{
+       ?evidenceText ?claimedAt ?manifestationCondition ?gdiFlag ?outcome WHERE {{
   GRAPH <{target}> {{
     ?tessera a <{VALOR_NS}Tessera> ;
              <{VALOR_NS}baseId> ?baseId ;
@@ -253,6 +255,7 @@ SELECT ?tessera ?baseId ?statement ?polarity ?confidence
     OPTIONAL {{ ?tessera <{VALOR_NS}evidenceText> ?evidenceText }}
     OPTIONAL {{ ?tessera <{VALOR_NS}claimedAt>    ?claimedAt }}
     OPTIONAL {{ ?tessera <{_CAUSA_NS}hasManifestationCondition> ?manifestationCondition }}
+    OPTIONAL {{ ?tessera <{VALOR_NS}gdiFlag> ?gdiFlag }}
     OPTIONAL {{ ?tessera <{VALOR_NS}phaseOutcome> ?outcome }}
   }}
 }}
@@ -277,6 +280,7 @@ SELECT ?tessera ?baseId ?statement ?polarity ?confidence
             "created_by": None,
             "status": None,
             "manifestation_condition": row.get("manifestationCondition"),
+            "gdi_flag": row["gdiFlag"].rsplit("/", 1)[-1].rsplit("#", 1)[-1] if row.get("gdiFlag") else None,
             "phase_outcome": row["outcome"].split("#")[-1] if row.get("outcome") else None,
         }
         for row in rows

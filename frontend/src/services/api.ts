@@ -54,6 +54,7 @@ export interface Claim {
     status?: string;
     evidence_text?: string;
     evidence_url?: string;
+    gdi_flag?: string;
 }
 
 export interface ValidationResult {
@@ -104,6 +105,7 @@ export interface Factor {
     version_id?: string;
     thread_id?: string;
     epistemic_status?: string;
+    gdi_flag?: string;
 }
 
 export interface Organization {
@@ -596,6 +598,11 @@ export const api = {
 
     createClaimCoverageAssessment: async (dsId: string, altId: string): Promise<{ assessment_id: string; assessment_uri: string; outcome: string }> => {
         const response = await apiClient.post(`/designspace/${dsId}/alternative/${altId}/assessment/coverage`);
+        return response.data;
+    },
+
+    getProvenance: async (dsId: string): Promise<{ activity_uri: string; operation_type: string; attributed_to: string; started_at: string; generated?: string; used: string[] }[]> => {
+        const response = await apiClient.get(`/designspace/${dsId}/provenance`);
         return response.data;
     },
 

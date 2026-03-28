@@ -20,7 +20,8 @@ export const mapFactorToNode = (factor: Factor): CausalNode => {
         role: factor.type,
         description: factor.description,
         epistemicStatus: normalizeEpistemicStatus(factor.epistemic_status),
-        version_id: factor.version_id
+        version_id: factor.version_id,
+        gdiFlag: factor.gdi_flag ?? undefined,
     };
 };
 
