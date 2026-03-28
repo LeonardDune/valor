@@ -16,31 +16,85 @@ from app.db.deliberation import (
     finalize_deliberation,
     validate_phase_transition
 )
-from app.db.sessions import get_session_context, get_moderator_sessions
+from app.db.sessions import get_session_context, get_moderator_sessions, get_ds_id_for_session
 from app.db.permissions import check_permission
 from app.models.domain import Role, Feedback, Ranking, DeliberationStage, ConsentVote, ConsentVoteType
+from app.db.fuseki_decisions import create_phase_transition
+from app.db.fuseki_votes import write_consent_vote_to_fuseki
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from app.services.connection_manager import manager
+import asyncio
 import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/deliberation", tags=["deliberation"])
 
+
+async def _safe_fuseki_vote_write(
+    ds_id: str,
+    session_id: str,
+    tessera_base_id: str,
+    user_id: str,
+    vote_type: str,
+    motivation: str | None,
+) -> None:
+    try:
+        await write_consent_vote_to_fuseki(
+            ds_id=ds_id,
+            session_id=session_id,
+            tessera_base_id=tessera_base_id,
+            user_id=user_id,
+            vote_type=vote_type,
+            motivation=motivation,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Fuseki dual-write mislukt voor Vote (session=%s, tessera=%s): %s",
+            session_id,
+            tessera_base_id,
+            exc,
+        )
+
+
+async def _write_phase_transition_safe(
+    design_space_id: str,
+    session_id: str,
+    phase: str,
+    votes: list[dict],
+    user_id: str,
+) -> None:
+    """Fire-and-forget wrapper voor Fuseki dual-write. Logt fouten als WARNING."""
+    try:
+        await create_phase_transition(
+            design_space_id=design_space_id,
+            session_id=session_id,
+            phase=phase,
+            votes=votes,
+            user_id=user_id,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Fuseki dual-write mislukt voor PhaseTransition (session=%s, phase=%s): %s",
+            session_id,
+            phase,
+            exc,
+        )
+
 class FeedbackRequest(BaseModel):
     session_id: str
-    claim_version_id: str
+    tessera_base_id: str
     color: str
     motivation: Optional[str] = None
 
 class RankingRequest(BaseModel):
     session_id: str
-    claim_version_id: str
+    tessera_base_id: str
     category: str # high, medium, backlog, discard
 
 class ConsentVoteRequest(BaseModel):
     session_id: str
-    claim_version_id: str
+    tessera_base_id: str
     vote: ConsentVoteType
     motivation: Optional[str] = None
 
@@ -54,7 +108,7 @@ async def post_feedback(data: FeedbackRequest, user: dict = Depends(get_current_
     # 1. Create model
     feedback = Feedback(
         session_id=data.session_id,
-        claim_version_id=data.claim_version_id,
+        tessera_base_id=data.tessera_base_id,
         user_id=user_id,
         color=data.color,
         motivation=data.motivation
@@ -77,7 +131,7 @@ async def post_ranking(data: RankingRequest, user: dict = Depends(get_current_us
     
     ranking = Ranking(
         session_id=data.session_id,
-        claim_version_id=data.claim_version_id,
+        tessera_base_id=data.tessera_base_id,
         user_id=user_id,
         category=data.category
     )
@@ -106,7 +160,7 @@ async def post_consent_vote(session_id: str, data: ConsentVoteRequest, user: dic
     
     vote_obj = ConsentVote(
         session_id=session_id,
-        claim_version_id=data.claim_version_id,
+        tessera_base_id=data.tessera_base_id,
         user_id=user_id,
         vote=data.vote,
         motivation=data.motivation
@@ -115,7 +169,20 @@ async def post_consent_vote(session_id: str, data: ConsentVoteRequest, user: dic
     success = await submit_consent_vote(vote_obj)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to submit consent vote")
-        
+
+    ds_id = await get_ds_id_for_session(session_id)
+    if ds_id:
+        asyncio.create_task(
+            _safe_fuseki_vote_write(
+                ds_id=ds_id,
+                session_id=session_id,
+                tessera_base_id=data.tessera_base_id,
+                user_id=user_id,
+                vote_type=str(data.vote),
+                motivation=data.motivation,
+            )
+        )
+
     return {"status": "success"}
 
 @router.patch("/session/{session_id}/stage")
@@ -149,7 +216,20 @@ async def update_stage(session_id: str, data: StageUpdateRequest, user: dict = D
                 "stage": data.stage
             }
         })
-        
+
+    # 5. Dual-write naar Fuseki (fire-and-forget)
+    ds_id = await get_ds_id_for_session(session_id)
+    if ds_id:
+        asyncio.create_task(
+            _write_phase_transition_safe(
+                design_space_id=ds_id,
+                session_id=session_id,
+                phase=str(data.stage),
+                votes=[],
+                user_id=user.get("id", ""),
+            )
+        )
+
     return {"stage": data.stage}
 
 @router.get("/moderator/sessions")
@@ -176,17 +256,40 @@ async def post_finalize(session_id: str, user: dict = Depends(get_current_user))
     result = await finalize_deliberation(session_id, user.get("id"))
     if result["status"] == "error":
         raise HTTPException(status_code=400, detail=result["message"])
-        
+
     # 4. Broadcast
     if project_id:
         await manager.broadcast_data(project_id, {
             "type": "SESSION_FINALIZED",
             "payload": {
                 "session_id": session_id,
-                "next_version_id": result["next_version_id"]
+                "next_version_id": result.get("next_version_id")
             }
         })
-        
+
+    # 5. Dual-write naar Fuseki (fire-and-forget)
+    ds_id = await get_ds_id_for_session(session_id)
+    if ds_id:
+        consent_shortlist = await get_consent_shortlist(session_id, user.get("id"))
+        votes_payload = [
+            {
+                "user_id": user.get("id", ""),
+                "tessera_id": item.get("id", ""),
+                "vote_type": item.get("user_vote") or "consent",
+            }
+            for item in consent_shortlist
+            if item.get("user_vote")
+        ]
+        asyncio.create_task(
+            _write_phase_transition_safe(
+                design_space_id=ds_id,
+                session_id=session_id,
+                phase="consent",
+                votes=votes_payload,
+                user_id=user.get("id", ""),
+            )
+        )
+
     return result
 
 @router.get("/session/{session_id}/transition-validation")

@@ -149,6 +149,23 @@ async def get_session_context(session_id: str) -> Tuple[Optional[str], Optional[
         return None, None
 
 
+async def get_ds_id_for_session(session_id: str) -> Optional[str]:
+    """Retourneert de DesignSpace ID voor een VotingSession."""
+    driver = get_driver()
+    query = """
+    MATCH (ds:DesignSpace)-[:HAS_SESSION]->(s:VotingSession {id: $sid})
+    RETURN ds.id AS ds_id
+    """
+    try:
+        with driver.session() as session:
+            result = session.run(query, {"sid": session_id})
+            record = result.single()
+            return record["ds_id"] if record else None
+    except Exception as e:
+        logger.error(f"Error getting ds_id for session: {e}")
+        return None
+
+
 async def get_moderator_sessions(user_id: str) -> List[Dict[str, Any]]:
     """Retourneert alle actieve votingsessies waar de gebruiker moderator of admin is."""
     driver = get_driver()

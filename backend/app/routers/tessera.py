@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 import logging
 from datetime import datetime, timezone
@@ -10,9 +9,10 @@ from pydantic import BaseModel
 from app.auth import get_current_user
 from app.db import fuseki_knowledge
 from app.db.permissions import check_permission
-from app.models.domain import Role
+from app.models.domain import Role, CastVoteRequest, VoteResponse
 from app.services.connection_manager import manager
 from app.services.fuseki import sparql_select, sparql_update, sparql_shacl_validate, named_graph_uri, record_provenance_activity
+from app.services.fuseki_decisions import create_or_get_decision_episode, cast_vote, evaluate_quorum
 from app.services.ontology_cache import (
     get_evidence_label_to_uri,
     get_status_label_to_uri,
@@ -20,8 +20,10 @@ from app.services.ontology_cache import (
     get_valid_transitions,
     requires_decision_episode,
     get_argue_label_to_uri,
+    get_argue_uri_to_labels,
     get_shacl_shapes_graph,
     get_uncertainty_label_to_uri,
+    get_participant_role_data,
 )
 from app.ontology import VALOR_NS
 
@@ -81,7 +83,6 @@ class TesseraResponse(BaseModel):
     in_phase: Optional[str] = None
     manifestation_condition: Optional[str] = None
     realised_by: Optional[str] = None
-    gdi_flag: Optional[str] = None
 
 
 class RealiseRequest(BaseModel):
@@ -202,19 +203,18 @@ INSERT DATA {{
       valor:claimType <{claim_type_uri}> ;
       valor:claimedBy <{user_uri}> ;
       valor:claimedAt "{claimed_at}"^^xsd:dateTime ;
-      valor:inDesignSpace <{graph_uri}> ;
-      valor:gdiFlag valor:TruthfulnessIssue .
+      valor:inDesignSpace <{graph_uri}> .
 {optional_triples}  }}
 }}"""
 
     await sparql_update(sparql, request.design_space_id)
 
-    asyncio.create_task(record_provenance_activity(
+    await record_provenance_activity(
         request.design_space_id,
         "TesseraCreated",
         user_uri,
         generated=tessera_uri,
-    ))
+    )
 
     project_id = await fuseki_knowledge.get_project_id_for_designspace(request.design_space_id)
     if project_id:
@@ -243,8 +243,16 @@ INSERT DATA {{
         in_alternative=request.in_alternative,
         in_phase=request.in_phase,
         manifestation_condition=request.manifestation_condition,
-        gdi_flag="TruthfulnessIssue",
     )
+
+
+@router.get("/argue-types")
+async def get_argue_types(user: dict = Depends(get_current_user)) -> list[dict]:
+    """Retourneert alle argue-relatietypes uit de ontologie met EN én NL labels."""
+    return [
+        {"uri": uri, "label_en": labels["en"], "label_nl": labels["nl"]}
+        for uri, labels in get_argue_uri_to_labels().items()
+    ]
 
 
 @router.get("/missing-realisation-basis", response_model=list[TesseraResponse])
@@ -331,7 +339,7 @@ async def get_tessera(
         graph_uri = named_graph_uri(design_space_id)
 
     rows = await sparql_select(
-        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase ?manifestationCondition ?realisedBy ?gdiFlag WHERE {{
+        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase ?manifestationCondition ?realisedBy WHERE {{
           GRAPH <{graph_uri}> {{
             <{tessera_uri}> a <{VALOR_NS}Tessera> ;
               <{VALOR_NS}claimContent> ?content ;
@@ -344,7 +352,6 @@ async def get_tessera(
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inPhase> ?inPhase . }}
             OPTIONAL {{ <{tessera_uri}> <{CAUSA_NS}hasManifestationCondition> ?manifestationCondition . }}
             OPTIONAL {{ <{tessera_uri}> <{CAUSA_NS}realisedBy> ?realisedBy . }}
-            OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}gdiFlag> ?gdiFlag . }}
           }}
         }}""",
         design_space_id,
@@ -362,9 +369,6 @@ async def get_tessera(
     uncertainty_uri_to_label = {v: k for k, v in uncertainty_label_to_uri.items()}
     uncertainty_level = uncertainty_uri_to_label.get(raw_uncertainty) if raw_uncertainty else None
 
-    raw_gdi = row.get("gdiFlag", "")
-    gdi_flag = raw_gdi.rsplit("/", 1)[-1].rsplit("#", 1)[-1] if raw_gdi else None
-
     return TesseraResponse(
         tessera_id=tessera_id,
         tessera_uri=tessera_uri,
@@ -379,7 +383,6 @@ async def get_tessera(
         in_phase=row.get("inPhase"),
         manifestation_condition=row.get("manifestationCondition"),
         realised_by=row.get("realisedBy"),
-        gdi_flag=gdi_flag,
     )
 
 
@@ -432,13 +435,13 @@ WHERE {{
 
     await sparql_update(update, request.design_space_id)
 
-    asyncio.create_task(record_provenance_activity(
+    await record_provenance_activity(
         request.design_space_id,
         "RealisedByLinked",
         f"urn:valor:user:{user_id}",
         used=[tessera_uri],
         extra_props=[(f"{CAUSA_NS}realisedBy", request.transaction_type_uri)],
-    ))
+    )
 
     logger.info(
         "Tessera %s gekoppeld aan TransactionType %s door %s",
@@ -603,7 +606,7 @@ WHERE {{
 
     status_label_to_uri_map = get_status_label_to_uri()
     old_status_uri = status_label_to_uri_map.get(current_status, current_raw)
-    asyncio.create_task(record_provenance_activity(
+    await record_provenance_activity(
         request.design_space_id,
         "StatusChanged",
         f"urn:valor:user:{user_id}",
@@ -612,7 +615,7 @@ WHERE {{
             (f"{VALOR_NS}previousStatus", old_status_uri),
             (f"{VALOR_NS}newStatus", new_status_uri),
         ],
-    ))
+    )
 
     if request.new_status == "Accepted":
         asyncio.create_task(_detect_conflicts_async(
@@ -707,14 +710,6 @@ INSERT DATA {{
 }}"""
 
     await sparql_update(sparql, request.design_space_id)
-
-    gdi_remove_sparql = f"""PREFIX valor: <{VALOR_NS}>
-DELETE DATA {{
-  GRAPH <{graph_uri}> {{
-    <{tessera_uri}> valor:gdiFlag valor:TruthfulnessIssue .
-  }}
-}}"""
-    asyncio.create_task(sparql_update(gdi_remove_sparql, request.design_space_id))
 
     logger.info("Evidence %s toegevoegd aan Tessera %s door %s", evidence_uri, tessera_uri, user_id)
 
@@ -855,13 +850,13 @@ WHERE {{
                     contested_triggered = True
                     logger.info("Tessera %s naar Contested door undermines van %s", target_uri, source_uri)
 
-    asyncio.create_task(record_provenance_activity(
+    await record_provenance_activity(
         request.design_space_id,
         "ArgumentAdded",
         f"urn:valor:user:{user_id}",
         used=[source_uri, target_uri],
         extra_props=[(relation_uri, target_uri)],
-    ))
+    )
 
     logger.info(
         "Argumentatierelatie: %s -[%s]-> %s (door %s)",
@@ -963,3 +958,124 @@ SELECT ?activity ?used WHERE {{
         ))
 
     return results
+
+
+# --- Stemmen op een Tessera via DecisionEpisode (US-5.2) ---
+
+_VOTING_VALOR_ROLES = {"Initiator", "Contributor"}
+
+
+@router.post("/{tessera_id}/vote", response_model=VoteResponse, status_code=201)
+async def cast_tessera_vote(
+    tessera_id: str,
+    request: CastVoteRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Brengt een stem (Accept/Reject/Defer) uit op een Tessera via een DecisionEpisode.
+
+    Alleen gebruikers met VALOR-O rol Initiator of Contributor mogen stemmen (HTTP 403 anders).
+    Na elke stem wordt quorum geëvalueerd; bij quorum wijzigt de epistemische status automatisch.
+    """
+    user_id = user["id"]
+    user_uri = f"urn:valor:user:{user_id}"
+
+    # Basis leesrecht op de DesignSpace
+    if not await check_permission(user_id, request.design_space_id, Role.MEMBER):
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    # Controleer stemrecht via VALOR-O rol
+    participant_role_data = get_participant_role_data()
+    voting_role_uris = {
+        data["uri"]
+        for label, data in participant_role_data.items()
+        if label in _VOTING_VALOR_ROLES
+    }
+
+    decisions_graph = f"urn:valor:ds:{request.design_space_id}/decisions"
+    participant_rows = await sparql_select(
+        f"""SELECT ?role WHERE {{
+          GRAPH <{decisions_graph}> {{
+            ?participant <{VALOR_NS}hasUser> <{user_uri}> ;
+                         <{VALOR_NS}hasValorRole> ?role .
+          }}
+        }}""",
+        request.design_space_id,
+    )
+
+    voter_has_right = any(
+        row["role"] in voting_role_uris for row in participant_rows
+    )
+    if not voter_has_right:
+        raise HTTPException(
+            status_code=403,
+            detail="Alleen Initiator of Contributor mag stemmen op een Tessera.",
+        )
+
+    tessera_uri = f"urn:valor:tessera:{tessera_id}"
+
+    # Bepaal de graph waar de Tessera in staat
+    if request.alternative_id:
+        tessera_graph = f"urn:valor:ds:{request.design_space_id}/alternative/{request.alternative_id}"
+    else:
+        tessera_graph = named_graph_uri(request.design_space_id)
+
+    # Controleer dat de Tessera bestaat
+    exist_rows = await sparql_select(
+        f"""SELECT ?t WHERE {{
+          GRAPH <{tessera_graph}> {{
+            <{tessera_uri}> a <{VALOR_NS}Tessera> .
+            BIND(<{tessera_uri}> AS ?t)
+          }}
+        }}""",
+        request.design_space_id,
+    )
+    if not exist_rows:
+        raise HTTPException(status_code=404, detail="Tessera niet gevonden in deze DesignSpace.")
+
+    # DecisionEpisode ophalen of aanmaken
+    episode_uri = await create_or_get_decision_episode(
+        request.design_space_id,
+        tessera_uri,
+        user_uri,
+    )
+
+    # Stem uitbrengen
+    vote_uri = await cast_vote(
+        request.design_space_id,
+        episode_uri,
+        tessera_uri,
+        user_uri,
+        request.vote_type.value,
+    )
+
+    # Provenance vastleggen
+    await record_provenance_activity(
+        request.design_space_id,
+        "VoteCast",
+        user_uri,
+        generated=vote_uri,
+        used=[tessera_uri, episode_uri],
+    )
+
+    # Quorum evalueren
+    new_status = await evaluate_quorum(
+        request.design_space_id,
+        episode_uri,
+        tessera_uri,
+        tessera_graph,
+    )
+
+    logger.info(
+        "Stem uitgebracht: %s op Tessera %s (episode %s) door %s — quorum: %s",
+        request.vote_type.value, tessera_uri, episode_uri, user_id, new_status is not None,
+    )
+
+    return VoteResponse(
+        vote_uri=vote_uri,
+        episode_uri=episode_uri,
+        tessera_id=tessera_id,
+        tessera_uri=tessera_uri,
+        vote_type=request.vote_type.value,
+        quorum_reached=new_status is not None,
+        new_epistemic_status=new_status,
+    )

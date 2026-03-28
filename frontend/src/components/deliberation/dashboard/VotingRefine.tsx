@@ -55,7 +55,7 @@ export const VotingRefine: React.FC<RefinementViewProps> = ({ sessionId, version
     const myFeedback = useMemo(() => {
         if (!currentUser?.id) return null;
         return feedbackData.find(f =>
-            f.claim_version_id === selectedClaim?.version_id &&
+            f.tessera_base_id === selectedClaim?.version_id &&
             f.user_id === currentUser.id
         ) || null;
     }, [feedbackData, selectedClaim?.version_id, currentUser?.id]);
@@ -86,6 +86,7 @@ export const VotingRefine: React.FC<RefinementViewProps> = ({ sessionId, version
                     claim={selectedClaim}
                     allClaims={claims}
                     factors={factors}
+                    designSpaceId={versionId}
                 />
             </main>
 

@@ -4,15 +4,23 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Loader2, Play, Users } from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import type { VotingSessionConfig } from '@/types/session';
+
+interface Member {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+}
 
 interface PhaseStartProps {
     onStart: (config: VotingSessionConfig) => void;
     isStarting: boolean;
-    participantCount?: number;
+    members?: Member[];
 }
 
-export const PhaseStart: React.FC<PhaseStartProps> = ({ onStart, isStarting, participantCount = 0 }) => {
+export const PhaseStart: React.FC<PhaseStartProps> = ({ onStart, isStarting, members = [] }) => {
     const [dots, setDots] = useState<number>(3);
     const [timeLimit, setTimeLimit] = useState<number | ''>('');
 
@@ -62,22 +70,33 @@ export const PhaseStart: React.FC<PhaseStartProps> = ({ onStart, isStarting, par
                     </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="flex flex-col">
                     <CardHeader>
-                        <CardTitle>Deelnemers</CardTitle>
-                        <CardDescription>Overzicht van genodigden.</CardDescription>
+                        <CardTitle className="flex items-center gap-2">
+                            <Users className="h-4 w-4" />
+                            Deelnemers ({members.length})
+                        </CardTitle>
+                        <CardDescription>Leden van deze DesignSpace.</CardDescription>
                     </CardHeader>
-                    <CardContent>
-                        <div className="flex items-center gap-4 mb-4">
-                            <div className="p-3 bg-primary/10 rounded-full">
-                                <Users className="h-6 w-6 text-primary" />
+                    <CardContent className="flex-1 flex flex-col gap-3">
+                        <ScrollArea className="h-[160px]">
+                            <div className="space-y-1.5 pr-2">
+                                {members.length === 0 && (
+                                    <p className="text-sm text-muted-foreground py-4 text-center">Geen leden gevonden.</p>
+                                )}
+                                {members.map(m => (
+                                    <div key={m.id} className="flex items-center justify-between p-2 rounded-md bg-muted/30 text-sm">
+                                        <div className="flex items-center gap-2 min-w-0">
+                                            <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary shrink-0">
+                                                {(m.name || m.email)?.[0]?.toUpperCase() ?? '?'}
+                                            </div>
+                                            <span className="truncate">{m.name || m.email}</span>
+                                        </div>
+                                        <span className="text-xs text-muted-foreground shrink-0 ml-2 capitalize">{m.role}</span>
+                                    </div>
+                                ))}
                             </div>
-                            <div>
-                                <div className="text-2xl font-bold">{participantCount}</div>
-                                <div className="text-sm text-muted-foreground">Geregistreerde gebruikers</div>
-                            </div>
-                        </div>
-
+                        </ScrollArea>
                         <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-800">
                             <strong>Let op:</strong> Zodra je start, wordt de sessie actief voor alle deelnemers.
                         </div>

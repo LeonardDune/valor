@@ -24,7 +24,7 @@ export interface SessionContext {
 export interface Feedback {
     id: string;
     session_id: string;
-    claim_version_id: string;
+    tessera_base_id: string;
     user_id: string;
     color: 'green' | 'amber' | 'red';
     motivation?: string;
@@ -32,7 +32,7 @@ export interface Feedback {
 }
 
 export interface Ranking {
-    claim_version_id: string;
+    tessera_base_id: string;
     category: 'high' | 'medium' | 'backlog' | 'discard';
     count: number;
 }
@@ -40,6 +40,7 @@ export interface Ranking {
 export interface Participation {
     user_id: string;
     user_name: string;
+    name?: string;
     has_completed_refinement?: boolean;
     has_completed_ranking?: boolean;
     has_completed_consent?: boolean;

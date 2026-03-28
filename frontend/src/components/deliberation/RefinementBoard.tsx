@@ -28,7 +28,7 @@ export const RefinementBoardComponent: React.FC<RefinementBoardProps> = ({
     currentUserId,
     isModerator
 }) => {
-    const { versionId: routeVersionId } = useParams<{ versionId: string }>();
+    const { versionId: routeVersionId, dsId } = useParams<{ versionId: string; dsId: string }>();
     const versionId = propVersionId || routeVersionId;
     const navigate = useNavigate();
     const queryClient = useQueryClient();
@@ -102,7 +102,7 @@ export const RefinementBoardComponent: React.FC<RefinementBoardProps> = ({
     const myFeedback = useMemo(() => {
         if (!currentUserId || currentUserId === 'anon') return null;
         return feedbackData.find(f =>
-            f.claim_version_id === selectedClaim?.version_id &&
+            f.tessera_base_id === selectedClaim?.version_id &&
             f.user_id === currentUserId
         ) || null;
     }, [feedbackData, selectedClaim?.version_id, currentUserId]);
@@ -187,6 +187,7 @@ export const RefinementBoardComponent: React.FC<RefinementBoardProps> = ({
                     claim={selectedClaim}
                     allClaims={claims}
                     factors={factors}
+                    designSpaceId={dsId}
                 />
             </main>
 

@@ -1,7 +1,6 @@
 import React from 'react';
 import { useDesignSpace } from '../../context/DesignSpaceContext';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { CheckCircle2, Target } from 'lucide-react';
 
 export const ThemeContextPanel: React.FC = () => {
@@ -24,11 +23,6 @@ export const ThemeContextPanel: React.FC = () => {
                 <span className="hidden md:inline">
                     {activeVotingSession ? `Stemming: ${activeVersion.name}` : `Actief: ${activeVersion.name}`}
                 </span>
-                {activeVersion.current_phase && (
-                    <Badge variant="outline" className="text-[10px] h-4 px-1 py-0">
-                        {activeVersion.current_phase}
-                    </Badge>
-                )}
             </Button>
         </div>
     );

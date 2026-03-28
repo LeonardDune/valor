@@ -89,17 +89,18 @@ async def _find_tessera_uri_by_base_id(ds_id: str, base_id: str) -> Optional[str
 # Factor reads (SPARQL)
 # ---------------------------------------------------------------------------
 
-async def _sparql_get_factors(ds_id: str) -> list[dict]:
-    asis_graph = _ds_asis_graph(ds_id)
+async def _sparql_get_factors(ds_id: str, graph_uri: Optional[str] = None) -> list[dict]:
+    target = graph_uri or _ds_asis_graph(ds_id)
     rows = await sparql_select_global(f"""
-SELECT ?tessera ?baseId ?name ?role ?description ?gdiFlag WHERE {{
-  GRAPH <{asis_graph}> {{
+SELECT ?tessera ?baseId ?name ?role ?description ?gdiFlag ?outcome WHERE {{
+  GRAPH <{target}> {{
     ?tessera a <{VALOR_NS}Tessera> ;
              <{VALOR_NS}baseId> ?baseId ;
              <{VALOR_NS}claimContent> ?name ;
              <{VALOR_NS}factorRole> ?role .
     OPTIONAL {{ ?tessera <{VALOR_NS}description> ?description }}
     OPTIONAL {{ ?tessera <{VALOR_NS}gdiFlag> ?gdiFlag }}
+    OPTIONAL {{ ?tessera <{VALOR_NS}phaseOutcome> ?outcome }}
     FILTER NOT EXISTS {{ ?tessera <{VALOR_NS}fromFactor> ?x }}
   }}
 }}
@@ -114,6 +115,7 @@ SELECT ?tessera ?baseId ?name ?role ?description ?gdiFlag WHERE {{
             "theme_id": None,
             "thread_id": None,
             "gdi_flag": row["gdiFlag"].rsplit("/", 1)[-1].rsplit("#", 1)[-1] if row.get("gdiFlag") else None,
+            "phase_outcome": row["outcome"].split("#")[-1] if row.get("outcome") else None,
         }
         for row in rows
     ]
@@ -153,8 +155,7 @@ async def create_factor_fuseki(
       <{VALOR_NS}epistemicStatus> <{proposed_uri}> ;
       <{VALOR_NS}claimedBy> <{user_uri}> ;
       <{VALOR_NS}claimedAt> "{claimed_at}"^^<{_XSD}dateTime> ;
-      <{VALOR_NS}inDesignSpace> <urn:valor:ds:{ds_id}> ;
-      <{VALOR_NS}gdiFlag> <{VALOR_NS}TruthfulnessIssue> .
+      <{VALOR_NS}inDesignSpace> <urn:valor:ds:{ds_id}> .
     {desc_triple}
   }}
 }}"""
@@ -229,8 +230,8 @@ WHERE {{
 # Claim reads (SPARQL)
 # ---------------------------------------------------------------------------
 
-async def _sparql_get_claims(ds_id: str, claim_type: Optional[str] = None) -> list[dict]:
-    asis_graph = _ds_asis_graph(ds_id)
+async def _sparql_get_claims(ds_id: str, claim_type: Optional[str] = None, graph_uri: Optional[str] = None) -> list[dict]:
+    target = graph_uri or _ds_asis_graph(ds_id)
     if claim_type is not None:
         claim_type_uri = f"{VALOR_NS}{claim_type}"
         claim_type_filter = f"?tessera <{VALOR_NS}claimType> <{claim_type_uri}> ."
@@ -239,8 +240,8 @@ async def _sparql_get_claims(ds_id: str, claim_type: Optional[str] = None) -> li
     rows = await sparql_select_global(f"""
 SELECT ?tessera ?baseId ?statement ?polarity ?confidence
        ?fromFactor ?sourceBaseId ?toFactor ?targetBaseId
-       ?evidenceText ?claimedAt ?manifestationCondition ?gdiFlag WHERE {{
-  GRAPH <{asis_graph}> {{
+       ?evidenceText ?claimedAt ?manifestationCondition ?gdiFlag ?outcome WHERE {{
+  GRAPH <{target}> {{
     ?tessera a <{VALOR_NS}Tessera> ;
              <{VALOR_NS}baseId> ?baseId ;
              <{VALOR_NS}claimContent> ?statement ;
@@ -254,7 +255,8 @@ SELECT ?tessera ?baseId ?statement ?polarity ?confidence
     OPTIONAL {{ ?tessera <{VALOR_NS}evidenceText> ?evidenceText }}
     OPTIONAL {{ ?tessera <{VALOR_NS}claimedAt>    ?claimedAt }}
     OPTIONAL {{ ?tessera <{_CAUSA_NS}hasManifestationCondition> ?manifestationCondition }}
-    OPTIONAL {{ ?tessera <{VALOR_NS}gdiFlag>      ?gdiFlag }}
+    OPTIONAL {{ ?tessera <{VALOR_NS}gdiFlag> ?gdiFlag }}
+    OPTIONAL {{ ?tessera <{VALOR_NS}phaseOutcome> ?outcome }}
   }}
 }}
 """)
@@ -279,6 +281,7 @@ SELECT ?tessera ?baseId ?statement ?polarity ?confidence
             "status": None,
             "manifestation_condition": row.get("manifestationCondition"),
             "gdi_flag": row["gdiFlag"].rsplit("/", 1)[-1].rsplit("#", 1)[-1] if row.get("gdiFlag") else None,
+            "phase_outcome": row["outcome"].split("#")[-1] if row.get("outcome") else None,
         }
         for row in rows
     ]
@@ -333,8 +336,7 @@ async def create_claim_fuseki(
       <{VALOR_NS}epistemicStatus> <{proposed_uri}> ;
       <{VALOR_NS}claimedBy> <{user_uri}> ;
       <{VALOR_NS}claimedAt> "{claimed_at}"^^<{_XSD}dateTime> ;
-      <{VALOR_NS}inDesignSpace> <urn:valor:ds:{ds_id}> ;
-      <{VALOR_NS}gdiFlag> <{VALOR_NS}TruthfulnessIssue> .
+      <{VALOR_NS}inDesignSpace> <urn:valor:ds:{ds_id}> .
     {evidence_triple}
   }}
 }}"""
