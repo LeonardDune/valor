@@ -22,7 +22,9 @@
 
 ## Actieve Epic
 
-*Geen actieve Epic. Fase A kan gestart worden.*
+**Epic 17 (#456) — Baseline/Scenario Navigatie**
+Branch: `epic/issue-456-baseline-scenario`
+Status: Wave 1 (US-17.0 ✅) gemerged. Wave 2–4 wacht op Epic 6 + 7 stabiel.
 
 ---
 
@@ -34,7 +36,7 @@ Alle vier vereisen alleen Epic 3 ✅. Kunnen parallel lopen.
 
 | Epic | Issue | Titel | Afhankelijkheden |
 |------|-------|-------|------------------|
-| Epic 17 US-17.0 | #475 | Write-path consolidatie (prerequisite voor rest E17) | Epic 3 ✅, Epic 4 ✅ |
+| Epic 17 US-17.0 | #475 | Write-path consolidatie (prerequisite voor rest E17) ✅ | Epic 3 ✅, Epic 4 ✅ |
 | Epic 6 | #273 | Socia Perspectief | Epic 3 ✅ |
 | Epic 7 | #274 | Axia Perspectief | Epic 3 ✅ |
 | Epic 8 | #275 | Forma Perspectief | Epic 3 ✅ |
