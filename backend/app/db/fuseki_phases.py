@@ -1,10 +1,10 @@
 """SPARQL-operaties voor fase-snapshots in Fuseki.
 
 Na elke deliberatie-finalisatie:
-1. copy_asis_to_snapshot      — kopieert asis volledig naar phase/{session_id}
+1. copy_baseline_to_snapshot      — kopieert baseline volledig naar phase/{session_id}
 2. annotate_snapshot          — voegt phaseOutcome (Accepted/Rejected) per tessera toe
 3. register_snapshot_in_decisions — registreert snapshot in decisions-graph
-4. prune_rejected_from_asis   — verwijdert afgewezen tesserae + afhankelijke claims uit asis
+4. prune_rejected_from_baseline   — verwijdert afgewezen tesserae + afhankelijke claims uit baseline
 5. get_phase_snapshots        — retourneert lijst van snapshots voor een DesignSpace
 """
 import logging
@@ -19,8 +19,8 @@ _XSD  = "http://www.w3.org/2001/XMLSchema#"
 _PROV = "https://www.w3.org/ns/prov#"
 
 
-def _asis_graph(ds_id: str) -> str:
-    return f"urn:valor:ds:{ds_id}/asis"
+def _baseline_graph(ds_id: str) -> str:
+    return f"urn:valor:ds:{ds_id}/baseline"
 
 
 def _phase_graph(ds_id: str, session_id: str) -> str:
@@ -39,14 +39,14 @@ def _escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "")
 
 
-async def copy_asis_to_snapshot(ds_id: str, session_id: str) -> str:
-    """Kopieert de volledige asis-graph naar een nieuwe phase-graph.
+async def copy_baseline_to_snapshot(ds_id: str, session_id: str) -> str:
+    """Kopieert de volledige baseline-graph naar een nieuwe phase-graph.
 
     Retourneert de phase-graph URI.
     """
-    asis  = _asis_graph(ds_id)
+    baseline  = _baseline_graph(ds_id)
     phase = _phase_graph(ds_id, session_id)
-    sparql = f"COPY <{asis}> TO <{phase}>"
+    sparql = f"COPY <{baseline}> TO <{phase}>"
     await sparql_update(sparql, ds_id)
     return phase
 
@@ -110,8 +110,8 @@ async def register_snapshot_in_decisions(
     await sparql_update(sparql, ds_id)
 
 
-async def prune_rejected_from_asis(ds_id: str, rejected_ids: list[str]) -> None:
-    """Verwijdert afgewezen tesserae en hun afhankelijke claims uit asis.
+async def prune_rejected_from_baseline(ds_id: str, rejected_ids: list[str]) -> None:
+    """Verwijdert afgewezen tesserae en hun afhankelijke claims uit baseline.
 
     Stap 1: verwijder claims waarvan fromFactor of toFactor afgewezen is.
     Stap 2: verwijder de afgewezen tesserae zelf (als subject).
@@ -119,17 +119,17 @@ async def prune_rejected_from_asis(ds_id: str, rejected_ids: list[str]) -> None:
     if not rejected_ids:
         return
 
-    asis = _asis_graph(ds_id)
+    baseline = _baseline_graph(ds_id)
     uris = ", ".join(f"<{_tessera_uri(tid)}>" for tid in rejected_ids)
 
     # Stap 1: verwijder claims die verwijzen naar afgewezen factoren
     sparql_claims = f"""DELETE {{
-  GRAPH <{asis}> {{
+  GRAPH <{baseline}> {{
     ?claim ?p ?o .
   }}
 }}
 WHERE {{
-  GRAPH <{asis}> {{
+  GRAPH <{baseline}> {{
     ?claim ?p ?o .
     {{
       ?claim <{VALOR_NS}fromFactor> ?factor .
@@ -146,12 +146,12 @@ WHERE {{
 
     # Stap 2: verwijder de afgewezen tesserae zelf
     sparql_tesserae = f"""DELETE {{
-  GRAPH <{asis}> {{
+  GRAPH <{baseline}> {{
     ?s ?p ?o .
   }}
 }}
 WHERE {{
-  GRAPH <{asis}> {{
+  GRAPH <{baseline}> {{
     ?s ?p ?o .
     FILTER(?s IN ({uris}))
   }}

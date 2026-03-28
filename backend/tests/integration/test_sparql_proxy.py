@@ -116,7 +116,7 @@ async def test_proxy_ziet_eigen_data_wel(ds_id, user_uri):
 
     eigen_subject = "urn:valor:eigen:triple"
     await sparql_update(
-        f"INSERT DATA {{ GRAPH <urn:valor:ds:{ds_id}/asis> {{ "
+        f"INSERT DATA {{ GRAPH <urn:valor:ds:{ds_id}/baseline> {{ "
         f"<{eigen_subject}> <urn:test:p> <urn:test:o> }} }}",
         ds_id,
     )

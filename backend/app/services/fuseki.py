@@ -72,17 +72,14 @@ async def sparql_proxy_query(query: str, ds_id: str) -> dict[str, Any]:
     zodat de query alleen data van die DesignSpace kan zien (isolatie gegarandeerd).
     UPDATE/INSERT/DELETE queries worden geweigerd.
     """
-    # Sla PREFIX/BASE declaraties over om het echte querytype te vinden
-    import re as _re
-    _stripped = _re.sub(r'(PREFIX|BASE)\s+\S*\s*<[^>]*>\s*', '', query, flags=_re.IGNORECASE).strip()
-    query_type = _stripped.split()[0].lower() if _stripped else ""
+    query_type = query.strip().split()[0].lower() if query.strip() else ""
     if query_type not in _READONLY_QUERY_TYPES:
         raise HTTPException(
             status_code=400,
             detail=f"Alleen read-only SPARQL queries toegestaan (SELECT, CONSTRUCT, ASK, DESCRIBE). Ontvangen: '{query_type}'.",
         )
 
-    graph_names = ["base", "asis", "decisions", "agents", "provenance"]
+    graph_names = ["base", "baseline", "decisions", "agents", "provenance"]
     params = [
         ("default-graph-uri", f"urn:valor:ds:{ds_id}/{g}")
         for g in graph_names
@@ -206,7 +203,7 @@ async def initialize_design_space_graphs(ds_id: str, issue_uri: str) -> dict[str
 
     Maakt de volgende named graphs aan via SPARQL CREATE:
     - base      : VALOR-O ontologie-referentie (read-only)
-    - asis      : gedeelde as-is Tesserae
+    - baseline  : gedeelde baseline Tesserae
     - decisions : DecisionEpisodes + stemhistorie
     - agents    : AgentTesserae
     - provenance: PROV-O provenance trail
@@ -214,7 +211,7 @@ async def initialize_design_space_graphs(ds_id: str, issue_uri: str) -> dict[str
     from app.ontology import VALOR_NS
 
     base = f"urn:valor:ds:{ds_id}/base"
-    asis = f"urn:valor:ds:{ds_id}/asis"
+    baseline = f"urn:valor:ds:{ds_id}/baseline"
     decisions = f"urn:valor:ds:{ds_id}/decisions"
     agents = f"urn:valor:ds:{ds_id}/agents"
     provenance = f"urn:valor:ds:{ds_id}/provenance"
@@ -225,13 +222,13 @@ INSERT DATA {{
   GRAPH <{base}> {{
     <{ds_uri}> a <{VALOR_NS}DesignSpace> ;
       <{VALOR_NS}isAddressedInDesignSpace> <{issue_uri}> ;
-      <{VALOR_NS}hasGraph> <{asis}> ;
+      <{VALOR_NS}hasGraph> <{baseline}> ;
       <{VALOR_NS}hasGraph> <{decisions}> ;
       <{VALOR_NS}hasGraph> <{agents}> ;
       <{VALOR_NS}hasGraph> <{provenance}> .
   }}
-  GRAPH <{asis}> {{
-    <{ds_uri}> <{VALOR_NS}graphType> "asis" .
+  GRAPH <{baseline}> {{
+    <{ds_uri}> <{VALOR_NS}graphType> "baseline" .
   }}
   GRAPH <{decisions}> {{
     <{ds_uri}> <{VALOR_NS}graphType> "decisions" .
@@ -249,24 +246,24 @@ INSERT DATA {{
 
     return {
         "base": base,
-        "asis": asis,
+        "baseline": baseline,
         "decisions": decisions,
         "agents": agents,
         "provenance": provenance,
     }
 
 
-async def initialize_alternative_graph(
+async def initialize_scenario_graph(
     ds_id: str, alt_id: str, name: str, description: str, creator_uri: str, created_at: str
 ) -> str:
-    """Initialiseert een named graph voor een DesignAlternative in Fuseki.
+    """Initialiseert een named graph voor een DesignScenario in Fuseki.
 
-    Schrijft een marker-triple in de graph en registreert de alternative in de base-graph.
+    Schrijft een marker-triple in de graph en registreert het scenario in de base-graph.
     Retourneert de graph URI.
     """
     from app.ontology import VALOR_NS
 
-    alt_uri = f"urn:valor:ds:{ds_id}/alternative/{alt_id}"
+    scenario_uri = f"urn:valor:ds:{ds_id}/scenario/{alt_id}"
     base_graph = f"urn:valor:ds:{ds_id}/base"
     ds_uri = f"urn:valor:ds:{ds_id}"
 
@@ -274,21 +271,21 @@ async def initialize_alternative_graph(
     escaped_desc = (description or "").replace("\\", "\\\\").replace('"', '\\"')
 
     update = f"""INSERT DATA {{
-  GRAPH <{alt_uri}> {{
-    <{alt_uri}> <{VALOR_NS}graphType> "alternative" .
+  GRAPH <{scenario_uri}> {{
+    <{scenario_uri}> <{VALOR_NS}graphType> "scenario" .
   }}
   GRAPH <{base_graph}> {{
-    <{alt_uri}> a <{VALOR_NS}DesignAlternative> ;
+    <{scenario_uri}> a <{VALOR_NS}DesignScenario> ;
       <{VALOR_NS}inDesignSpace> <{ds_uri}> ;
-      <{VALOR_NS}alternativeName> "{escaped_name}"@nl ;
-      <{VALOR_NS}alternativeDescription> "{escaped_desc}"@nl ;
-      <{VALOR_NS}alternativeStatus> <{VALOR_NS}Active> ;
+      <{VALOR_NS}scenarioName> "{escaped_name}"@nl ;
+      <{VALOR_NS}scenarioDescription> "{escaped_desc}"@nl ;
+      <{VALOR_NS}scenarioStatus> <{VALOR_NS}Active> ;
       <{VALOR_NS}createdBy> <{creator_uri}> ;
       <{VALOR_NS}createdAt> "{created_at}"^^<http://www.w3.org/2001/XMLSchema#dateTime> .
   }}
 }}"""
     await sparql_update(update, ds_id)
-    return alt_uri
+    return scenario_uri
 
 
 PROV_NS = "https://www.w3.org/ns/prov#"

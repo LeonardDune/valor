@@ -346,10 +346,10 @@ async def finalize_deliberation(session_id: str, user_id: str) -> Dict[str, Any]
     from app.db.sessions import get_session_context, get_ds_id_for_session
     from app.db.designspace import get_design_space_meta, set_design_space_phase, PHASE_SEQUENCE
     from app.db.fuseki_phases import (
-        copy_asis_to_snapshot,
+        copy_baseline_to_snapshot,
         annotate_snapshot,
         register_snapshot_in_decisions,
-        prune_rejected_from_asis,
+        prune_rejected_from_baseline,
     )
 
     driver = get_driver()
@@ -375,12 +375,12 @@ async def finalize_deliberation(session_id: str, user_id: str) -> Dict[str, Any]
         ds_id = await get_ds_id_for_session(session_id)
         next_phase = None
         if ds_id:
-            await copy_asis_to_snapshot(ds_id, session_id)
+            await copy_baseline_to_snapshot(ds_id, session_id)
             await annotate_snapshot(ds_id, session_id, accepted_ids, rejected_ids)
             await register_snapshot_in_decisions(
                 ds_id, session_id, len(accepted_ids), len(rejected_ids)
             )
-            await prune_rejected_from_asis(ds_id, rejected_ids)
+            await prune_rejected_from_baseline(ds_id, rejected_ids)
 
             # 4. Zet DesignSpace door naar de volgende fase
             meta = get_design_space_meta(ds_id)
