@@ -33,7 +33,7 @@ async def _seed_design_space(ds_id: str) -> None:
 
 async def _count_tesserae(ds_id: str) -> int:
     from app.services.fuseki import sparql_select_global
-    graph = f"urn:valor:ds:{ds_id}/asis"
+    graph = f"urn:valor:ds:{ds_id}/baseline"
     rows = await sparql_select_global(
         f"SELECT (COUNT(?t) AS ?c) WHERE {{ GRAPH <{graph}> {{ ?t a <{VALOR_NS}Tessera> }} }}"
     )
@@ -62,7 +62,7 @@ async def test_create_factor_fuseki_slaat_base_id_op(ds_id):
 
     base_id = await create_factor_fuseki(ds_id, "Factor Beta", "criterium", USER_ID, description="Een criterium")
 
-    graph = f"urn:valor:ds:{ds_id}/asis"
+    graph = f"urn:valor:ds:{ds_id}/baseline"
     rows = await sparql_select_global(
         f'SELECT ?bid WHERE {{ GRAPH <{graph}> {{ <urn:valor:tessera:{base_id}> <{VALOR_NS}baseId> ?bid }} }}'
     )
@@ -78,7 +78,7 @@ async def test_update_factor_fuseki_wijzigt_naam(ds_id):
     base_id = await create_factor_fuseki(ds_id, "Oude naam", "middel", USER_ID)
     await update_factor_fuseki(base_id, ds_id, name="Nieuwe naam")
 
-    graph = f"urn:valor:ds:{ds_id}/asis"
+    graph = f"urn:valor:ds:{ds_id}/baseline"
     rows = await sparql_select_global(
         f'SELECT ?name WHERE {{ GRAPH <{graph}> {{ <urn:valor:tessera:{base_id}> <{VALOR_NS}claimContent> ?name }} }}'
     )
@@ -155,7 +155,7 @@ async def test_create_claim_fuseki_koppelt_factor_uris(ds_id):
     )
     assert claim_id
 
-    graph = f"urn:valor:ds:{ds_id}/asis"
+    graph = f"urn:valor:ds:{ds_id}/baseline"
     rows = await sparql_select_global(f"""
         SELECT ?from ?to WHERE {{
           GRAPH <{graph}> {{
@@ -178,7 +178,7 @@ async def test_create_claim_fuseki_slaat_base_id_op(ds_id):
     fac_b = await create_factor_fuseki(ds_id, "Doel", "middel", USER_ID)
     claim_id = await create_claim_fuseki(ds_id, fac_a, fac_b, "Stelling", "+", USER_ID)
 
-    graph = f"urn:valor:ds:{ds_id}/asis"
+    graph = f"urn:valor:ds:{ds_id}/baseline"
     rows = await sparql_select_global(
         f'SELECT ?bid WHERE {{ GRAPH <{graph}> {{ <urn:valor:tessera:{claim_id}> <{VALOR_NS}baseId> ?bid }} }}'
     )

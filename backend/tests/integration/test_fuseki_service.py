@@ -23,7 +23,7 @@ async def test_initialize_design_space_graphs_maakt_vijf_named_graphs(ds_id):
     issue_uri = f"urn:valor:issue:{ds_id}"
     named_graphs = await initialize_design_space_graphs(ds_id, issue_uri)
 
-    assert set(named_graphs.keys()) == {"base", "asis", "decisions", "agents", "provenance"}
+    assert set(named_graphs.keys()) == {"base", "baseline", "decisions", "agents", "provenance"}
 
     existing = await sparql_select_global(
         "SELECT DISTINCT ?g WHERE { GRAPH ?g { } }"
@@ -67,7 +67,7 @@ async def test_initialize_design_space_graphs_is_idempotent(ds_id):
 async def test_initialize_alternative_graph_schrijft_metadata(ds_id, user_uri):
     from app.services.fuseki import (
         initialize_design_space_graphs,
-        initialize_alternative_graph,
+        initialize_scenario_graph,
         sparql_select_global,
     )
     from app.ontology import VALOR_NS
@@ -76,7 +76,7 @@ async def test_initialize_alternative_graph_schrijft_metadata(ds_id, user_uri):
     await initialize_design_space_graphs(ds_id, issue_uri)
 
     alt_id = "alt-001"
-    alt_uri = await initialize_alternative_graph(
+    alt_uri = await initialize_scenario_graph(
         ds_id=ds_id,
         alt_id=alt_id,
         name="Alternatief A",
@@ -85,14 +85,14 @@ async def test_initialize_alternative_graph_schrijft_metadata(ds_id, user_uri):
         created_at="2026-03-16T00:00:00+00:00",
     )
 
-    assert alt_uri == f"urn:valor:ds:{ds_id}/alternative/{alt_id}"
+    assert alt_uri == f"urn:valor:ds:{ds_id}/scenario/{alt_id}"
 
     base_graph = f"urn:valor:ds:{ds_id}/base"
     rows = await sparql_select_global(
         f"SELECT ?p ?o WHERE {{ GRAPH <{base_graph}> {{ <{alt_uri}> ?p ?o }} }}"
     )
     predicates = {row["p"] for row in rows}
-    assert f"{VALOR_NS}alternativeName" in predicates
+    assert f"{VALOR_NS}scenarioName" in predicates
     assert f"{VALOR_NS}createdBy" in predicates
 
 

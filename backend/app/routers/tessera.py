@@ -7,12 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.auth import get_current_user
-from app.db import fuseki_knowledge
 from app.db.permissions import check_permission
-from app.models.domain import Role, CastVoteRequest, VoteResponse
-from app.services.connection_manager import manager
-from app.services.fuseki import sparql_select, sparql_update, sparql_shacl_validate, named_graph_uri, record_provenance_activity
-from app.services.fuseki_decisions import create_or_get_decision_episode, cast_vote, evaluate_quorum
+from app.models.domain import Role
+from app.db.fuseki_knowledge import _ds_baseline_graph
+from app.services.fuseki import sparql_select, sparql_update, sparql_shacl_validate, record_provenance_activity
 from app.services.ontology_cache import (
     get_evidence_label_to_uri,
     get_status_label_to_uri,
@@ -20,10 +18,8 @@ from app.services.ontology_cache import (
     get_valid_transitions,
     requires_decision_episode,
     get_argue_label_to_uri,
-    get_argue_uri_to_labels,
     get_shacl_shapes_graph,
     get_uncertainty_label_to_uri,
-    get_participant_role_data,
 )
 from app.ontology import VALOR_NS
 
@@ -35,7 +31,6 @@ router = APIRouter(
 )
 
 XSD_NS = "http://www.w3.org/2001/XMLSchema#"
-CAUSA_NS = f"{VALOR_NS}causa#"
 
 
 def _normalize_status(raw: str) -> str:
@@ -66,7 +61,6 @@ class CreateTesseraRequest(BaseModel):
     uncertainty_level: Optional[str] = None  # PAMS: "StatisticalRisk" | "Scenario" | "DeepUncertainty" | "Ignorance"
     in_alternative: Optional[str] = None
     in_phase: Optional[str] = None
-    manifestation_condition: Optional[str] = None
 
 
 class TesseraResponse(BaseModel):
@@ -81,20 +75,6 @@ class TesseraResponse(BaseModel):
     uncertainty_level: Optional[str] = None
     in_alternative: Optional[str] = None
     in_phase: Optional[str] = None
-    manifestation_condition: Optional[str] = None
-    realised_by: Optional[str] = None
-
-
-class RealiseRequest(BaseModel):
-    design_space_id: str
-    transaction_type_uri: str  # URI van het causa:TransactionType
-
-
-class RealiseResponse(BaseModel):
-    tessera_id: str
-    tessera_uri: str
-    transaction_type_uri: str
-    realised_by_uri: str  # de gemaakte causa:realisedBy triple URI (property URI)
 
 
 class CreateEvidenceRequest(BaseModel):
@@ -168,11 +148,11 @@ async def create_tessera(
     user_uri = f"urn:valor:user:{user_id}"
     claimed_at = datetime.now(timezone.utc).isoformat()
 
-    # ToBe Tesserae met in_alternative → eigen alternatief-graph
+    # ToBe Tesserae met in_alternative → eigen scenario-graph
     if claim_type == "ToBe" and request.in_alternative:
-        graph_uri = f"urn:valor:ds:{request.design_space_id}/alternative/{request.in_alternative}"
+        graph_uri = f"urn:valor:ds:{request.design_space_id}/scenario/{request.in_alternative}"
     else:
-        graph_uri = named_graph_uri(request.design_space_id)
+        graph_uri = _ds_baseline_graph(request.design_space_id)
 
     status_label_to_uri = get_status_label_to_uri()
     proposed_uri = status_label_to_uri.get("Proposed", f"{VALOR_NS}ProposedStatus")
@@ -186,11 +166,10 @@ async def create_tessera(
     if request.in_phase:
         phase_uri = f"urn:valor:phase:{request.in_phase}"
         optional_triples += f"      <{tessera_uri}> <{VALOR_NS}inPhase> <{phase_uri}> .\n"
-    if request.manifestation_condition:
-        escaped_condition = request.manifestation_condition.replace("\\", "\\\\").replace('"', '\\"')
-        optional_triples += f'      <{tessera_uri}> <{CAUSA_NS}hasManifestationCondition> "{escaped_condition}"@nl .\n'
 
     escaped_content = request.claim_content.replace("\\", "\\\\").replace('"', '\\"')
+
+    ds_uri = f"urn:valor:ds:{request.design_space_id}"
 
     sparql = f"""PREFIX valor: <{VALOR_NS}>
 PREFIX xsd: <{XSD_NS}>
@@ -203,7 +182,7 @@ INSERT DATA {{
       valor:claimType <{claim_type_uri}> ;
       valor:claimedBy <{user_uri}> ;
       valor:claimedAt "{claimed_at}"^^xsd:dateTime ;
-      valor:inDesignSpace <{graph_uri}> .
+      valor:inDesignSpace <{ds_uri}> .
 {optional_triples}  }}
 }}"""
 
@@ -215,18 +194,6 @@ INSERT DATA {{
         user_uri,
         generated=tessera_uri,
     )
-
-    project_id = await fuseki_knowledge.get_project_id_for_designspace(request.design_space_id)
-    if project_id:
-        await manager.broadcast_data(project_id, {
-            "type": "TESSERA_PROPOSED",
-            "payload": {
-                "tessera_uri": tessera_uri,
-                "design_space_id": request.design_space_id,
-                "epistemic_status": "Proposed",
-                "claimed_by": user_id,
-            },
-        })
 
     logger.info("Tessera aangemaakt: %s in DesignSpace %s door %s", tessera_uri, request.design_space_id, user_id)
 
@@ -242,104 +209,26 @@ INSERT DATA {{
         uncertainty_level=request.uncertainty_level,
         in_alternative=request.in_alternative,
         in_phase=request.in_phase,
-        manifestation_condition=request.manifestation_condition,
     )
-
-
-@router.get("/argue-types")
-async def get_argue_types(user: dict = Depends(get_current_user)) -> list[dict]:
-    """Retourneert alle argue-relatietypes uit de ontologie met EN én NL labels."""
-    return [
-        {"uri": uri, "label_en": labels["en"], "label_nl": labels["nl"]}
-        for uri, labels in get_argue_uri_to_labels().items()
-    ]
-
-
-@router.get("/missing-realisation-basis", response_model=list[TesseraResponse])
-async def get_missing_realisation_basis(
-    design_space_id: str,
-    alternative_id: Optional[str] = None,
-    user: dict = Depends(get_current_user),
-):
-    """Geeft alle Intervention-Tesserae terug zonder causa:realisedBy koppeling."""
-    user_id = user["id"]
-
-    if not await check_permission(user_id, design_space_id, Role.VIEWER):
-        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
-
-    if alternative_id:
-        graph_uri = f"urn:valor:ds:{design_space_id}/alternative/{alternative_id}"
-    else:
-        graph_uri = named_graph_uri(design_space_id)
-
-    rows = await sparql_select(
-        f"""SELECT ?tessera ?content ?claimType ?status ?claimedBy ?claimedAt ?uncertaintyLevel ?inAlternative ?inPhase WHERE {{
-          GRAPH <{graph_uri}> {{
-            ?tessera a <{VALOR_NS}Tessera> ;
-              <{VALOR_NS}claimContent> ?content ;
-              <{VALOR_NS}epistemicStatus> ?status ;
-              <{VALOR_NS}claimedBy> ?claimedBy ;
-              <{VALOR_NS}claimedAt> ?claimedAt .
-            OPTIONAL {{ ?tessera <{VALOR_NS}claimType> ?claimType . }}
-            OPTIONAL {{ ?tessera <{VALOR_NS}uncertaintyLevel> ?uncertaintyLevel . }}
-            OPTIONAL {{ ?tessera <{VALOR_NS}inAlternative> ?inAlternative . }}
-            OPTIONAL {{ ?tessera <{VALOR_NS}inPhase> ?inPhase . }}
-            FILTER NOT EXISTS {{ ?tessera <{CAUSA_NS}realisedBy> ?any . }}
-          }}
-        }}""",
-        design_space_id,
-    )
-
-    uncertainty_label_to_uri = get_uncertainty_label_to_uri()
-    uncertainty_uri_to_label = {v: k for k, v in uncertainty_label_to_uri.items()}
-
-    results = []
-    for row in rows:
-        tessera_uri = row["tessera"]
-        tessera_id = tessera_uri.rsplit(":", 1)[-1]
-        raw_claim_type = row.get("claimType", "")
-        claim_type = _claim_type_label_from_raw(raw_claim_type) if raw_claim_type else "AsIs"
-        raw_uncertainty = row.get("uncertaintyLevel", "")
-        uncertainty_level = uncertainty_uri_to_label.get(raw_uncertainty) if raw_uncertainty else None
-        results.append(TesseraResponse(
-            tessera_id=tessera_id,
-            tessera_uri=tessera_uri,
-            design_space_id=design_space_id,
-            claim_content=row["content"],
-            claim_type=claim_type,
-            epistemic_status=_normalize_status(row["status"]),
-            claimed_by=row["claimedBy"].rsplit(":", 1)[-1],
-            claimed_at=row["claimedAt"],
-            uncertainty_level=uncertainty_level,
-            in_alternative=row.get("inAlternative"),
-            in_phase=row.get("inPhase"),
-            realised_by=None,
-        ))
-
-    return results
 
 
 @router.get("/{tessera_id}", response_model=TesseraResponse)
 async def get_tessera(
     tessera_id: str,
     design_space_id: str,
-    alternative_id: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):
     user_id = user["id"]
 
-    if not await check_permission(user_id, design_space_id, Role.VIEWER):
+    has_permission = await check_permission(user_id, design_space_id, Role.VIEWER)
+    if not has_permission:
         raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
 
     tessera_uri = f"urn:valor:tessera:{tessera_id}"
-
-    if alternative_id:
-        graph_uri = f"urn:valor:ds:{design_space_id}/alternative/{alternative_id}"
-    else:
-        graph_uri = named_graph_uri(design_space_id)
+    graph_uri = _ds_baseline_graph(design_space_id)
 
     rows = await sparql_select(
-        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase ?manifestationCondition ?realisedBy WHERE {{
+        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase WHERE {{
           GRAPH <{graph_uri}> {{
             <{tessera_uri}> a <{VALOR_NS}Tessera> ;
               <{VALOR_NS}claimContent> ?content ;
@@ -350,8 +239,6 @@ async def get_tessera(
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}uncertaintyLevel> ?uncertaintyLevel . }}
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inAlternative> ?inAlternative . }}
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inPhase> ?inPhase . }}
-            OPTIONAL {{ <{tessera_uri}> <{CAUSA_NS}hasManifestationCondition> ?manifestationCondition . }}
-            OPTIONAL {{ <{tessera_uri}> <{CAUSA_NS}realisedBy> ?realisedBy . }}
           }}
         }}""",
         design_space_id,
@@ -381,138 +268,7 @@ async def get_tessera(
         uncertainty_level=uncertainty_level,
         in_alternative=row.get("inAlternative"),
         in_phase=row.get("inPhase"),
-        manifestation_condition=row.get("manifestationCondition"),
-        realised_by=row.get("realisedBy"),
     )
-
-
-@router.post("/{tessera_id}/realise", response_model=RealiseResponse, status_code=201)
-async def realise_tessera(
-    tessera_id: str,
-    request: RealiseRequest,
-    user: dict = Depends(get_current_user),
-):
-    """Koppelt een Intervention-Tessera aan een causa:TransactionType via causa:realisedBy."""
-    user_id = user["id"]
-
-    if not await check_permission(user_id, request.design_space_id, Role.MEMBER):
-        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
-
-    tessera_uri = f"urn:valor:tessera:{tessera_id}"
-    graph_uri = named_graph_uri(request.design_space_id)
-
-    # Controleer dat de Tessera bestaat
-    rows = await sparql_select(
-        f"""SELECT ?t WHERE {{
-          GRAPH <{graph_uri}> {{
-            <{tessera_uri}> a <{VALOR_NS}Tessera> .
-            BIND(<{tessera_uri}> AS ?t)
-          }}
-        }}""",
-        request.design_space_id,
-    )
-    if not rows:
-        raise HTTPException(status_code=404, detail="Tessera niet gevonden in deze DesignSpace.")
-
-    # Idempotent: verwijder eventuele bestaande realisedBy koppeling en schrijf de nieuwe
-    escaped_transaction_uri = request.transaction_type_uri.replace("\\", "\\\\").replace('"', '\\"')
-
-    update = f"""DELETE {{
-  GRAPH <{graph_uri}> {{
-    <{tessera_uri}> <{CAUSA_NS}realisedBy> ?prev .
-  }}
-}}
-INSERT {{
-  GRAPH <{graph_uri}> {{
-    <{tessera_uri}> <{CAUSA_NS}realisedBy> <{escaped_transaction_uri}> .
-  }}
-}}
-WHERE {{
-  GRAPH <{graph_uri}> {{
-    OPTIONAL {{ <{tessera_uri}> <{CAUSA_NS}realisedBy> ?prev . }}
-  }}
-}}"""
-
-    await sparql_update(update, request.design_space_id)
-
-    await record_provenance_activity(
-        request.design_space_id,
-        "RealisedByLinked",
-        f"urn:valor:user:{user_id}",
-        used=[tessera_uri],
-        extra_props=[(f"{CAUSA_NS}realisedBy", request.transaction_type_uri)],
-    )
-
-    logger.info(
-        "Tessera %s gekoppeld aan TransactionType %s door %s",
-        tessera_uri, request.transaction_type_uri, user_id,
-    )
-
-    return RealiseResponse(
-        tessera_id=tessera_id,
-        tessera_uri=tessera_uri,
-        transaction_type_uri=request.transaction_type_uri,
-        realised_by_uri=f"{CAUSA_NS}realisedBy",
-    )
-
-
-async def _detect_conflicts_async(
-    tessera_uri: str,
-    design_space_id: str,
-    accepted_status_uri: str,
-):
-    """
-    Fire-and-forget conflictdetectie na statusovergang naar Accepted.
-    Detecteert valor:undermines conflicten tussen Accepted Tesserae en schrijft
-    een valor:ConflictSignal naar de provenance graph.
-
-    # TODO: semantische conflictdetectie op basis van claimContent (NLP/embeddings) — zie #477
-    """
-    rows = await sparql_select(
-        f"""SELECT DISTINCT ?other WHERE {{
-          {{
-            <{tessera_uri}> <{VALOR_NS}undermines> ?other .
-            ?other <{VALOR_NS}epistemicStatus> <{accepted_status_uri}> .
-          }} UNION {{
-            ?other <{VALOR_NS}undermines> <{tessera_uri}> .
-            ?other <{VALOR_NS}epistemicStatus> <{accepted_status_uri}> .
-          }}
-        }}""",
-        design_space_id,
-    )
-
-    if not rows:
-        return
-
-    prov_graph = f"urn:valor:ds:{design_space_id}/provenance"
-    detected_at = datetime.now(timezone.utc).isoformat()
-
-    for row in rows:
-        other_uri = row["other"]
-        conflict_uri = f"urn:valor:conflict:{uuid.uuid4()}"
-        signal_sparql = f"""PREFIX valor: <{VALOR_NS}>
-PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
-INSERT DATA {{
-  GRAPH <{prov_graph}> {{
-    <{conflict_uri}> a valor:ConflictSignal ;
-      valor:conflictingTessera <{tessera_uri}> ;
-      valor:conflictingTessera <{other_uri}> ;
-      valor:detectedAt "{detected_at}"^^xsd:dateTime .
-  }}
-}}"""
-        await sparql_update(signal_sparql, design_space_id)
-        logger.warning("Conflict gesignaleerd: %s ↔ %s in DesignSpace %s", tessera_uri, other_uri, design_space_id)
-
-    project_id = await fuseki_knowledge.get_project_id_for_designspace(design_space_id)
-    if project_id:
-        await manager.broadcast_data(project_id, {
-            "type": "TESSERA_CONFLICT_DETECTED",
-            "payload": {
-                "tessera_uri": tessera_uri,
-                "design_space_id": design_space_id,
-                "conflicting_tesserae": [row["other"] for row in rows],
-            },
-        })
 
 
 @router.patch("/{tessera_id}/status", response_model=PatchTesseraStatusResponse)
@@ -538,7 +294,7 @@ async def patch_tessera_status(
         )
 
     tessera_uri = f"urn:valor:tessera:{tessera_id}"
-    graph_uri = named_graph_uri(request.design_space_id)
+    graph_uri = _ds_baseline_graph(request.design_space_id)
 
     rows = await sparql_select(
         f"""SELECT ?status WHERE {{
@@ -617,29 +373,14 @@ WHERE {{
         ],
     )
 
-    if request.new_status == "Accepted":
-        asyncio.create_task(_detect_conflicts_async(
-            tessera_uri,
-            request.design_space_id,
-            new_status_uri,
-        ))
-
-    if request.new_status == "Contested":
-        project_id = await fuseki_knowledge.get_project_id_for_designspace(request.design_space_id)
-        if project_id:
-            await manager.broadcast_data(project_id, {
-                "type": "TESSERA_CONTESTED",
-                "payload": {
-                    "tessera_uri": tessera_uri,
-                    "design_space_id": request.design_space_id,
-                    "previous_status": current_status,
-                },
-            })
-
     logger.info(
         "Tessera %s status: %s → %s (door %s)",
         tessera_uri, current_status, request.new_status, user_id,
     )
+
+    if request.new_status == "Accepted":
+        import asyncio as _asyncio
+        _asyncio.ensure_future(_detect_conflicts_async(tessera_uri, request.design_space_id, new_status_uri))
 
     return PatchTesseraStatusResponse(
         tessera_id=tessera_id,
@@ -647,6 +388,48 @@ WHERE {{
         previous_status=current_status,
         new_status=request.new_status,
     )
+
+
+async def _detect_conflicts_async(tessera_uri: str, ds_id: str, accepted_uri: str) -> None:
+    """Detecteert ConflictSignals: schrijft een ConflictSignal in de provenance-graph
+    als tessera_uri en een andere Tessera beiden Accepted zijn én een valor:undermines
+    relatie hebben.
+    """
+    prov_graph = f"urn:valor:ds:{ds_id}/provenance"
+    try:
+        rows = await sparql_select(
+            f"""SELECT ?other WHERE {{
+              {{
+                <{tessera_uri}> <{VALOR_NS}undermines> ?other .
+                ?other <{VALOR_NS}epistemicStatus> <{accepted_uri}> .
+              }}
+              UNION
+              {{
+                ?other <{VALOR_NS}undermines> <{tessera_uri}> .
+                ?other <{VALOR_NS}epistemicStatus> <{accepted_uri}> .
+              }}
+            }}""",
+            ds_id,
+        )
+
+        for row in rows:
+            other_uri = row["other"]
+            conflict_uri = f"urn:valor:conflict:{uuid.uuid4()}"
+            detected_at = datetime.now(timezone.utc).isoformat()
+            await sparql_update(
+                f"""INSERT DATA {{
+  GRAPH <{prov_graph}> {{
+    <{conflict_uri}> a <{VALOR_NS}ConflictSignal> ;
+      <{VALOR_NS}conflictingTessera> <{tessera_uri}> ;
+      <{VALOR_NS}conflictingTessera> <{other_uri}> ;
+      <{VALOR_NS}detectedAt> "{detected_at}"^^<{XSD_NS}dateTime> .
+  }}
+}}""",
+                ds_id,
+            )
+            logger.info("ConflictSignal aangemaakt: %s conflicteert met %s in %s", tessera_uri, other_uri, ds_id)
+    except Exception:
+        logger.exception("Fout tijdens conflictdetectie voor %s in %s", tessera_uri, ds_id)
 
 
 @router.post("/{tessera_id}/evidence", response_model=EvidenceResponse, status_code=201)
@@ -673,7 +456,7 @@ async def add_evidence(
         )
 
     tessera_uri = f"urn:valor:tessera:{tessera_id}"
-    graph_uri = named_graph_uri(request.design_space_id)
+    graph_uri = _ds_baseline_graph(request.design_space_id)
 
     rows = await sparql_select(
         f"""SELECT ?t WHERE {{
@@ -769,7 +552,7 @@ async def argue(
 
     source_uri = f"urn:valor:tessera:{tessera_id}"
     target_uri = f"urn:valor:tessera:{request.target_tessera_id}"
-    graph_uri = named_graph_uri(request.design_space_id)
+    graph_uri = _ds_baseline_graph(request.design_space_id)
 
     # Controleer beide Tesserae
     rows = await sparql_select(
@@ -958,124 +741,3 @@ SELECT ?activity ?used WHERE {{
         ))
 
     return results
-
-
-# --- Stemmen op een Tessera via DecisionEpisode (US-5.2) ---
-
-_VOTING_VALOR_ROLES = {"Initiator", "Contributor"}
-
-
-@router.post("/{tessera_id}/vote", response_model=VoteResponse, status_code=201)
-async def cast_tessera_vote(
-    tessera_id: str,
-    request: CastVoteRequest,
-    user: dict = Depends(get_current_user),
-):
-    """Brengt een stem (Accept/Reject/Defer) uit op een Tessera via een DecisionEpisode.
-
-    Alleen gebruikers met VALOR-O rol Initiator of Contributor mogen stemmen (HTTP 403 anders).
-    Na elke stem wordt quorum geëvalueerd; bij quorum wijzigt de epistemische status automatisch.
-    """
-    user_id = user["id"]
-    user_uri = f"urn:valor:user:{user_id}"
-
-    # Basis leesrecht op de DesignSpace
-    if not await check_permission(user_id, request.design_space_id, Role.MEMBER):
-        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
-
-    # Controleer stemrecht via VALOR-O rol
-    participant_role_data = get_participant_role_data()
-    voting_role_uris = {
-        data["uri"]
-        for label, data in participant_role_data.items()
-        if label in _VOTING_VALOR_ROLES
-    }
-
-    decisions_graph = f"urn:valor:ds:{request.design_space_id}/decisions"
-    participant_rows = await sparql_select(
-        f"""SELECT ?role WHERE {{
-          GRAPH <{decisions_graph}> {{
-            ?participant <{VALOR_NS}hasUser> <{user_uri}> ;
-                         <{VALOR_NS}hasValorRole> ?role .
-          }}
-        }}""",
-        request.design_space_id,
-    )
-
-    voter_has_right = any(
-        row["role"] in voting_role_uris for row in participant_rows
-    )
-    if not voter_has_right:
-        raise HTTPException(
-            status_code=403,
-            detail="Alleen Initiator of Contributor mag stemmen op een Tessera.",
-        )
-
-    tessera_uri = f"urn:valor:tessera:{tessera_id}"
-
-    # Bepaal de graph waar de Tessera in staat
-    if request.alternative_id:
-        tessera_graph = f"urn:valor:ds:{request.design_space_id}/alternative/{request.alternative_id}"
-    else:
-        tessera_graph = named_graph_uri(request.design_space_id)
-
-    # Controleer dat de Tessera bestaat
-    exist_rows = await sparql_select(
-        f"""SELECT ?t WHERE {{
-          GRAPH <{tessera_graph}> {{
-            <{tessera_uri}> a <{VALOR_NS}Tessera> .
-            BIND(<{tessera_uri}> AS ?t)
-          }}
-        }}""",
-        request.design_space_id,
-    )
-    if not exist_rows:
-        raise HTTPException(status_code=404, detail="Tessera niet gevonden in deze DesignSpace.")
-
-    # DecisionEpisode ophalen of aanmaken
-    episode_uri = await create_or_get_decision_episode(
-        request.design_space_id,
-        tessera_uri,
-        user_uri,
-    )
-
-    # Stem uitbrengen
-    vote_uri = await cast_vote(
-        request.design_space_id,
-        episode_uri,
-        tessera_uri,
-        user_uri,
-        request.vote_type.value,
-    )
-
-    # Provenance vastleggen
-    await record_provenance_activity(
-        request.design_space_id,
-        "VoteCast",
-        user_uri,
-        generated=vote_uri,
-        used=[tessera_uri, episode_uri],
-    )
-
-    # Quorum evalueren
-    new_status = await evaluate_quorum(
-        request.design_space_id,
-        episode_uri,
-        tessera_uri,
-        tessera_graph,
-    )
-
-    logger.info(
-        "Stem uitgebracht: %s op Tessera %s (episode %s) door %s — quorum: %s",
-        request.vote_type.value, tessera_uri, episode_uri, user_id, new_status is not None,
-    )
-
-    return VoteResponse(
-        vote_uri=vote_uri,
-        episode_uri=episode_uri,
-        tessera_id=tessera_id,
-        tessera_uri=tessera_uri,
-        vote_type=request.vote_type.value,
-        quorum_reached=new_status is not None,
-        new_epistemic_status=new_status,
-    )

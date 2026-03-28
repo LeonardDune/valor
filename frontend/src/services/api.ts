@@ -592,12 +592,12 @@ export const api = {
     },
 
     getConditionCoverage: async (dsId: string, altId: string): Promise<{ claim_id: string; coverage: 'Full' | 'Partial' | 'None' }[]> => {
-        const response = await apiClient.get(`/designspace/${dsId}/alternative/${altId}/coverage`);
+        const response = await apiClient.get(`/designspace/${dsId}/scenario/${altId}/coverage`);
         return response.data;
     },
 
     createClaimCoverageAssessment: async (dsId: string, altId: string): Promise<{ assessment_id: string; assessment_uri: string; outcome: string }> => {
-        const response = await apiClient.post(`/designspace/${dsId}/alternative/${altId}/assessment/coverage`);
+        const response = await apiClient.post(`/designspace/${dsId}/scenario/${altId}/assessment/coverage`);
         return response.data;
     },
 

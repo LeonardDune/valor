@@ -1,7 +1,7 @@
 # Valor — Implementatieplan
 
 **Laatste update:** 2026-03-28
-**Branch:** epic/issue-352-tessera-engine-v1
+**Branch:** development
 
 ---
 
@@ -14,6 +14,7 @@
 | Epic 2 | #269 | Tessera Engine (Backend) |
 | Epic 3 | #270 | DesignSpace API & Named Graphs ← fundament voor alles |
 | Epic 4 | #271 | Causa Perspectief: Semantische Upgrade |
+| Epic T | #352 | Tessera-engine v1.0 (US-T.2 deferred → na Epic 9 US-9.4) |
 | Epic 11 | #278 | Neo4j Kennisopslag Afbouwen |
 | Epic 16 | #410 | DISC: Discourse & Deliberation Threads |
 
@@ -21,25 +22,13 @@
 
 ## Actieve Epic
 
-### Epic T — Tessera-engine v1.0 (#352)
-
-**Branch:** `epic/issue-352-tessera-engine-v1`
-
-| US | Issue | Status | Notitie |
-|----|-------|--------|---------|
-| US-T.4 | #372 | ✅ gemerged | PROV-O logging |
-| US-T.5 | #384 | ✅ gemerged | GDI-flag TruthfulnessIssue |
-| US-T.3 | #371 | ✅ gemerged | WebSocket TESSERA_PROPOSED / TESSERA_CONTESTED |
-| US-T.1 | #369 | ✅ gemerged | Conflictdetectie via valor:undermines |
-| US-T.2 | #370 | ⏳ geblokkeerd | Auto-CapabilityGap — wacht op US-9.4 (#368) uit Epic 9 |
-
-**Volgende stap:** Epic T epic branch mergen naar `development` (US-T.2 deferred naar na Epic 9).
+*Geen actieve Epic. Fase A kan gestart worden.*
 
 ---
 
 ## Implementatievolgorde (open Epics)
 
-### Fase A — Parallelle perspectieven (onafhankelijk, starten zodra Epic T gemerged)
+### Fase A — Parallelle perspectieven (onafhankelijk — Epic T ✅ gemerged, start nu)
 
 Alle vier vereisen alleen Epic 3 ✅. Kunnen parallel lopen.
 

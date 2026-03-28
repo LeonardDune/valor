@@ -1,10 +1,8 @@
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
 from fastapi.responses import JSONResponse
 
 from app.auth import get_current_user
@@ -19,15 +17,14 @@ from app.db.permissions import check_permission
 from app.models.domain import (
     DesignSpaceCreate, DesignSpaceResponse, Role,
     DesignAlternativeCreate, DesignAlternativeResponse,
+    DesignScenarioCreate, DesignScenarioResponse,
     PhaseTransitionRequest, PhaseTransitionResponse,
     ParticipantAdd, ParticipantResponse,
 )
 from app.ontology import VALOR_NS
-from app.db.fuseki_knowledge import get_condition_coverage, create_claim_coverage_assessment, get_asis_condition_coverage
-from app.db.fuseki_phases import get_phase_snapshots
 from app.services.fuseki import (
-    initialize_design_space_graphs, initialize_alternative_graph,
-    sparql_proxy_query, sparql_select, sparql_select_global, sparql_update,
+    initialize_design_space_graphs, initialize_scenario_graph,
+    sparql_proxy_query, sparql_select, sparql_update,
 )
 
 logger = logging.getLogger(__name__)
@@ -98,12 +95,12 @@ async def can_resolve_thread(
     return {"can_resolve": can}
 
 
-@router.post("/{design_space_id}/alternative/", response_model=DesignAlternativeResponse, status_code=201)
-async def create_alternative(
+@router.post("/{design_space_id}/scenario/", response_model=DesignScenarioResponse, status_code=201)
+async def create_scenario(
     design_space_id: str,
-    request: DesignAlternativeCreate,
+    request: DesignScenarioCreate,
     user: dict = Depends(get_current_user),
-) -> DesignAlternativeResponse:
+) -> DesignScenarioResponse:
     user_id = user["id"]
 
     if not await check_permission(user_id, design_space_id, Role.MEMBER):
@@ -112,25 +109,25 @@ async def create_alternative(
             detail="Onvoldoende rechten voor deze DesignSpace.",
         )
 
-    alt_id = str(uuid.uuid4())
+    scenario_id = str(uuid.uuid4())
     creator_uri = f"urn:valor:user:{user_id}"
     created_at = datetime.now(timezone.utc).isoformat()
 
-    alt_uri = await initialize_alternative_graph(
+    scenario_uri = await initialize_scenario_graph(
         ds_id=design_space_id,
-        alt_id=alt_id,
+        alt_id=scenario_id,
         name=request.name,
         description=request.description or "",
         creator_uri=creator_uri,
         created_at=created_at,
     )
 
-    logger.info("DesignAlternative aangemaakt: %s in DesignSpace %s door %s", alt_uri, design_space_id, user_id)
+    logger.info("DesignScenario aangemaakt: %s in DesignSpace %s door %s", scenario_uri, design_space_id, user_id)
 
-    return DesignAlternativeResponse(
-        alternative_id=alt_id,
-        alternative_uri=alt_uri,
-        graph_uri=alt_uri,
+    return DesignScenarioResponse(
+        scenario_id=scenario_id,
+        scenario_uri=scenario_uri,
+        graph_uri=scenario_uri,
         design_space_id=design_space_id,
         name=request.name,
         description=request.description,
@@ -139,11 +136,11 @@ async def create_alternative(
     )
 
 
-@router.get("/{design_space_id}/alternatives", response_model=list[DesignAlternativeResponse])
-async def list_alternatives(
+@router.get("/{design_space_id}/scenarios", response_model=list[DesignScenarioResponse])
+async def list_scenarios(
     design_space_id: str,
     user: dict = Depends(get_current_user),
-) -> list[DesignAlternativeResponse]:
+) -> list[DesignScenarioResponse]:
     user_id = user["id"]
 
     if not await check_permission(user_id, design_space_id, Role.VIEWER):
@@ -154,15 +151,15 @@ async def list_alternatives(
 
     base_graph = f"urn:valor:ds:{design_space_id}/base"
     rows = await sparql_select(
-        f"""SELECT ?alt ?name ?desc ?status ?createdBy ?createdAt WHERE {{
+        f"""SELECT ?scenario ?name ?desc ?status ?createdBy ?createdAt WHERE {{
           GRAPH <{base_graph}> {{
-            ?alt a <{VALOR_NS}DesignAlternative> ;
+            ?scenario a <{VALOR_NS}DesignScenario> ;
               <{VALOR_NS}inDesignSpace> <urn:valor:ds:{design_space_id}> ;
-              <{VALOR_NS}alternativeName> ?name ;
-              <{VALOR_NS}alternativeStatus> ?status .
-            OPTIONAL {{ ?alt <{VALOR_NS}alternativeDescription> ?desc . }}
-            OPTIONAL {{ ?alt <{VALOR_NS}createdBy> ?createdBy . }}
-            OPTIONAL {{ ?alt <{VALOR_NS}createdAt> ?createdAt . }}
+              <{VALOR_NS}scenarioName> ?name ;
+              <{VALOR_NS}scenarioStatus> ?status .
+            OPTIONAL {{ ?scenario <{VALOR_NS}scenarioDescription> ?desc . }}
+            OPTIONAL {{ ?scenario <{VALOR_NS}createdBy> ?createdBy . }}
+            OPTIONAL {{ ?scenario <{VALOR_NS}createdAt> ?createdAt . }}
           }}
         }}""",
         f"{design_space_id}/base",
@@ -170,14 +167,14 @@ async def list_alternatives(
 
     result = []
     for row in rows:
-        alt_uri = row["alt"]
-        alt_id = alt_uri.rsplit("/", 1)[-1]
+        scenario_uri = row["scenario"]
+        scenario_id = scenario_uri.rsplit("/", 1)[-1]
         status_uri = row.get("status", "")
         status = "archived" if status_uri.endswith("Archived") else "active"
-        result.append(DesignAlternativeResponse(
-            alternative_id=alt_id,
-            alternative_uri=alt_uri,
-            graph_uri=alt_uri,
+        result.append(DesignScenarioResponse(
+            scenario_id=scenario_id,
+            scenario_uri=scenario_uri,
+            graph_uri=scenario_uri,
             design_space_id=design_space_id,
             name=row.get("name", ""),
             description=row.get("desc"),
@@ -185,82 +182,6 @@ async def list_alternatives(
             created_at=row.get("createdAt", ""),
         ))
     return result
-
-
-class ConditionCoverageItem(BaseModel):
-    claim_id: str
-    coverage: str  # "Full" | "Partial" | "None"
-
-
-@router.get("/{design_space_id}/alternative/{alternative_id}/coverage", response_model=list[ConditionCoverageItem])
-async def get_alternative_coverage(
-    design_space_id: str,
-    alternative_id: str,
-    user: dict = Depends(get_current_user),
-) -> list[ConditionCoverageItem]:
-    """Berekent en retourneert capax:ConditionCoverage per CausalClaim voor het gegeven alternatief."""
-    user_id = user["id"]
-
-    if not await check_permission(user_id, design_space_id, Role.VIEWER):
-        raise HTTPException(
-            status_code=403,
-            detail="Onvoldoende rechten voor deze DesignSpace.",
-        )
-
-    items = await get_condition_coverage(design_space_id, alternative_id)
-    logger.info(
-        "ConditionCoverage berekend voor DesignSpace %s / alternatief %s door %s — %d claims",
-        design_space_id, alternative_id, user_id, len(items),
-    )
-    return [ConditionCoverageItem(**item) for item in items]
-
-
-@router.get("/{design_space_id}/coverage", response_model=list[ConditionCoverageItem])
-async def get_asis_coverage(
-    design_space_id: str,
-    user: dict = Depends(get_current_user),
-) -> list[ConditionCoverageItem]:
-    """Berekent ConditionCoverage vanuit de asis-graph (geen alternatief nodig, voor overlay-visualisatie)."""
-    user_id = user["id"]
-
-    if not await check_permission(user_id, design_space_id, Role.VIEWER):
-        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
-
-    items = await get_asis_condition_coverage(design_space_id)
-    return [ConditionCoverageItem(**item) for item in items]
-
-
-class ClaimCoverageAssessmentResponse(BaseModel):
-    assessment_id: str
-    assessment_uri: str
-    outcome: str  # "FullyCovered" | "PartiallyCovered"
-
-
-@router.post(
-    "/{design_space_id}/alternative/{alternative_id}/assessment/coverage",
-    response_model=ClaimCoverageAssessmentResponse,
-    status_code=201,
-)
-async def create_coverage_assessment(
-    design_space_id: str,
-    alternative_id: str,
-    user: dict = Depends(get_current_user),
-) -> ClaimCoverageAssessmentResponse:
-    """Aggregeert ConditionCoverage en maakt een causa:ClaimCoverageAssessment Tessera aan."""
-    user_id = user["id"]
-
-    if not await check_permission(user_id, design_space_id, Role.MEMBER):
-        raise HTTPException(
-            status_code=403,
-            detail="Onvoldoende rechten voor deze DesignSpace.",
-        )
-
-    result = await create_claim_coverage_assessment(design_space_id, alternative_id, user_id)
-    logger.info(
-        "ClaimCoverageAssessment aangemaakt voor DesignSpace %s / alternatief %s: %s",
-        design_space_id, alternative_id, result["outcome"],
-    )
-    return ClaimCoverageAssessmentResponse(**result)
 
 
 @router.get("/{design_space_id}/sparql")
@@ -321,16 +242,16 @@ async def phase_transition(
             )
         to_phase = PHASE_SEQUENCE[current_idx + 1]
 
-    # -- Actieve alternatieven ophalen uit asis-graph --------------------------
-    asis_graph = f"urn:valor:ds:{design_space_id}/asis"
+    # -- Actieve scenario's ophalen uit baseline-graph --------------------------
+    baseline_graph = f"urn:valor:ds:{design_space_id}/baseline"
     alt_rows = await sparql_select(
         f"""SELECT DISTINCT ?alt WHERE {{
-          GRAPH <{asis_graph}> {{
+          GRAPH <{baseline_graph}> {{
             ?t <{VALOR_NS}inAlternative> ?alt .
           }}
           FILTER NOT EXISTS {{
             GRAPH <urn:valor:ds:{design_space_id}/base> {{
-              ?alt <{VALOR_NS}alternativeStatus> <{VALOR_NS}Archived> .
+              ?alt <{VALOR_NS}scenarioStatus> <{VALOR_NS}Archived> .
             }}
           }}
         }}""",
@@ -338,40 +259,26 @@ async def phase_transition(
     )
     active_alternatives = [r["alt"] for r in alt_rows]
 
-    # -- Gate-check per actief alternatief -------------------------------------
-    causa_ns = f"{VALOR_NS}causa#"
+    # -- Gate-check per actief scenario ----------------------------------------
     missing_gates: list[str] = []
     for alt_uri in active_alternatives:
-        alt_id = alt_uri.rsplit("/", 1)[-1]
-        alt_graph = f"urn:valor:ds:{design_space_id}/alternative/{alt_id}"
-        alt_label = alt_id
-
-        # FeasibilityAssessment: in asis graph (CAPAX, Epic 9)
-        feasibility_rows = await sparql_select(
-            f"""SELECT ?status WHERE {{
-              GRAPH <{asis_graph}> {{
-                ?t a <{VALOR_NS}FeasibilityAssessment> ;
-                   <{VALOR_NS}inAlternative> <{alt_uri}> ;
-                   <{VALOR_NS}epistemicStatus> ?status .
-              }}
-            }}""",
-            design_space_id,
-        )
-        if not feasibility_rows:
-            missing_gates.append(f"FeasibilityAssessment ontbreekt voor alternatief '{alt_label}'")
-
-        # ClaimCoverageAssessment: in alternative graph (CAUSA-engine, US-4.8)
-        coverage_rows = await sparql_select(
-            f"""SELECT ?status WHERE {{
-              GRAPH <{alt_graph}> {{
-                ?t a <{causa_ns}ClaimCoverageAssessment> ;
-                   <{VALOR_NS}epistemicStatus> ?status .
-              }}
-            }}""",
-            design_space_id,
-        )
-        if not coverage_rows:
-            missing_gates.append(f"ClaimCoverageAssessment ontbreekt voor alternatief '{alt_label}'")
+        for gate_type, gate_label in [
+            (f"{VALOR_NS}FeasibilityAssessment", "FeasibilityAssessment"),
+            (f"{VALOR_NS}ClaimCoverageAssessment", "ClaimCoverageAssessment"),
+        ]:
+            rows = await sparql_select(
+                f"""SELECT ?status WHERE {{
+                  GRAPH <{baseline_graph}> {{
+                    ?t a <{gate_type}> ;
+                       <{VALOR_NS}inAlternative> <{alt_uri}> ;
+                       <{VALOR_NS}epistemicStatus> ?status .
+                  }}
+                }}""",
+                design_space_id,
+            )
+            if not rows:
+                alt_label = alt_uri.rsplit(":", 1)[-1]
+                missing_gates.append(f"{gate_label} ontbreekt voor scenario '{alt_label}'")
 
     if missing_gates:
         raise HTTPException(
@@ -379,7 +286,7 @@ async def phase_transition(
             detail={"message": "Gate-check mislukt.", "missing": missing_gates},
         )
 
-    # -- Alternatieven archiveren bij NotFeasible / NotCovered -----------------
+    # -- Scenario's archiveren bij NotFeasible / NotCovered --------------------
     archived_alternatives: list[str] = []
     base_graph = f"urn:valor:ds:{design_space_id}/base"
 
@@ -390,7 +297,7 @@ async def phase_transition(
         ]:
             rows = await sparql_select(
                 f"""SELECT ?t WHERE {{
-                  GRAPH <{asis_graph}> {{
+                  GRAPH <{baseline_graph}> {{
                     ?t a <{gate_type}> ;
                        <{VALOR_NS}inAlternative> <{alt_uri}> ;
                        <{VALOR_NS}epistemicStatus> <{verdict_status}> .
@@ -405,7 +312,7 @@ async def phase_transition(
                 await sparql_update(
                     f"""INSERT DATA {{
                       GRAPH <{base_graph}> {{
-                        <{alt_uri}> <{VALOR_NS}alternativeStatus> <{VALOR_NS}Archived> .
+                        <{alt_uri}> <{VALOR_NS}scenarioStatus> <{VALOR_NS}Archived> .
                       }}
                     }}""",
                     design_space_id,
@@ -535,111 +442,6 @@ INSERT DATA {{
     )
 
 
-class DesignSpaceProvenanceActivity(BaseModel):
-    activity_uri: str
-    operation_type: str
-    attributed_to: str
-    started_at: str
-    generated: Optional[str] = None
-    used: list[str] = []
-
-
-@router.get("/{design_space_id}/provenance", response_model=list[DesignSpaceProvenanceActivity])
-async def get_design_space_provenance(
-    design_space_id: str,
-    user: dict = Depends(get_current_user),
-) -> list[DesignSpaceProvenanceActivity]:
-    """Geeft de volledige PROV-O activiteitenketen terug voor een DesignSpace."""
-    user_id = user["id"]
-
-    if not await check_permission(user_id, design_space_id, Role.VIEWER):
-        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
-
-    prov_graph = f"urn:valor:ds:{design_space_id}/provenance"
-    PROV_NS = "https://www.w3.org/ns/prov#"
-
-    rows = await sparql_select(
-        f"""PREFIX prov: <{PROV_NS}>
-SELECT ?activity ?opType ?agent ?startedAt ?generated WHERE {{
-  GRAPH <{prov_graph}> {{
-    ?activity a prov:Activity ;
-      <urn:valor:operationType> ?opType ;
-      prov:wasAttributedTo ?agent ;
-      prov:startedAtTime ?startedAt .
-    OPTIONAL {{ ?activity prov:generated ?generated . }}
-  }}
-}}
-ORDER BY ?startedAt""",
-        f"{design_space_id}/provenance",
-    )
-
-    used_rows = await sparql_select(
-        f"""PREFIX prov: <{PROV_NS}>
-SELECT ?activity ?used WHERE {{
-  GRAPH <{prov_graph}> {{
-    ?activity a prov:Activity ;
-      prov:used ?used .
-  }}
-}}""",
-        f"{design_space_id}/provenance",
-    )
-
-    used_by_activity: dict[str, list[str]] = {}
-    for r in used_rows:
-        used_by_activity.setdefault(r["activity"], []).append(r["used"])
-
-    results = []
-    for row in rows:
-        activity_uri = row["activity"]
-        op_uri = row["opType"]
-        op_label = op_uri.rsplit(":", 1)[-1]
-        agent = row["agent"].rsplit(":", 1)[-1]
-        results.append(DesignSpaceProvenanceActivity(
-            activity_uri=activity_uri,
-            operation_type=op_label,
-            attributed_to=agent,
-            started_at=row["startedAt"],
-            generated=row.get("generated"),
-            used=used_by_activity.get(activity_uri, []),
-        ))
-
-    return results
-
-
-@router.get("/{design_space_id}/conflicts")
-async def get_conflicts(
-    design_space_id: str,
-    user: dict = Depends(get_current_user),
-) -> list[dict]:
-    """Geeft alle actieve valor:ConflictSignal resources terug voor een DesignSpace."""
-    if not await check_permission(user["id"], design_space_id, Role.VIEWER):
-        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
-
-    prov_graph = f"urn:valor:ds:{design_space_id}/provenance"
-    rows = await sparql_select_global(
-        f"""SELECT ?signal ?tessera1 ?tessera2 ?detectedAt WHERE {{
-  GRAPH <{prov_graph}> {{
-    ?signal a <{VALOR_NS}ConflictSignal> ;
-      <{VALOR_NS}conflictingTessera> ?tessera1 ;
-      <{VALOR_NS}conflictingTessera> ?tessera2 ;
-      <{VALOR_NS}detectedAt> ?detectedAt .
-    FILTER(str(?tessera1) < str(?tessera2))
-  }}
-}}
-ORDER BY DESC(?detectedAt)""",
-    )
-
-    return [
-        {
-            "conflict_uri": row["signal"],
-            "tessera_a": row["tessera1"],
-            "tessera_b": row["tessera2"],
-            "detected_at": row["detectedAt"],
-        }
-        for row in rows
-    ]
-
-
 @router.get("/{design_space_id}/participants", response_model=list[ParticipantResponse])
 async def list_participants(
     design_space_id: str,
@@ -690,11 +492,34 @@ async def list_participants(
     return results
 
 
-@router.get("/{design_space_id}/phase-snapshots")
-async def list_phase_snapshots(
+@router.get("/{design_space_id}/conflicts")
+async def get_conflicts(
     design_space_id: str,
     user: dict = Depends(get_current_user),
-):
-    if not await check_permission(user["id"], design_space_id, Role.VIEWER):
-        raise HTTPException(status_code=403, detail="Geen toegang tot deze DesignSpace")
-    return await get_phase_snapshots(design_space_id)
+) -> list[dict]:
+    """Geeft alle ConflictSignals terug voor een DesignSpace."""
+    user_id = user["id"]
+    if not await check_permission(user_id, design_space_id, Role.VIEWER):
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    prov_graph = f"urn:valor:ds:{design_space_id}/provenance"
+    from app.services.fuseki import sparql_select_global
+    rows = await sparql_select_global(f"""SELECT ?signal ?ta ?tb ?det WHERE {{
+  GRAPH <{prov_graph}> {{
+    ?signal a <{VALOR_NS}ConflictSignal> ;
+      <{VALOR_NS}conflictingTessera> ?ta ;
+      <{VALOR_NS}conflictingTessera> ?tb ;
+      <{VALOR_NS}detectedAt> ?det .
+    FILTER(str(?ta) < str(?tb))
+  }}
+}}""")
+
+    return [
+        {
+            "conflict_uri": row["signal"],
+            "tessera_a": row["ta"],
+            "tessera_b": row["tb"],
+            "detected_at": row["det"],
+        }
+        for row in rows
+    ]
