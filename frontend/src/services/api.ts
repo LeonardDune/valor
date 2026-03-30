@@ -63,6 +63,19 @@ export interface ValidationResult {
     message: string;
 }
 
+export interface SociaOntologyEntry {
+    uri: string;
+    local_name: string;
+    label_en: string;
+    label_nl: string;
+}
+
+export interface SociaOntology {
+    actor_types: SociaOntologyEntry[];
+    roles: SociaOntologyEntry[];
+    dependency_types: SociaOntologyEntry[];
+}
+
 export interface AgentResponse {
     agent_name: string;
     perspective: string;
@@ -616,6 +629,11 @@ export const api = {
     // Ontologie endpoints
     getEpistemicStatuses: async (): Promise<{ uri: string; label_en: string; label_nl: string }[]> => {
         const response = await apiClient.get('/ontology/epistemic-statuses');
+        return response.data;
+    },
+
+    getSociaOntology: async (): Promise<SociaOntology> => {
+        const response = await apiClient.get<SociaOntology>('/ontology/socia');
         return response.data;
     },
 
