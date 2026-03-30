@@ -257,6 +257,118 @@ Een `valor:Participant` is een `ufoc:Agent` met een rol (`Initiator`, `Contribut
 
 ---
 
+## 2B. Entity Identiteitsarchitectuur
+
+### 2B.1 Kernprincipe
+
+VALOR werkt met twee categorisch onderscheiden soorten entiteiten: rigide Kinds en anti-rigide rollen. Een rigide Kind is een type waarvan de instanties noodzakelijkerwijs tot dat type behoren zolang ze bestaan — een persoon is altijd een `ufoc:PhysicalAgent`, ongeacht in welk vraagstuk of perspectief ze verschijnt. Een anti-rigide rol is een type waarvan de instanties contingent lid zijn — dezelfde persoon kan een `socia:HumanStakeholder` zijn in het SOCIA-perspectief en een `lexa:SubjectOfNorm` in LEXA, afhankelijk van de context.
+
+Het kernprincipe van de Entity Identiteitsarchitectuur: **elk rigide Kind in VALOR heeft één persistente URI in de Entity Registry (`urn:valor:entities`)**. Deze URI wordt hergebruikt in alle DesignSpaces en perspectieven. Anti-rigide rollen worden per perspectief of DesignSpace toegewezen in de baseline-graph van de betreffende DesignSpace (`urn:valor:ds:{ds_id}/baseline`).
+
+Dit principe heeft drie directe architectuurvoordelen:
+
+1. **Identiteitsintegriteit over DesignSpaces** — dezelfde burger, organisatie of wet verschijnt in meerdere vraagstukken altijd als dezelfde URI. Cross-DesignSpace queries zijn daarmee semantisch correct zonder disambiguatie-overhead.
+2. **Perspectief-isolatie** — roltoewijzingen zijn geïsoleerd per DesignSpace en perspectief. Een entiteit kan in de ene context als stakeholder verschijnen en in een andere als rechtspersoon, zonder dat die rolassignaties elkaar beïnvloeden.
+3. **Ontologische zuiverheid** — de Entity Registry bevat uitsluitend rigide Kinds (ontologisch stabiel); perspectieven bevatten uitsluitend rollen en relaties (contextafhankelijk). De scheiding reflecteert het UFO-onderscheid tussen sortalen types en relatieve types.
+
+### 2B.2 Kind-taxonomie (Endurants)
+
+De volgende rigide Kinds vormen de identiteitsdragende typen in VALOR. Elke entiteit die in VALOR wordt beschreven of bijhoudt, is een instantie van precies één van deze Kinds (het principe van single instantiation voor sortal types).
+
+| Kind | gUFO-type | Module | Identiteitscriterium |
+|------|-----------|--------|---------------------|
+| `ufoc:PhysicalAgent` | `gufo:FunctionalComplex` | UFO-C | Lichamelijke continuïteit |
+| `ufoc:InstitutionalAgent` | `gufo:FunctionalComplex` | UFO-C | Collectieve erkenning |
+| `valor:Issue` | `gufo:SocialObject` | VALOR-CORE | Constitutieve situatie + betrokken community |
+| `delibera:Tessera` | `gufo:SocialObject` | DELIBERA | De bewering zelf (propositionele identiteit) |
+| `causa:CausalVariable` | `gufo:Quality` | CAUSA | Het gemeten construct |
+| `causa:CausalClaim` | `gufo:IntrinsicMode` | CAUSA | Kind van de Belief-mode |
+| `ufoc:NormativeDescription` | `gufo:SocialObject` | LEXA | De normatieve tekst zelf |
+
+**Belangrijk onderscheid:** `ufoc:Agent` is een **Category** (rigid non-sortal) en niet een Kind — het groepeert `PhysicalAgent` en `InstitutionalAgent` met elk hun eigen identiteitscriterium. Een agent-URI in VALOR is altijd een instantie van een van de twee subkind-types, nooit van `ufoc:Agent` direct.
+
+### 2B.3 Rolmatrix per Perspectief
+
+Dezelfde entiteit verschijnt in verschillende perspectieven via rol-assigning relaties. De onderstaande matrix toont hoe rigide Kinds worden gekoppeld aan perspectief-specifieke rollen.
+
+| Entiteit | gUFO-type | SOCIA | CAUSA | ACTA | LEXA |
+|----------|-----------|-------|-------|------|------|
+| Persoon | `ufoc:PhysicalAgent` | `socia:HumanStakeholder` | — | `acta:ActorRole` | `lexa:SubjectOfNorm` |
+| Organisatie | `ufoc:InstitutionalAgent` | `socia:OrganisationalActor` | — | `acta:AuthorisedExecutor` | `lexa:ObligatedParty` |
+| Wet/regeling | `ufoc:NormativeDescription` | — | causale randvoorwaarde | `acta:LegalBasis` | `lexa:NormativeSource` |
+| Factor | `causa:CausalVariable` | — | `causa:Factor` | `acta:CapabilityRequirement` | — |
+
+Rollen zijn geen nieuwe URIs — ze zijn eigenschappen die worden toegekend aan de persistente Kind-URI. De triple `<urn:valor:entities:person:abc> socia:playsRole socia:HumanStakeholder` staat in de baseline-graph van de betreffende DesignSpace, niet in de Entity Registry zelf.
+
+### 2B.4 Named Graph Architectuur
+
+```
+urn:valor:entities                ← Persistente rigide Kinds (platform-breed)
+urn:valor:ds:{ds_id}/baseline     ← Rolassignaties, Tesserae, perspectief-specifieke data
+```
+
+De Entity Registry is een **platform-brede** named graph: zij bevat de fundamentele identiteitsbeschrijvingen die over alle DesignSpaces heen gelden. De baseline-graph is **DesignSpace-specifiek**: zij bevat alles wat contextueel is — rollen, relaties, Tesserae, fasegebonden beweringen.
+
+### 2B.5 Supabase–Fuseki Identiteitsbrug
+
+VALOR-gebruikers authenticeren via Supabase. Bij elke eerste login wordt Just-in-Time (JIT) een `ufoc:PhysicalAgent`-instantie aangemaakt in `urn:valor:entities`, gekoppeld aan de Supabase UUID van de gebruiker.
+
+URI-patroon voor interne gebruikers:
+```
+urn:valor:entities:person:{supabase_uuid}
+```
+
+De JIT-brug garandeert dat elke deelnemer bij zijn eerste interactie met een DesignSpace een ontologisch correcte identiteit heeft. De Supabase-identiteit (auth) en de VALOR-O entiteit (kennis) zijn daarmee expliciet verbonden maar gescheiden: de auth-laag blijft in Supabase/Neo4j, de kennislaag staat in Fuseki.
+
+### 2B.6 Intern vs. Extern Onderscheid
+
+VALOR onderscheidt twee categorieën entiteiten in de registry:
+
+**Interne entiteiten** zijn VALOR-gebruikers met een Supabase-account. Ze worden aangemaakt via de JIT-brug bij login.
+
+**Externe entiteiten** zijn beschreven actoren (burgers, organisaties, wetten) zonder VALOR-account. Ze worden aangemaakt in `urn:valor:entities` door een deelnemer die ze beschrijft als onderdeel van een DesignSpace. Externe personen en organisaties zijn volledig gelijkwaardig aan interne entiteiten in de ontologie — het enige verschil is de oorsprong van de URI en de afwezigheid van een Supabase-koppeling.
+
+### 2B.7 Cross-perspectief Rolpatroon
+
+Het standaard Turtle-patroon voor roltoewijzing in een DesignSpace:
+
+```turtle
+# In urn:valor:ds:{ds_id}/baseline:
+<urn:valor:entities:person:abc> socia:playsRole socia:PrincipalRole ;
+    socia:isStakeholderIn <urn:valor:issue:{issue_id}> .
+
+<urn:valor:entities:norm:wob2022> lexa:isApplicableIn <urn:valor:issue:{issue_id}> ;
+    acta:isLegalBasisFor <urn:valor:entities:action:xyz> .
+```
+
+De entiteit-URIs (`urn:valor:entities:*`) blijven stabiel over tijd en DesignSpaces. Alleen de roltoewijzings-triples veranderen per context.
+
+### 2B.8 Vijf Invariante Structuurparen
+
+Door de hele VALOR-architectuur heen keren vijf structuurparen terug als architecturele invarianten. Ze zijn aanwezig in elk vraagstuk, elk perspectief en elke fase:
+
+1. **Agent ↔ Issue** — wie draagt het vraagstuk? (SOCIA-koppeling; legitimeringsbron van het ecosysteem)
+2. **CausalClaim ↔ Intervention** — theorie van verandering (CAUSA-kern; de beleidstheoretische rationale)
+3. **TransactionType ↔ ValueExperience** — wat wordt gedaan en wat ervaart de burger? (ACTA–AXIA-koppeling via COVER)
+4. **Tessera ↔ DecisionEpisode** — wat wordt beweerd en wanneer beslist? (DELIBERA-kern; epistemische provenance)
+5. **Capability ↔ TransactionType** — kan het ook echt? (CAPAX-gate; haalbaarheidscheck)
+
+Deze vijf paren zijn de minimale structuur van elk coherent VALOR-model. Een DesignSpace zonder volledig ingevulde structuurparen is per definitie onvolledig — detecteerbaar via SPARQL-constraints op de SHACL-shapes.
+
+### 2B.9 URI-conventies Entity Registry
+
+```
+urn:valor:entities:person:{supabase_uuid}    ← interne gebruikers (JIT-aangemaakt bij login)
+urn:valor:entities:person:{random_uuid}      ← externe personen (aangemaakt door deelnemer)
+urn:valor:entities:org:{random_uuid}         ← organisaties (intern of extern)
+urn:valor:entities:norm:{slug}               ← wetten en regelingen (bijv. norm:wob2022)
+urn:valor:entities:cvar:{slug-of-uuid}       ← causale variabelen (Factors)
+```
+
+Het `slug`-patroon voor normen maakt mensleesbare URIs mogelijk (`norm:wob2022`, `norm:avg`) terwijl de UUID-variant gebruikt wordt wanneer geen stabiele naam beschikbaar is. Bij conflicts (twee deelnemers maken dezelfde norm met een andere slug aan) is de Entity Registry de canonieke bron; deduplicatie is een beheerstaak.
+
+---
+
 ## 3. Claim-architectuur en Epistemische Statusmachine
 
 ### 3.1 Elke modelleerelement is een Tessera
