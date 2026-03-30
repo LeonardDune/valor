@@ -27,11 +27,14 @@ services:
     container_name: valor-fuseki-prod
     restart: always
     # Geen publieke poort — alleen bereikbaar via intern Coolify-netwerk
+    mem_limit: 1536m
+    memswap_limit: 1536m
     volumes:
       - fuseki_data:/fuseki/databases
     environment:
       # ADMIN_PASSWORD wordt ingesteld via Coolify UI
       - ADMIN_PASSWORD=${FUSEKI_ADMIN_PASSWORD}
+      - JVM_ARGS=-Xmx1g -Xms256m
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:3030/$/ping || exit 1"]
       interval: 30s
