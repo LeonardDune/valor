@@ -1,0 +1,280 @@
+import AgentOntology
+import IndividualOntology
+
+package ObjectOntology
+
+category Object specializes Individual 
+
+kind SocialObject specializes Object {
+    label {
+        @en "Social Object"
+        @nl "Sociaal Object"
+    }
+    description {
+        @en "A Social Object is an Object that exists only by virtue of a social practice, i.e., it depends on the collective intentionality of a community for its existence."
+        @nl "Een Sociaal Object is een Object dat alleen bestaat door een sociale praktijk, d.w.z. het hangt af van de collectieve intentionaliteit van een gemeenschap voor zijn bestaan."
+    }
+    /**
+    Examples: money, marriage, corporation, government, law, contract, promise, obligation, right, duty, role, function, institution.
+    */
+}
+
+kind PhysicalObject specializes Object {
+    label {
+        @en "Physical Object"
+        @nl "Fysiek Object"
+    }
+    description {
+        @en "A Physical Object is an Object that has a physical presence in space and time, and can be perceived by the senses."
+        @nl "Een Fysiek Object is een Object dat een fysieke aanwezigheid heeft in ruimte en tijd, en kan worden waargenomen door de zintuigen."
+    }
+    /**
+    Examples: car, tree, person, building, animal, rock, water, air.
+    */
+}
+
+mixin Resource specializes Object {
+    label {
+        @en "Resource"
+        @nl "Hulpbron"
+    }
+    description {
+        @en "A Resource is an Object that can be used or consumed in an Action to achieve a goal or satisfy a need."
+        @nl "Een Hulpbron is een Object dat kan worden gebruikt of geconsumeerd in een Activiteit om een doel te bereiken of een behoefte te bevredigen."
+    }
+    /**
+    Beschrijving: This is a mixin because it is semi-rigid - a resource can be essential for some objects but accidental for others (e.g., energy for a machine vs. optional for a person). It constrains the natures to objects for clarity.
+    Examples: money, time, energy, information, skills, knowledge, materials.
+    */
+}
+
+subkind NormativeDescription specializes SocialObject {
+    label {
+        @en "Normative Description"
+        @nl "Normatieve Beschrijving"
+    }
+    description {
+        @en "A Normative Description is a Social Object that represents a set of norms, rules, or guidelines that govern the behavior of individuals or groups within a social context."
+        @nl "Een Normatieve Beschrijving is een Sociaal Object dat een reeks normen, regels of richtlijnen vertegenwoordigt die het gedrag van individuen of groepen binnen een sociale context regelen."
+    }
+    /**
+    Beschrijving: It defines one or more rules/norms recognized by at least one Social Agent and that can define Nominal Universals such as Social Moment Universals (e.g., social commitment types), Social Objects (the crown of the king of Spain) and Social Roles such as president, prime minister, PhD candidate or pedestrian.
+    Examples: laws, regulations, policies, standards, codes of conduct, ethical guidelines.
+    */
+}
+
+/**
+ * This is a mode representing individual rules or prescriptions that qualify actions/states as allowed/disallowed/obligatory.
+ * Norms are more specific than entire normative descriptions - they are the individual rules within them.
+ * Corresponds to LKIF-Core's concept of normative rules that qualify behavior.
+ * @see https://github.com/RinkeHoekstra/lkif-core/blob/master/norm.owl
+ */
+mode Norm {
+    label {
+        @en "Norm"
+        @nl "Norm"
+    }
+    description {
+        @en "An individual rule or prescription that qualifies actions/states as allowed/disallowed/obligatory"
+        @nl "Een individuele regel of voorschrift dat handelingen/toestanden kwalificeert als toegestaan/verboden/verplicht"
+    }
+}
+
+/**
+ * This is an intrinsic mode representing permissions - norms that regulate what is allowed to occur.
+ * Permissions qualify actions/states as permissible and give rise to social claims in agents.
+ * Corresponds to Hoffeld's privilege/power concepts but at normative level.
+ */
+subkind Permission specializes Norm {
+    label {
+        @en "Permission"
+        @nl "Toestemming"
+    }
+    description {
+        @en "A norm that qualifies an action or state as permissible"
+        @nl "Een norm die een handeling of toestand kwalificeert als toegestaan"
+    }
+}
+
+/**
+ * This is an intrinsic mode representing prohibitions - norms that regulate what is forbidden.
+ * Prohibitions qualify actions/states as impermissible and give rise to social commitments in agents.
+ * Corresponds to Hoffeld's no-right/no-claim concepts but at normative level.
+ */
+subkind Prohibition specializes Norm {
+    label {
+        @en "Prohibition"
+        @nl "Verbod"
+    }
+    description {
+        @en "A norm that qualifies an action or state as forbidden"
+        @nl "Een norm die een handeling of toestand kwalificeert als verboden"
+    }
+}
+
+/**
+ * This is an intrinsic mode representing obligations - norms that regulate what must occur.
+ * Obligations qualify actions/states as mandatory and give rise to social commitments in agents.
+ * Corresponds to Hoffeld's duty/liability concepts but at normative level.
+ */
+subkind Obligation specializes Norm {
+    label {
+        @en "Obligation"
+        @nl "Verplichting"
+    }
+    description {
+        @en "A norm that qualifies an action or state as mandatory"
+        @nl "Een norm die een handeling of toestand kwalificeert als verplicht"
+    }
+}
+
+/**
+ * This is an intrinsic mode representing exceptions to other norms.
+ * Exceptions modify the application of permissions, prohibitions, or obligations.
+ * Corresponds to legal exception clauses that override general rules.
+ */
+subkind Exception specializes Norm {
+    label {
+        @en "Exception"
+        @nl "Uitzondering"
+    }
+    description {
+        @en "A norm that provides an exception to other norms"
+        @nl "Een norm die een uitzondering op andere normen verschaft"
+    }
+}
+
+// Relations between normative containers and norms
+relation NormativeDescription [1] -- contains -- [1..*] Norm
+
+/**
+ * This is a subkind because legal documents provide a rigid specialization of normative descriptions.
+ * They maintain the identity principle from NormativeDescription but add the constraint of being written sources.
+ * Corresponds to LKIF-Core's distinction between general normative sources and specifically documented legal sources.
+ * @see https://github.com/RinkeHoekstra/lkif-core
+ */
+subkind LegalDocument specializes NormativeDescription {
+    label {
+        @en "Legal Document"
+        @nl "Juridisch Document"
+    }
+    description {
+        @en "A written legal source that bears legal norms"
+        @nl "Een geschreven juridische bron die juridische normen bevat"
+    }
+}
+
+/**
+ * This is a subkind representing agreements between parties that create legal obligations.
+ * Corresponds to LKIF-Core's Contract class, which bears norms uttered by natural/legal persons.
+ * @see https://github.com/RinkeHoekstra/lkif-core/blob/master/norm.owl#Contract
+ */
+subkind Contract specializes LegalDocument {
+    label {
+        @en "Contract"
+        @nl "Contract"
+    }
+    description {
+        @en "An agreement between parties that creates legal obligations"
+        @nl "Een overeenkomst tussen partijen die juridische verplichtingen creëert"
+    }
+}
+
+/**
+ * This is a subkind representing general legal rules issued by executive authority.
+ * Corresponds to LKIF-Core's Regulation class, which bears norms uttered by legislative bodies.
+ * @see https://github.com/RinkeHoekstra/lkif-core/blob/master/norm.owl#Regulation
+ */
+subkind Regulation specializes LegalDocument {
+    label {
+        @en "Regulation"
+        @nl "Regeling"
+    }
+    description {
+        @en "A general legal rule issued by executive authority"
+        @nl "Een algemene juridische regel uitgevaardigd door uitvoerende macht"
+    }
+}
+
+/**
+ * This is a subkind representing official orders issued by executive authority.
+ * Corresponds to LKIF-Core's Decree class, representing public acts by executive bodies.
+ * @see https://github.com/RinkeHoekstra/lkif-core/blob/master/legal-action.owl#Decree
+ */
+subkind Decree specializes LegalDocument {
+    label {
+        @en "Decree"
+        @nl "Besluit"
+    }
+    description {
+        @en "An official order or decision by executive authority"
+        @nl "Een officiële opdracht of beslissing door uitvoerende macht"
+    }
+}
+
+/**
+ * This is a subkind representing judicial decisions establishing legal principles.
+ * May be written or unwritten, hence specializes NormativeDescription directly (not LegalDocument).
+ * Corresponds to LKIF-Core's Precedent class in the legal source hierarchy.
+ * @see https://github.com/RinkeHoekstra/lkif-core/blob/master/norm.owl#Precedent
+ */
+subkind Precedent specializes NormativeDescription {
+    label {
+        @en "Precedent"
+        @nl "Precedent"
+    }
+    description {
+        @en "A judicial decision establishing legal principle"
+        @nl "Een rechterlijke beslissing die een juridisch beginsel vaststelt"
+    }
+}
+
+/**
+ * This is a subkind representing agreements between states or international organizations.
+ * Corresponds to LKIF-Core's International_Agreement class in the legal source taxonomy.
+ * @see https://github.com/RinkeHoekstra/lkif-core/blob/master/norm.owl#International_Agreement
+ */
+subkind InternationalAgreement specializes NormativeDescription {
+    label {
+        @en "International Agreement"
+        @nl "Internationaal Akkoord"
+    }
+    description {
+        @en "Agreement between states or international organizations"
+        @nl "Overeenkomst tussen staten of internationale organisaties"
+    }
+}
+
+/**
+ * This is a subkind representing binding international agreements.
+ * Specializes InternationalAgreement, corresponding to LKIF-Core's Treaty class.
+ * @see https://github.com/RinkeHoekstra/lkif-core/blob/master/norm.owl#Treaty
+ */
+subkind Treaty specializes InternationalAgreement {
+    label {
+        @en "Treaty"
+        @nl "Verdrag"
+    }
+    description {
+        @en "Binding international agreement"
+        @nl "Bindende internationale overeenkomst"
+    }
+}
+
+/**
+ * This is a subkind representing non-binding legal instruments with persuasive authority.
+ * Corresponds to LKIF-Core's Soft_Law class, distinguished from binding legal sources.
+ * @see https://github.com/RinkeHoekstra/lkif-core/blob/master/norm.owl#Soft_Law
+ */
+subkind SoftLaw specializes NormativeDescription {
+    label {
+        @en "Soft Law"
+        @nl "Soft Law"
+    }
+    description {
+        @en "Non-binding legal instruments with persuasive authority"
+        @nl "Niet-bindende juridische instrumenten met persuasieve autoriteit"
+    }
+}
+
+@formal relation NormativeDescription [0..1] -- defines -- [1..*] Object
