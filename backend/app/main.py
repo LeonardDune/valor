@@ -111,6 +111,17 @@ async def list_epistemic_statuses():
     return get_epistemic_statuses()
 
 
+@app.get("/ontology/socia")
+async def list_socia_ontology():
+    """Retourneert SOCIA actor types, StakeholderRole instanties en DependencyType instanties (uit VALOR-O ontologie)."""
+    from app.services.ontology_cache import get_socia_actor_types, get_socia_dependency_types, get_socia_roles
+    return {
+        "actor_types": get_socia_actor_types(),
+        "roles": get_socia_roles(),
+        "dependency_types": get_socia_dependency_types(),
+    }
+
+
 @app.get("/health")
 async def health_check():
     is_connected = await verify_connectivity()
