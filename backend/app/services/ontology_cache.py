@@ -8,10 +8,14 @@ Queryt de VALOR-O ontologie-graphs in Fuseki voor:
   - Statussen die een DecisionEpisode vereisen (valor:requiresDecisionEpisode)
   - UncertaintyLevel instanties (PAMS-taxonomie, English label -> URI)
   - disc:ContributionType instanties (Dutch label -> URI)
+  - SOCIA: actor types, StakeholderRole instanties, DependencyType instanties
 """
 import logging
 
-from app.ontology import VALOR_NS, VALOR_SITE_BASE
+from app.ontology import UFOC_NS, VALOR_NS, VALOR_SITE_BASE
+
+_LEXA_NS = f"{VALOR_NS}lexa-ext#"
+_LEXA_EXT_GRAPH = f"{VALOR_NS}lexa-ext"
 from app.services.fuseki import sparql_select_global
 
 logger = logging.getLogger(__name__)
@@ -35,6 +39,17 @@ _disc_contribution_type_label_to_uri: dict[str, str] = {}  # "Vraag" → URI
 _status_uri_to_nl_label: dict[str, str] = {}  # URI → "Betwist" etc.
 _system_situation_uris: set[str] = set()
 
+# SOCIA ontologie-data
+_SOCIA_GRAPH = f"{VALOR_NS}socia"
+_SOCIA_NS = f"{VALOR_NS}socia#"
+# [{uri, local_name, label_en, label_nl}]
+_socia_actor_types: list[dict] = []
+_socia_roles: list[dict] = []
+_socia_dependency_types: list[dict] = []
+
+# LEXA norm types (subklassen van ufoc:NormativeDescription)
+_norm_types: list[dict] = []
+
 
 _DISC_GRAPH = f"{VALOR_NS}disc"
 
@@ -45,6 +60,8 @@ async def load_ontology_cache() -> None:
     global _uncertainty_label_to_uri, _participant_role_data, _rbac_role_weights
     global _disc_contribution_type_label_to_uri, _status_uri_to_nl_label
     global _system_situation_uris
+    global _socia_actor_types, _socia_roles, _socia_dependency_types
+    global _norm_types
 
     logger.info("[ontology-cache] Ontologie-data laden van Fuseki...")
 
@@ -216,6 +233,98 @@ async def load_ontology_cache() -> None:
     _system_situation_uris = {row["uri"] for row in sysont_rows}
     logger.info("[ontology-cache] SystemSituation URIs: %d geladen", len(_system_situation_uris))
 
+    # SOCIA: actor types (subklassen van ufoc:Agent)
+    actor_type_rows = await sparql_select_global(f"""
+        PREFIX ufoc: <{UFOC_NS}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?uri ?labelEn ?labelNl WHERE {{
+          GRAPH <{_SOCIA_GRAPH}> {{
+            ?uri rdfs:subClassOf+ <{UFOC_NS}Agent> .
+            OPTIONAL {{ ?uri rdfs:label ?labelEn . FILTER(lang(?labelEn) = "en") }}
+            OPTIONAL {{ ?uri rdfs:label ?labelNl . FILTER(lang(?labelNl) = "nl") }}
+          }}
+        }}
+    """)
+    _socia_actor_types = [
+        {
+            "uri": row["uri"],
+            "local_name": row["uri"].split("#")[-1],
+            "label_en": row.get("labelEn", row["uri"].split("#")[-1]),
+            "label_nl": row.get("labelNl", row.get("labelEn", row["uri"].split("#")[-1])),
+        }
+        for row in actor_type_rows
+    ]
+    logger.info("[ontology-cache] SOCIA actor types: %s", [t["local_name"] for t in _socia_actor_types])
+
+    # SOCIA: StakeholderRole instanties
+    role_inst_rows = await sparql_select_global(f"""
+        PREFIX socia: <{_SOCIA_NS}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?uri ?labelEn ?labelNl WHERE {{
+          GRAPH <{_SOCIA_GRAPH}> {{
+            ?uri a socia:StakeholderRole .
+            OPTIONAL {{ ?uri rdfs:label ?labelEn . FILTER(lang(?labelEn) = "en") }}
+            OPTIONAL {{ ?uri rdfs:label ?labelNl . FILTER(lang(?labelNl) = "nl") }}
+          }}
+        }}
+    """)
+    _socia_roles = [
+        {
+            "uri": row["uri"],
+            "local_name": row["uri"].split("#")[-1],
+            "label_en": row.get("labelEn", row["uri"].split("#")[-1]),
+            "label_nl": row.get("labelNl", row.get("labelEn", row["uri"].split("#")[-1])),
+        }
+        for row in role_inst_rows
+    ]
+    logger.info("[ontology-cache] SOCIA rollen: %s", [r["local_name"] for r in _socia_roles])
+
+    # SOCIA: DependencyType instanties
+    dep_type_rows = await sparql_select_global(f"""
+        PREFIX socia: <{_SOCIA_NS}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?uri ?labelEn ?labelNl WHERE {{
+          GRAPH <{_SOCIA_GRAPH}> {{
+            ?uri a socia:DependencyType .
+            OPTIONAL {{ ?uri rdfs:label ?labelEn . FILTER(lang(?labelEn) = "en") }}
+            OPTIONAL {{ ?uri rdfs:label ?labelNl . FILTER(lang(?labelNl) = "nl") }}
+          }}
+        }}
+    """)
+    _socia_dependency_types = [
+        {
+            "uri": row["uri"],
+            "local_name": row["uri"].split("#")[-1],
+            "label_en": row.get("labelEn", row["uri"].split("#")[-1]),
+            "label_nl": row.get("labelNl", row.get("labelEn", row["uri"].split("#")[-1])),
+        }
+        for row in dep_type_rows
+    ]
+    logger.info("[ontology-cache] SOCIA dependency types: %s", [d["local_name"] for d in _socia_dependency_types])
+
+    # LEXA: norm types (subklassen van ufoc:NormativeDescription)
+    norm_type_rows = await sparql_select_global(f"""
+        PREFIX ufoc: <{UFOC_NS}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?uri ?labelEn ?labelNl WHERE {{
+          GRAPH <{_LEXA_EXT_GRAPH}> {{
+            ?uri rdfs:subClassOf+ <{UFOC_NS}NormativeDescription> .
+            OPTIONAL {{ ?uri rdfs:label ?labelEn . FILTER(lang(?labelEn) = "en") }}
+            OPTIONAL {{ ?uri rdfs:label ?labelNl . FILTER(lang(?labelNl) = "nl") }}
+          }}
+        }}
+    """)
+    _norm_types = [
+        {
+            "uri": row["uri"],
+            "local_name": row["uri"].split("#")[-1],
+            "label_en": row.get("labelEn", row["uri"].split("#")[-1]),
+            "label_nl": row.get("labelNl", row.get("labelEn", row["uri"].split("#")[-1])),
+        }
+        for row in norm_type_rows
+    ]
+    logger.info("[ontology-cache] Norm types: %s", [t["local_name"] for t in _norm_types])
+
     if not _evidence_label_to_uri or not _status_label_to_uri or not _valid_transitions:
         logger.warning(
             "[ontology-cache] Ontologie-cache onvolledig. "
@@ -300,3 +409,23 @@ def rbac_to_valor_role(rbac_role: str) -> str:
 
 def get_system_situation_uris() -> set[str]:
     return _system_situation_uris
+
+
+def get_socia_actor_types() -> list[dict]:
+    """Retourneert SOCIA actor types (subklassen van ufoc:Agent) met URI, local_name, label_en, label_nl."""
+    return _socia_actor_types
+
+
+def get_socia_roles() -> list[dict]:
+    """Retourneert socia:StakeholderRole instanties met URI, local_name, label_en, label_nl."""
+    return _socia_roles
+
+
+def get_socia_dependency_types() -> list[dict]:
+    """Retourneert socia:DependencyType instanties met URI, local_name, label_en, label_nl."""
+    return _socia_dependency_types
+
+
+def get_norm_types() -> list[dict]:
+    """Retourneert LEXA norm types (subklassen van ufoc:NormativeDescription) met URI, local_name, label_en, label_nl."""
+    return _norm_types

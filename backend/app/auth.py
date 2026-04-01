@@ -103,5 +103,12 @@ async def get_current_user(payload: dict = Depends(verify_token)):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Database synchronization failed for user"
         )
-        
+
+    # JIT Sync: Ensure PhysicalAgent entity exists in urn:valor:entities
+    try:
+        from app.db.fuseki_entities import ensure_person_entity
+        await ensure_person_entity(user_id, name)
+    except Exception as exc:
+        logger.warning("Entity Registry JIT-sync mislukt voor %s: %s", user_id, exc)
+
     return db_user
