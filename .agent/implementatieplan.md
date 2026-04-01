@@ -1,7 +1,7 @@
 # Valor — Implementatieplan
 
-**Laatste update:** 2026-03-30
-**Branch:** epic/issue-481-entity-identiteitsarchitectuur
+**Laatste update:** 2026-04-01
+**Branch:** development
 
 ---
 
@@ -16,29 +16,11 @@
 | Epic 4 | #271 | Causa Perspectief: Semantische Upgrade |
 | Epic 11 | #278 | Neo4j Kennisopslag Afbouwen |
 | Epic 16 | #410 | DISC: Discourse & Deliberation Threads |
+| Epic 18 | #481 | Entity Identiteitsarchitectuur (US-AI.1 t/m US-AI.8) |
 
 ---
 
 ## Actieve Epic
-
-### Epic 18 — Entity Identiteitsarchitectuur (#481)
-
-**Branch:** `epic/issue-481-entity-identiteitsarchitectuur`
-
-| US | Issue | Status | Notitie |
-|----|-------|--------|---------|
-| US-AI.1 | #482 | ✅ gemerged | Architectuurdocumentatie valor-ecosystem.md |
-| US-AI.2 | #483 | ✅ gemerged | Ontologie-patches: StakeholderRole, actortypes, NormativeDescription |
-| US-AI.3 | #484 | ✅ gemerged | Entity Registry Backend + JIT Supabase-bridge |
-| US-AI.4 | #485 | ✅ gemerged | Ontologie-gedreven SOCIA types |
-| US-AI.5 | #486 | ✅ gemerged | Cross-perspectief rolpatroon |
-| US-AI.6 | #487 | ✅ gemerged | SOCIA-refactoring: migratie naar Entity Registry |
-| US-AI.7 | #488 | ✅ gemerged | Normatieve Objecten in Entity Registry |
-| US-AI.8 | #489 | ✅ gemerged | CausalVariable Entity Registry: Factors als persistente Kinds |
-
-**Alle US gemerged. Epic 18 gereed voor finale merge naar development.**
-
----
 
 ### Epic T — Tessera-engine v1.0 (#352) [deels afgerond]
 
