@@ -13,6 +13,9 @@ Queryt de VALOR-O ontologie-graphs in Fuseki voor:
 import logging
 
 from app.ontology import UFOC_NS, VALOR_NS, VALOR_SITE_BASE
+
+_LEXA_NS = f"{VALOR_NS}lexa-ext#"
+_LEXA_EXT_GRAPH = f"{VALOR_NS}lexa-ext"
 from app.services.fuseki import sparql_select_global
 
 logger = logging.getLogger(__name__)
@@ -44,6 +47,9 @@ _socia_actor_types: list[dict] = []
 _socia_roles: list[dict] = []
 _socia_dependency_types: list[dict] = []
 
+# LEXA norm types (subklassen van ufoc:NormativeDescription)
+_norm_types: list[dict] = []
+
 
 _DISC_GRAPH = f"{VALOR_NS}disc"
 
@@ -55,6 +61,7 @@ async def load_ontology_cache() -> None:
     global _disc_contribution_type_label_to_uri, _status_uri_to_nl_label
     global _system_situation_uris
     global _socia_actor_types, _socia_roles, _socia_dependency_types
+    global _norm_types
 
     logger.info("[ontology-cache] Ontologie-data laden van Fuseki...")
 
@@ -295,6 +302,29 @@ async def load_ontology_cache() -> None:
     ]
     logger.info("[ontology-cache] SOCIA dependency types: %s", [d["local_name"] for d in _socia_dependency_types])
 
+    # LEXA: norm types (subklassen van ufoc:NormativeDescription)
+    norm_type_rows = await sparql_select_global(f"""
+        PREFIX ufoc: <{UFOC_NS}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?uri ?labelEn ?labelNl WHERE {{
+          GRAPH <{_LEXA_EXT_GRAPH}> {{
+            ?uri rdfs:subClassOf+ <{UFOC_NS}NormativeDescription> .
+            OPTIONAL {{ ?uri rdfs:label ?labelEn . FILTER(lang(?labelEn) = "en") }}
+            OPTIONAL {{ ?uri rdfs:label ?labelNl . FILTER(lang(?labelNl) = "nl") }}
+          }}
+        }}
+    """)
+    _norm_types = [
+        {
+            "uri": row["uri"],
+            "local_name": row["uri"].split("#")[-1],
+            "label_en": row.get("labelEn", row["uri"].split("#")[-1]),
+            "label_nl": row.get("labelNl", row.get("labelEn", row["uri"].split("#")[-1])),
+        }
+        for row in norm_type_rows
+    ]
+    logger.info("[ontology-cache] Norm types: %s", [t["local_name"] for t in _norm_types])
+
     if not _evidence_label_to_uri or not _status_label_to_uri or not _valid_transitions:
         logger.warning(
             "[ontology-cache] Ontologie-cache onvolledig. "
@@ -394,3 +424,8 @@ def get_socia_roles() -> list[dict]:
 def get_socia_dependency_types() -> list[dict]:
     """Retourneert socia:DependencyType instanties met URI, local_name, label_en, label_nl."""
     return _socia_dependency_types
+
+
+def get_norm_types() -> list[dict]:
+    """Retourneert LEXA norm types (subklassen van ufoc:NormativeDescription) met URI, local_name, label_en, label_nl."""
+    return _norm_types

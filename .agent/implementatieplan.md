@@ -32,7 +32,7 @@
 | US-AI.3 | #484 | ✅ gemerged | Entity Registry Backend + JIT Supabase-bridge |
 | US-AI.4 | #485 | ✅ gemerged | Ontologie-gedreven SOCIA types |
 | US-AI.5 | #486 | ✅ gemerged | Cross-perspectief rolpatroon |
-| US-AI.6 | #487 | ⏳ open | SOCIA-refactoring: migratie naar Entity Registry |
+| US-AI.6 | #487 | ✅ gemerged | SOCIA-refactoring: migratie naar Entity Registry |
 | US-AI.7 | — | ⏳ open | Normatieve Objecten in Entity Registry |
 
 **Volgende stap:** Wave 3 — US-AI.4 (#485) en US-AI.5 (#486) kunnen parallel lopen.
