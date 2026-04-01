@@ -13,7 +13,7 @@ import { PerspectiveToolbar } from '@/components/shell/PerspectiveToolbar';
 import { ExportMenu } from '@/components/shell/ExportMenu';
 import { useDomExport } from '@/hooks/useDomExport';
 import { CLDView } from './views/CLDView';
-import { ClaimViewToggle } from './views/ClaimViewToggle';
+
 import { useCausaData } from './hooks/useCausaData';
 import { LayoutSession } from './layout/session';
 import { ForceRunner } from './layout/runners/force';
@@ -140,7 +140,7 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
 
     // B. Fetch Data
     // console.log('[CausaShell] Props:', { themeId, versionId, activeVersionId: themeState.activeVersion?.id });
-    const { nodes, links, factors, cycleNodeIds, refresh, loading, viewFilter, setViewFilter } = useCausaData(themeId, versionId || themeState.activeVersion?.id, activePhaseId);
+    const { nodes, links, factors, cycleNodeIds, refresh, loading } = useCausaData(themeId, versionId || themeState.activeVersion?.id, activePhaseId);
 
     // C. Initialize Session
     // Re-create session ONLY when layoutMode changes
@@ -329,8 +329,6 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                         </Tooltip>
                     </TooltipProvider>
                 )}
-
-                <ClaimViewToggle value={viewFilter} onChange={setViewFilter} />
 
                 {designSpaceId && (
                     <TooltipProvider>

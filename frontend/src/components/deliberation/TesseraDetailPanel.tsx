@@ -26,18 +26,10 @@ const STATUS_VARIANT: Record<string, 'default' | 'secondary' | 'destructive' | '
     Deprecated: 'outline',
 };
 
-const TYPE_LABELS: Record<string, string> = {
-    AsIs: 'Huidige situatie',
-    AsIsType: 'Huidige situatie',
-    ToBe: 'Gewenste situatie',
-    ToBeType: 'Gewenste situatie',
-};
-
 export const TesseraDetailPanel: React.FC<TesseraDetailPanelProps> = ({ tessera, open, onClose }) => {
     const statusKey = tessera?.epistemicStatus ?? '';
     const statusLabel = STATUS_LABELS[statusKey] ?? statusKey;
     const statusVariant = STATUS_VARIANT[statusKey] ?? 'secondary';
-    const typeLabel = tessera ? (TYPE_LABELS[tessera.claimType] ?? tessera.claimType) : '';
 
     return (
         <Sheet open={open} onOpenChange={(isOpen) => { if (!isOpen) onClose(); }}>
@@ -53,9 +45,6 @@ export const TesseraDetailPanel: React.FC<TesseraDetailPanelProps> = ({ tessera,
                     <div className="flex flex-col gap-5 px-6 py-5 flex-1 overflow-y-auto">
                         <div className="flex items-center gap-2 flex-wrap">
                             <Badge variant={statusVariant}>{statusLabel}</Badge>
-                            <Badge variant="outline" className="text-muted-foreground">
-                                {typeLabel}
-                            </Badge>
                         </div>
 
                         <div className="flex flex-col gap-1">
