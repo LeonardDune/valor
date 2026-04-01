@@ -1,4 +1,4 @@
-"""SOCIA rolpatroon — named graph datalaag (US-AI.5).
+"""SOCIA rolpatroon — named graph datalaag (US-AI.5/AI.6).
 
 Implementeert het cross-perspectief rolpatroon waarbij een agent-URI
 via context-specifieke triples in de DesignSpace-graph een rol aanneemt.
@@ -11,6 +11,10 @@ Patroon in baseline-graph:
   <entity_uri> socia:playsRole <role_uri> ;
                socia:isStakeholderIn <ds_uri> ;
                valor:inDesignSpace <ds_uri> .
+
+Migratie (US-AI.6):
+  migrate_legacy_socia_actors() migreert urn:valor:socia:actor:{uuid} resources
+  naar urn:valor:entities entries. Idempotent en veilig bij lege dataset.
 """
 import logging
 
@@ -190,3 +194,140 @@ async def get_designspaces_for_agent(entity_uri: str) -> list[str]:
         row["ds"].replace("urn:valor:ds:", "")
         for row in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# Migratie: legacy socia:Actor → Entity Registry (US-AI.6)
+# ---------------------------------------------------------------------------
+
+_LEGACY_ACTOR_TYPE = f"{_SOCIA_NS}Actor"
+_LEGACY_ACTOR_URI_PREFIX = "urn:valor:socia:actor:"
+_ENTITIES_GRAPH = "urn:valor:entities"
+
+
+async def migrate_legacy_socia_actors() -> dict:
+    """Migreert legacy socia:Actor-resources naar het Entity Registry patroon.
+
+    Per gevonden actor:
+      1. Bepaalt het entity type (PhysicalAgent / InstitutionalAgent) op basis van socia:actorType
+      2. Maakt / hergebruikt een urn:valor:entities:... URI
+      3. Schrijft socia:playsRole naar de DesignSpace-baseline-graph
+      4. Herschrijft valor:claimedBy op Tesserae naar de nieuwe entity URI
+
+    Idempotent: als een actor al gemigreerd is (entity URI bestaat al), wordt hij overgeslagen.
+    Retourneert een dict met migratie-statistieken.
+    """
+    from app.ontology import UFOC_NS
+    import uuid as _uuid
+
+    stats = {"found": 0, "migrated": 0, "skipped": 0, "errors": []}
+
+    # 1. Zoek alle legacy actors over alle named graphs
+    legacy_rows = await sparql_select_global(f"""
+        PREFIX socia: <{_SOCIA_NS}>
+        PREFIX rdfs:  <http://www.w3.org/2000/01/rdf-schema#>
+        PREFIX valor: <{VALOR_NS}>
+
+        SELECT ?actor ?graph ?actorType ?actorRole ?label WHERE {{
+          GRAPH ?graph {{
+            ?actor a <{_LEGACY_ACTOR_TYPE}> .
+            OPTIONAL {{ ?actor socia:actorType ?actorType . }}
+            OPTIONAL {{ ?actor socia:actorRole ?actorRole . }}
+            OPTIONAL {{ ?actor rdfs:label ?label . }}
+            OPTIONAL {{ ?actor valor:claimContent ?label . }}
+          }}
+          FILTER(STRSTARTS(STR(?actor), "{_LEGACY_ACTOR_URI_PREFIX}"))
+        }}
+    """)
+
+    stats["found"] = len(legacy_rows)
+    if not legacy_rows:
+        logger.info("[socia-migrate] Geen legacy actors gevonden — niets te migreren.")
+        return stats
+
+    # 2. Controleer welke al gemigreerd zijn (entity URI bestaat al in registry)
+    migrated_map: dict[str, str] = {}  # legacy_uri → entity_uri
+    for row in legacy_rows:
+        legacy_uri = row["actor"]
+        graph = row.get("graph", "")
+        ds_id = graph.replace("urn:valor:ds:", "").split("/")[0] if "urn:valor:ds:" in graph else None
+
+        # Bepaal entity type
+        actor_type_str = row.get("actorType", "IndividualAgent")
+        if "Institutional" in actor_type_str or "Organisation" in actor_type_str:
+            entity_type_class = f"{UFOC_NS}InstitutionalAgent"
+            entity_uri_prefix = f"{_ENTITIES_GRAPH}:org"
+        else:
+            entity_type_class = f"{UFOC_NS}PhysicalAgent"
+            entity_uri_prefix = f"{_ENTITIES_GRAPH}:person"
+
+        # Hergebruik bestaande mapping of genereer nieuwe UUID
+        if legacy_uri not in migrated_map:
+            # Extraheer de UUID uit de legacy URI
+            legacy_id = legacy_uri.replace(_LEGACY_ACTOR_URI_PREFIX, "")
+            entity_uri = f"{entity_uri_prefix}:{legacy_id}"
+            migrated_map[legacy_uri] = entity_uri
+
+            # Controleer of entity al bestaat
+            existing = await sparql_select_global(f"""
+                SELECT ?s WHERE {{
+                  GRAPH <{_ENTITIES_GRAPH}> {{
+                    <{entity_uri}> a <{entity_type_class}> .
+                    BIND(<{entity_uri}> AS ?s)
+                  }}
+                }} LIMIT 1
+            """)
+            if existing:
+                stats["skipped"] += 1
+                continue
+
+            # Schrijf entity naar Entity Registry
+            label = _escape(row.get("label", legacy_id))
+            insert_entity = f"""
+                PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+                INSERT DATA {{
+                  GRAPH <{_ENTITIES_GRAPH}> {{
+                    <{entity_uri}> a <{entity_type_class}> ;
+                                   rdfs:label "{label}" .
+                  }}
+                }}
+            """
+            try:
+                await sparql_update(insert_entity, "migrate-entity")
+            except Exception as exc:
+                stats["errors"].append(f"{legacy_uri}: {exc}")
+                continue
+
+            # Schrijf playsRole naar DesignSpace-baseline (als ds_id bekend)
+            if ds_id:
+                role_str = row.get("actorRole", "")
+                role_uri = f"{_SOCIA_NS}{role_str.capitalize()}" if role_str else None
+                if role_uri:
+                    try:
+                        await assign_actor_role(entity_uri, role_uri, ds_id)
+                    except Exception:
+                        pass  # Rol-mapping best-effort
+
+            stats["migrated"] += 1
+
+    # 3. Herschrijf valor:claimedBy op Tesserae (per gemigeerde actor)
+    for legacy_uri, entity_uri in migrated_map.items():
+        rewrite = f"""
+            PREFIX valor: <{VALOR_NS}>
+            DELETE {{
+              GRAPH ?g {{ ?tessera valor:claimedBy <{legacy_uri}> . }}
+            }}
+            INSERT {{
+              GRAPH ?g {{ ?tessera valor:claimedBy <{entity_uri}> . }}
+            }}
+            WHERE {{
+              GRAPH ?g {{ ?tessera valor:claimedBy <{legacy_uri}> . }}
+            }}
+        """
+        try:
+            await sparql_update(rewrite, "migrate-claimedbuy")
+        except Exception as exc:
+            stats["errors"].append(f"claimedBy rewrite {legacy_uri}: {exc}")
+
+    logger.info("[socia-migrate] Klaar: %s", stats)
+    return stats

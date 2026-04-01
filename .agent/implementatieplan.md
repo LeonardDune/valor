@@ -1,7 +1,7 @@
 # Valor — Implementatieplan
 
-**Laatste update:** 2026-03-28
-**Branch:** epic/issue-352-tessera-engine-v1
+**Laatste update:** 2026-03-30
+**Branch:** epic/issue-481-entity-identiteitsarchitectuur
 
 ---
 
@@ -21,9 +21,25 @@
 
 ## Actieve Epic
 
-### Epic T — Tessera-engine v1.0 (#352)
+### Epic 18 — Entity Identiteitsarchitectuur (#481)
 
-**Branch:** `epic/issue-352-tessera-engine-v1`
+**Branch:** `epic/issue-481-entity-identiteitsarchitectuur`
+
+| US | Issue | Status | Notitie |
+|----|-------|--------|---------|
+| US-AI.1 | #482 | ✅ gemerged | Architectuurdocumentatie valor-ecosystem.md |
+| US-AI.2 | #483 | ✅ gemerged | Ontologie-patches: StakeholderRole, actortypes, NormativeDescription |
+| US-AI.3 | #484 | ✅ gemerged | Entity Registry Backend + JIT Supabase-bridge |
+| US-AI.4 | #485 | ✅ gemerged | Ontologie-gedreven SOCIA types |
+| US-AI.5 | #486 | ✅ gemerged | Cross-perspectief rolpatroon |
+| US-AI.6 | #487 | ⏳ open | SOCIA-refactoring: migratie naar Entity Registry |
+| US-AI.7 | — | ⏳ open | Normatieve Objecten in Entity Registry |
+
+**Volgende stap:** Wave 3 — US-AI.4 (#485) en US-AI.5 (#486) kunnen parallel lopen.
+
+---
+
+### Epic T — Tessera-engine v1.0 (#352) [deels afgerond]
 
 | US | Issue | Status | Notitie |
 |----|-------|--------|---------|
@@ -33,7 +49,7 @@
 | US-T.1 | #369 | ✅ gemerged | Conflictdetectie via valor:undermines |
 | US-T.2 | #370 | ⏳ geblokkeerd | Auto-CapabilityGap — wacht op US-9.4 (#368) uit Epic 9 |
 
-**Volgende stap:** Epic T epic branch mergen naar `development` (US-T.2 deferred naar na Epic 9).
+**Status:** Epic T epic branch gemerged naar `development` (US-T.2 deferred naar na Epic 9).
 
 ---
 

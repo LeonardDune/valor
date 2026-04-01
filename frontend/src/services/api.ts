@@ -63,6 +63,14 @@ export interface ValidationResult {
     message: string;
 }
 
+export interface EntityRegistryEntry {
+    uri: string;
+    label?: string;
+    entity_type?: string;
+    entity_type_local?: string;
+    supabase_id?: string;
+}
+
 export interface SociaOntologyEntry {
     uri: string;
     local_name: string;
@@ -635,6 +643,25 @@ export const api = {
     getSociaOntology: async (): Promise<SociaOntology> => {
         const response = await apiClient.get<SociaOntology>('/ontology/socia');
         return response.data;
+    },
+
+    // Entity Registry
+    searchEntities: async (q: string, entityType?: string, limit = 20): Promise<EntityRegistryEntry[]> => {
+        const params: Record<string, string | number> = { q, limit };
+        if (entityType) params.type = entityType;
+        const response = await apiClient.get<EntityRegistryEntry[]>('/entities/search', { params });
+        return response.data;
+    },
+
+    createEntity: async (data: { entity_type: string; label: string; properties?: Record<string, string>; identifier?: string }): Promise<EntityRegistryEntry> => {
+        const response = await apiClient.post<EntityRegistryEntry>('/entities/', data);
+        return response.data;
+    },
+
+    assignSociaRole: async (dsId: string, entityUri: string, roleUri: string): Promise<void> => {
+        await apiClient.post(`/designspace/${dsId}/socia/roles`, null, {
+            params: { entity_uri: entityUri, role_uri: roleUri },
+        });
     },
 
     // Threads (Fuseki-backed disc endpoints, Epic 16)
