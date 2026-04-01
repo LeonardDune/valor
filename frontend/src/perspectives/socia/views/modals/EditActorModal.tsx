@@ -1,43 +1,52 @@
 import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useSociaOntology } from '../../hooks/useSociaOntology';
+import { api } from '@/services/api';
 
-interface Actor {
-    uri: string;
-    label: string;
-    actor_type_uri: string;
-    role_uri?: string;
+interface ActorRoleEntry {
+    entity_uri: string;
+    entity_label?: string;
+    entity_type_local?: string;
+    role_uri: string;
+    role_label_nl?: string;
 }
 
 interface EditActorModalProps {
+    dsId: string;
     open: boolean;
-    actor: Actor | null;
+    actor: ActorRoleEntry | null;
     onClose: () => void;
-    onSubmit: (data: { label: string; actor_type_uri: string; role_uri?: string }) => void;
+    onSubmit: (entityUri: string, roleUri?: string) => void;
 }
 
-export function EditActorModal({ open, actor, onClose, onSubmit }: EditActorModalProps) {
-    const { ontology, loading } = useSociaOntology();
-    const [label, setLabel] = useState('');
-    const [actorTypeUri, setActorTypeUri] = useState('');
+export function EditActorModal({ dsId, open, actor, onClose, onSubmit }: EditActorModalProps) {
+    const { ontology, loading: ontologyLoading } = useSociaOntology();
     const [roleUri, setRoleUri] = useState('');
+    const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        if (actor) {
-            setLabel(actor.label);
-            setActorTypeUri(actor.actor_type_uri);
-            setRoleUri(actor.role_uri ?? '');
-        }
+        if (actor) setRoleUri(actor.role_uri ?? '');
     }, [actor]);
 
-    function handleSubmit() {
-        if (!label.trim() || !actorTypeUri) return;
-        onSubmit({ label: label.trim(), actor_type_uri: actorTypeUri, role_uri: roleUri || undefined });
+    async function handleSave() {
+        if (!actor) return;
+        setSaving(true);
+        try {
+            if (roleUri && roleUri !== actor.role_uri) {
+                await api.assignSociaRole(dsId, actor.entity_uri, roleUri);
+            }
+            onSubmit(actor.entity_uri, roleUri || undefined);
+            onClose();
+        } finally {
+            setSaving(false);
+        }
     }
+
+    const displayName = actor?.entity_label ?? actor?.entity_uri.split(':').pop() ?? '';
+    const typeLabel = actor?.entity_type_local ?? '';
 
     return (
         <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -47,43 +56,27 @@ export function EditActorModal({ open, actor, onClose, onSubmit }: EditActorModa
                 </DialogHeader>
 
                 <div className="space-y-4 py-2">
-                    <div className="space-y-1">
-                        <Label htmlFor="edit-actor-label">Naam</Label>
-                        <Input
-                            id="edit-actor-label"
-                            value={label}
-                            onChange={(e) => setLabel(e.target.value)}
-                        />
+                    {/* Entity Registry profiel — read-only */}
+                    <div className="rounded-md border border-border bg-muted/40 px-3 py-2 space-y-1">
+                        <p className="text-xs text-muted-foreground">Registerprofiel (alleen-lezen)</p>
+                        <p className="text-sm font-medium">{displayName}</p>
+                        {typeLabel && (
+                            <p className="text-xs text-muted-foreground">{typeLabel}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground font-mono truncate">{actor?.entity_uri}</p>
                     </div>
 
+                    {/* Rolassignatie — bewerkbaar */}
                     <div className="space-y-1">
-                        <Label htmlFor="edit-actor-type">Type</Label>
-                        <Select value={actorTypeUri} onValueChange={setActorTypeUri} disabled={loading}>
-                            <SelectTrigger id="edit-actor-type">
-                                <SelectValue placeholder={loading ? 'Laden...' : 'Kies een type'} />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {ontology?.actor_types.map((t) => (
-                                    <SelectItem key={t.uri} value={t.uri}>
-                                        {t.label_nl}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-
-                    <div className="space-y-1">
-                        <Label htmlFor="edit-actor-role">Rol (optioneel)</Label>
-                        <Select value={roleUri} onValueChange={setRoleUri} disabled={loading}>
-                            <SelectTrigger id="edit-actor-role">
-                                <SelectValue placeholder={loading ? 'Laden...' : 'Kies een rol'} />
+                        <Label htmlFor="edit-role">Rol in deze werkruimte</Label>
+                        <Select value={roleUri} onValueChange={setRoleUri} disabled={ontologyLoading}>
+                            <SelectTrigger id="edit-role">
+                                <SelectValue placeholder={ontologyLoading ? 'Laden…' : 'Kies een rol'} />
                             </SelectTrigger>
                             <SelectContent>
                                 <SelectItem value="">— geen rol —</SelectItem>
                                 {ontology?.roles.map((r) => (
-                                    <SelectItem key={r.uri} value={r.uri}>
-                                        {r.label_nl}
-                                    </SelectItem>
+                                    <SelectItem key={r.uri} value={r.uri}>{r.label_nl}</SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
@@ -92,8 +85,8 @@ export function EditActorModal({ open, actor, onClose, onSubmit }: EditActorModa
 
                 <DialogFooter>
                     <Button variant="outline" onClick={onClose}>Annuleren</Button>
-                    <Button onClick={handleSubmit} disabled={!label.trim() || !actorTypeUri}>
-                        Opslaan
+                    <Button onClick={handleSave} disabled={saving || !actor}>
+                        {saving ? 'Opslaan…' : 'Opslaan'}
                     </Button>
                 </DialogFooter>
             </DialogContent>

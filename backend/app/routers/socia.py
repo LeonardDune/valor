@@ -1,4 +1,4 @@
-"""SOCIA API-endpoints voor het cross-perspectief rolpatroon (US-AI.5)."""
+"""SOCIA API-endpoints voor het cross-perspectief rolpatroon (US-AI.5/AI.6)."""
 from fastapi import APIRouter, Depends, Query
 
 from app.auth import get_current_user
@@ -7,6 +7,7 @@ from app.db.fuseki_socia import (
     get_actor_roles_in_ds,
     get_designspaces_for_agent,
     get_tesserae_for_agent,
+    migrate_legacy_socia_actors,
 )
 
 router = APIRouter(tags=["socia"])
@@ -55,3 +56,16 @@ async def get_agent_designspaces_endpoint(
         agent_uri = agent_uri.replace("urn:/", "urn:").lstrip("/")
     ds_ids = await get_designspaces_for_agent(agent_uri)
     return {"agent_uri": agent_uri, "designspaces": ds_ids}
+
+
+@router.post("/admin/migrate-socia-actors")
+async def migrate_socia_actors_endpoint(user=Depends(get_current_user)):
+    """Migreert legacy socia:Actor-resources naar het Entity Registry patroon.
+
+    Idempotent — veilig om meerdere keren uit te voeren.
+    Vereist platform-admin rechten.
+    """
+    if not getattr(user, "is_platform_admin", False):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Alleen platformbeheerders kunnen deze migratie uitvoeren.")
+    return await migrate_legacy_socia_actors()
