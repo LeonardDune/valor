@@ -17,6 +17,7 @@ from app.routers import factors, claims, organizations, hierarchy
 from app.routers import tessera
 from app.routers import designspace
 from app.routers import entities
+from app.routers import socia
 
 load_dotenv()
 
@@ -97,6 +98,7 @@ app.include_router(claims.router)
 app.include_router(tessera.router)
 app.include_router(designspace.router)
 app.include_router(entities.router)
+app.include_router(socia.router)
 
 
 @app.get("/")
