@@ -124,6 +124,13 @@ async def list_socia_ontology():
     }
 
 
+@app.get("/ontology/norms")
+async def list_norm_types():
+    """Retourneert LEXA norm types (subklassen van ufoc:NormativeDescription, uit VALOR-O ontologie)."""
+    from app.services.ontology_cache import get_norm_types
+    return {"norm_types": get_norm_types()}
+
+
 @app.get("/health")
 async def health_check():
     is_connected = await verify_connectivity()

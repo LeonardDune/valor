@@ -18,6 +18,8 @@ import uuid
 from typing import Optional
 
 from app.ontology import UFOC_NS, VALOR_NS
+
+_LEXA_NS = f"{VALOR_NS}lexa-ext#"
 from app.services.fuseki import sparql_select_global, sparql_update
 
 logger = logging.getLogger(__name__)
@@ -268,6 +270,128 @@ SELECT ?role ?context ?assignedAt WHERE {{
             "role_uri": row["role"],
             "context": row.get("context"),
             "assigned_at": row.get("assignedAt"),
+        }
+        for row in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Normatieve objecten (US-AI.7)
+# ---------------------------------------------------------------------------
+
+async def create_norm_entity(
+    norm_type_uri: str,
+    label: str,
+    identifier: str,
+    jurisdiction: Optional[str] = None,
+    effective_date: Optional[str] = None,
+) -> str:
+    """Maakt een normatief object aan in urn:valor:entities.
+
+    norm_type_uri moet een subklasse van ufoc:NormativeDescription zijn (bijv. lexa:Law, lexa:Regulation).
+    identifier is het officiële kenmerk (bijv. "BWBR0005537" of "wob-2022").
+    URI-patroon: urn:valor:entities:norm:{slug-van-identifier}
+
+    Geeft de URI terug.
+    """
+    slug = identifier.lower().replace(" ", "-").replace("/", "-")
+    uri = f"{_ENTITIES_GRAPH}:norm:{slug}"
+    label_escaped = _escape(label)
+    identifier_escaped = _escape(identifier)
+
+    jurisdiction_triple = ""
+    if jurisdiction:
+        jurisdiction_triple = f'    <{_LEXA_NS}jurisdiction> "{_escape(jurisdiction)}" ;\n'
+
+    effective_date_triple = ""
+    if effective_date:
+        effective_date_triple = f'    <{_LEXA_NS}effectiveDate> "{_escape(effective_date)}"^^<http://www.w3.org/2001/XMLSchema#date> ;\n'
+
+    update = f"""
+INSERT DATA {{
+  GRAPH <{_ENTITIES_GRAPH}> {{
+    <{uri}> a <{UFOC_NS}NormativeDescription> ;
+            a <{norm_type_uri}> ;
+      <{_RDFS_LABEL}> "{label_escaped}"@nl ;
+      <{_LEXA_NS}identifier> "{identifier_escaped}" ;
+{jurisdiction_triple}{effective_date_triple}      <{VALOR_NS}entityCreatedAt> "{_now_iso()}"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+      <{VALOR_NS}entityId> "{slug}" .
+  }}
+}}
+"""
+    await sparql_update(update, "entities")
+    logger.info("Entity Registry: norm %s aangemaakt met URI %s", label, uri)
+    return uri
+
+
+async def search_norms(
+    query: str,
+    jurisdiction: Optional[str] = None,
+    limit: int = 20,
+) -> list[dict]:
+    """Zoekt normatieve objecten in de Entity Registry op label of lexa:identifier.
+
+    Optionele filter op jurisdictie.
+    """
+    escaped_q = _escape(query.lower())
+    jurisdiction_filter = ""
+    if jurisdiction:
+        escaped_jur = _escape(jurisdiction)
+        jurisdiction_filter = f'?uri <{_LEXA_NS}jurisdiction> "{escaped_jur}" .'
+
+    sparql = f"""
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?uri ?type ?label ?identifier ?jurisdiction WHERE {{
+  GRAPH <{_ENTITIES_GRAPH}> {{
+    ?uri a <{UFOC_NS}NormativeDescription> ;
+         a ?type .
+    OPTIONAL {{ ?uri rdfs:label ?label }}
+    OPTIONAL {{ ?uri <{_LEXA_NS}identifier> ?identifier }}
+    OPTIONAL {{ ?uri <{_LEXA_NS}jurisdiction> ?jurisdiction }}
+    {jurisdiction_filter}
+    FILTER (
+      CONTAINS(LCASE(STR(?label)), "{escaped_q}") ||
+      CONTAINS(LCASE(STR(?identifier)), "{escaped_q}")
+    )
+    FILTER(?type != <{UFOC_NS}NormativeDescription>)
+  }}
+}}
+LIMIT {limit}
+"""
+    rows = await sparql_select_global(sparql)
+    return [
+        {
+            "uri": row["uri"],
+            "norm_type_uri": row.get("type", ""),
+            "norm_type_local": row.get("type", "").split("#")[-1],
+            "label": row.get("label", ""),
+            "identifier": row.get("identifier", ""),
+            "jurisdiction": row.get("jurisdiction", ""),
+        }
+        for row in rows
+    ]
+
+
+async def get_norm_cross_perspective(uri: str) -> list[dict]:
+    """Vindt alle grafen (DesignSpaces, perspectieven) die naar deze norm-URI verwijzen.
+
+    Zoekt op elk triple waar de norm-URI als object voorkomt.
+    """
+    rows = await sparql_select_global(f"""
+SELECT DISTINCT ?graph ?subject ?predicate WHERE {{
+  GRAPH ?graph {{
+    ?subject ?predicate <{uri}> .
+  }}
+  FILTER(?graph != <{_ENTITIES_GRAPH}>)
+}}
+LIMIT 100
+""")
+    return [
+        {
+            "graph": row["graph"],
+            "subject": row["subject"],
+            "predicate": row.get("predicate", ""),
+            "predicate_local": row.get("predicate", "").split("#")[-1].split("/")[-1],
         }
         for row in rows
     ]
