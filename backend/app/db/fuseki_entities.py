@@ -12,6 +12,7 @@ URI-conventies:
   urn:valor:entities:person:{random_uuid}     — externe personen
   urn:valor:entities:org:{random_uuid}        — organisaties
   urn:valor:entities:norm:{slug}              — wetten/regelingen
+  urn:valor:entities:cvar:{slug-of-uuid}      — causale variabelen (Factors)
 """
 import logging
 import uuid
@@ -20,6 +21,7 @@ from typing import Optional
 from app.ontology import UFOC_NS, VALOR_NS
 
 _LEXA_NS = f"{VALOR_NS}lexa-ext#"
+_CAUSA_NS = f"{VALOR_NS}causa#"
 from app.services.fuseki import sparql_select_global, sparql_update
 
 logger = logging.getLogger(__name__)
@@ -27,13 +29,15 @@ logger = logging.getLogger(__name__)
 _ENTITIES_GRAPH = "urn:valor:entities"
 _RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 _RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label"
+_RDFS_COMMENT = "http://www.w3.org/2000/01/rdf-schema#comment"
 
-# Ondersteunde entity types → UFOC klasse-URI
+# Ondersteunde entity types → klasse-URI
 ENTITY_TYPE_MAP = {
     "PhysicalAgent": f"{UFOC_NS}PhysicalAgent",
     "InstitutionalAgent": f"{UFOC_NS}InstitutionalAgent",
     "NormativeDescription": f"{UFOC_NS}NormativeDescription",
     "SocialObject": f"{UFOC_NS}SocialObject",
+    "CausalVariable": f"{_CAUSA_NS}CausalVariable",
 }
 
 # URI-prefix per entity type
@@ -42,6 +46,7 @@ _URI_PREFIX_MAP = {
     "InstitutionalAgent": "org",
     "NormativeDescription": "norm",
     "SocialObject": "obj",
+    "CausalVariable": "cvar",
 }
 
 
@@ -395,6 +400,130 @@ LIMIT 100
         }
         for row in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# CausalVariable (US-AI.8)
+# ---------------------------------------------------------------------------
+
+async def create_causal_variable(
+    label: str,
+    identifier: Optional[str] = None,
+    domain: Optional[str] = None,
+    unit: Optional[str] = None,
+    comment: Optional[str] = None,
+) -> str:
+    """Maakt een causa:CausalVariable-instantie aan in urn:valor:entities.
+
+    identifier: optionele slug (bijv. "recidivecijfer"); anders UUID.
+    URI-patroon: urn:valor:entities:cvar:{identifier-or-uuid}
+
+    Geeft de URI terug.
+    """
+    slug = (identifier or str(uuid.uuid4())).lower().replace(" ", "-").replace("/", "-")
+    uri = f"{_ENTITIES_GRAPH}:cvar:{slug}"
+    label_escaped = _escape(label)
+
+    domain_triple = ""
+    if domain:
+        domain_triple = f'    <{VALOR_NS}domain> "{_escape(domain)}" ;\n'
+
+    unit_triple = ""
+    if unit:
+        unit_triple = f'    <{VALOR_NS}unit> "{_escape(unit)}" ;\n'
+
+    comment_triple = ""
+    if comment:
+        comment_triple = f'    <{_RDFS_COMMENT}> "{_escape(comment)}"@nl ;\n'
+
+    update = f"""
+INSERT DATA {{
+  GRAPH <{_ENTITIES_GRAPH}> {{
+    <{uri}> a <{_CAUSA_NS}CausalVariable> ;
+      <{_RDFS_LABEL}> "{label_escaped}"@nl ;
+{domain_triple}{unit_triple}{comment_triple}      <{VALOR_NS}entityCreatedAt> "{_now_iso()}"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+      <{VALOR_NS}entityId> "{slug}" .
+  }}
+}}
+"""
+    await sparql_update(update, "entities")
+    logger.info("Entity Registry: CausalVariable aangemaakt: %s (%s)", label, uri)
+    return uri
+
+
+async def search_cvars(
+    query: str,
+    domain: Optional[str] = None,
+    limit: int = 20,
+) -> list[dict]:
+    """Zoekt causa:CausalVariable-instanties in de Entity Registry op label of entityId.
+
+    Optionele filter op domain (beleidsdomein).
+    """
+    escaped_q = _escape(query.lower())
+    domain_filter = ""
+    if domain:
+        domain_filter = f'?uri <{VALOR_NS}domain> "{_escape(domain)}" .'
+
+    sparql = f"""
+SELECT ?uri ?label ?domain ?unit ?entityId WHERE {{
+  GRAPH <{_ENTITIES_GRAPH}> {{
+    ?uri a <{_CAUSA_NS}CausalVariable> .
+    OPTIONAL {{ ?uri <{_RDFS_LABEL}> ?label }}
+    OPTIONAL {{ ?uri <{VALOR_NS}domain> ?domain }}
+    OPTIONAL {{ ?uri <{VALOR_NS}unit> ?unit }}
+    OPTIONAL {{ ?uri <{VALOR_NS}entityId> ?entityId }}
+    {domain_filter}
+    FILTER (
+      CONTAINS(LCASE(STR(?label)), "{escaped_q}") ||
+      CONTAINS(STR(?uri), "{escaped_q}")
+    )
+  }}
+}}
+LIMIT {limit}
+"""
+    rows = await sparql_select_global(sparql)
+    return [
+        {
+            "uri": row["uri"],
+            "entity_type": "CausalVariable",
+            "label": row.get("label", ""),
+            "domain": row.get("domain", ""),
+            "unit": row.get("unit", ""),
+            "entity_id": row.get("entityId", ""),
+        }
+        for row in rows
+    ]
+
+
+async def get_cvar(uri: str) -> Optional[dict]:
+    """Haalt een CausalVariable op uit de Entity Registry op basis van URI."""
+    rows = await sparql_select_global(f"""
+SELECT ?label ?domain ?unit ?comment ?entityId ?createdAt WHERE {{
+  GRAPH <{_ENTITIES_GRAPH}> {{
+    <{uri}> a <{_CAUSA_NS}CausalVariable> .
+    OPTIONAL {{ <{uri}> <{_RDFS_LABEL}> ?label }}
+    OPTIONAL {{ <{uri}> <{VALOR_NS}domain> ?domain }}
+    OPTIONAL {{ <{uri}> <{VALOR_NS}unit> ?unit }}
+    OPTIONAL {{ <{uri}> <{_RDFS_COMMENT}> ?comment }}
+    OPTIONAL {{ <{uri}> <{VALOR_NS}entityId> ?entityId }}
+    OPTIONAL {{ <{uri}> <{VALOR_NS}entityCreatedAt> ?createdAt }}
+  }}
+}}
+""")
+    if not rows:
+        return None
+    row = rows[0]
+    return {
+        "uri": uri,
+        "entity_type": "CausalVariable",
+        "label": row.get("label"),
+        "domain": row.get("domain"),
+        "unit": row.get("unit"),
+        "comment": row.get("comment"),
+        "entity_id": row.get("entityId"),
+        "created_at": row.get("createdAt"),
+    }
 
 
 # ---------------------------------------------------------------------------
