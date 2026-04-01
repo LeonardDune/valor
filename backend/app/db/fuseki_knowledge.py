@@ -135,7 +135,6 @@ async def create_factor_fuseki(
     user_uri = f"urn:valor:user:{user_id}"
     claimed_at = datetime.now(timezone.utc).isoformat()
     proposed_uri = f"{VALOR_NS}ProposedStatus"
-    as_is_uri = f"{VALOR_NS}AsIsType"
     desc_triple = (
         f'<{tessera_uri}> <{VALOR_NS}description> "{_escape(description)}"@nl .'
         if description else ""
@@ -147,7 +146,6 @@ async def create_factor_fuseki(
       <{VALOR_NS}baseId> "{base_id}" ;
       <{VALOR_NS}claimContent> "{_escape(name)}"@nl ;
       <{VALOR_NS}factorRole> "{_escape(role)}" ;
-      <{VALOR_NS}claimType> <{as_is_uri}> ;
       <{VALOR_NS}epistemicStatus> <{proposed_uri}> ;
       <{VALOR_NS}claimedBy> <{user_uri}> ;
       <{VALOR_NS}claimedAt> "{claimed_at}"^^<{_XSD}dateTime> ;

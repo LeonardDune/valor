@@ -32,7 +32,6 @@ apiClient.interceptors.response.use(
 );
 
 export type FactorType = 'middel' | 'extern' | 'systeemelement' | 'criterium';
-export type ClaimViewType = 'AsIsType' | 'ToBeType';
 
 export interface Claim {
     id: string;
@@ -483,9 +482,8 @@ export const api = {
         return response.data;
     },
 
-    getThemeClaims: async (dsId: string, claimType?: ClaimViewType) => {
-        const params = claimType ? { claim_type: claimType } : undefined;
-        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`, { params });
+    getThemeClaims: async (dsId: string) => {
+        const response = await apiClient.get<Claim[]>(`/designspace/${dsId}/claims`);
         return response.data;
     },
 
@@ -753,14 +751,13 @@ ORDER BY DESC(?startedAt)`.trim();
         const VALOR_NS = 'https://valor-ecosystem.nl/ontology/';
         const query = `
 PREFIX valor: <${VALOR_NS}>
-SELECT ?node ?content ?status ?type WHERE {
+SELECT ?node ?content ?status WHERE {
   ?node a valor:Tessera ;
         valor:claimContent ?content ;
         valor:epistemicStatus ?status .
-  OPTIONAL { ?node valor:claimType ?type . }
   FILTER NOT EXISTS { ?node valor:fromFactor ?any }
 }`.trim();
-        const response = await apiClient.get<{ results: { bindings: Array<{ node: { value: string }; content: { value: string }; status: { value: string }; type?: { value: string } }> } }>(
+        const response = await apiClient.get<{ results: { bindings: Array<{ node: { value: string }; content: { value: string }; status: { value: string } }> } }>(
             `/designspace/${dsId}/sparql`,
             { params: { query } }
         );
@@ -772,7 +769,6 @@ SELECT ?node ?content ?status ?type WHERE {
                 uri,
                 claimContent: b.content.value,
                 epistemicStatus: b.status.value.split('/').pop()?.split('#').pop() ?? b.status.value,
-                claimType: b.type ? (b.type.value.split('/').pop() ?? 'AsIs') : 'AsIs',
             };
         });
     },
@@ -867,7 +863,6 @@ export interface TesseraNode {
     uri: string;
     claimContent: string;
     epistemicStatus: string;
-    claimType: string;
 }
 
 export interface ArgumentEdge {
@@ -923,7 +918,6 @@ function parseCausalNetwork(raw: CausalNetworkRaw): ArgumentationNetwork {
                 uri: sourceUri,
                 claimContent: b.sourceContent.value,
                 epistemicStatus: b.sourceStatus.value.split('/').pop()?.split('#').pop() ?? b.sourceStatus.value,
-                claimType: 'AsIs',
             });
         }
         if (!nodesMap.has(targetId)) {
@@ -932,7 +926,6 @@ function parseCausalNetwork(raw: CausalNetworkRaw): ArgumentationNetwork {
                 uri: targetUri,
                 claimContent: b.targetContent.value,
                 epistemicStatus: b.targetStatus.value.split('/').pop()?.split('#').pop() ?? b.targetStatus.value,
-                claimType: 'AsIs',
             });
         }
 

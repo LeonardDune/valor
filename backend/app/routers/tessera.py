@@ -38,28 +38,11 @@ def _normalize_status(raw: str) -> str:
     return get_status_uri_to_label().get(raw, raw)
 
 
-_CLAIM_TYPE_LABELS = {"AsIs": "AsIsType", "ToBe": "ToBeType"}
-_CLAIM_TYPE_SUFFIX_TO_LABEL = {v: k for k, v in _CLAIM_TYPE_LABELS.items()}
-
-
-def _claim_type_uri(label: str) -> str:
-    return f"{VALOR_NS}{_CLAIM_TYPE_LABELS[label]}"
-
-
-def _claim_type_label_from_raw(raw: str) -> str:
-    """Vertaalt URI of string-literal naar de canonieke label ('AsIs'/'ToBe')."""
-    if raw.startswith("http") or raw.startswith("urn"):
-        suffix = raw.rsplit("/", 1)[-1].rsplit("#", 1)[-1]
-        return _CLAIM_TYPE_SUFFIX_TO_LABEL.get(suffix, raw)
-    return raw
-
-
 class CreateTesseraRequest(BaseModel):
     design_space_id: str
     claim_content: str
-    claim_type: Optional[str] = "AsIs"  # "AsIs" | "ToBe", default AsIs
     uncertainty_level: Optional[str] = None  # PAMS: "StatisticalRisk" | "Scenario" | "DeepUncertainty" | "Ignorance"
-    in_alternative: Optional[str] = None
+    in_scenario: Optional[str] = None
     in_phase: Optional[str] = None
 
 
@@ -68,12 +51,11 @@ class TesseraResponse(BaseModel):
     tessera_uri: str
     design_space_id: str
     claim_content: str
-    claim_type: str
     epistemic_status: str
     claimed_by: str
     claimed_at: str
     uncertainty_level: Optional[str] = None
-    in_alternative: Optional[str] = None
+    in_scenario: Optional[str] = None
     in_phase: Optional[str] = None
 
 
@@ -115,14 +97,6 @@ async def create_tessera(
     request: CreateTesseraRequest,
     user: dict = Depends(get_current_user),
 ):
-    claim_type = request.claim_type or "AsIs"
-    if claim_type not in _CLAIM_TYPE_LABELS:
-        raise HTTPException(
-            status_code=422,
-            detail="claim_type moet 'AsIs' of 'ToBe' zijn.",
-        )
-    claim_type_uri = _claim_type_uri(claim_type)
-
     uncertainty_level_uri = None
     if request.uncertainty_level:
         uncertainty_label_to_uri = get_uncertainty_label_to_uri()
@@ -148,9 +122,9 @@ async def create_tessera(
     user_uri = f"urn:valor:user:{user_id}"
     claimed_at = datetime.now(timezone.utc).isoformat()
 
-    # ToBe Tesserae met in_alternative → eigen scenario-graph
-    if claim_type == "ToBe" and request.in_alternative:
-        graph_uri = f"urn:valor:ds:{request.design_space_id}/scenario/{request.in_alternative}"
+    # Scenario-Tesserae → eigen scenario-graph; anders baseline
+    if request.in_scenario:
+        graph_uri = f"urn:valor:ds:{request.design_space_id}/scenario/{request.in_scenario}"
     else:
         graph_uri = _ds_baseline_graph(request.design_space_id)
 
@@ -160,9 +134,9 @@ async def create_tessera(
     optional_triples = ""
     if uncertainty_level_uri:
         optional_triples += f"      <{tessera_uri}> <{VALOR_NS}uncertaintyLevel> <{uncertainty_level_uri}> .\n"
-    if request.in_alternative:
-        alt_uri = f"urn:valor:alternative:{request.in_alternative}"
-        optional_triples += f"      <{tessera_uri}> <{VALOR_NS}inAlternative> <{alt_uri}> .\n"
+    if request.in_scenario:
+        scenario_uri = f"urn:valor:ds:{request.design_space_id}/scenario/{request.in_scenario}"
+        optional_triples += f"      <{tessera_uri}> <{VALOR_NS}inScenario> <{scenario_uri}> .\n"
     if request.in_phase:
         phase_uri = f"urn:valor:phase:{request.in_phase}"
         optional_triples += f"      <{tessera_uri}> <{VALOR_NS}inPhase> <{phase_uri}> .\n"
@@ -179,7 +153,6 @@ INSERT DATA {{
     <{tessera_uri}> a valor:Tessera ;
       valor:claimContent "{escaped_content}"@nl ;
       valor:epistemicStatus <{proposed_uri}> ;
-      valor:claimType <{claim_type_uri}> ;
       valor:claimedBy <{user_uri}> ;
       valor:claimedAt "{claimed_at}"^^xsd:dateTime ;
       valor:inDesignSpace <{ds_uri}> .
@@ -202,12 +175,11 @@ INSERT DATA {{
         tessera_uri=tessera_uri,
         design_space_id=request.design_space_id,
         claim_content=request.claim_content,
-        claim_type=claim_type,
         epistemic_status="Proposed",
         claimed_by=user_id,
         claimed_at=claimed_at,
         uncertainty_level=request.uncertainty_level,
-        in_alternative=request.in_alternative,
+        in_scenario=request.in_scenario,
         in_phase=request.in_phase,
     )
 
@@ -228,16 +200,15 @@ async def get_tessera(
     graph_uri = _ds_baseline_graph(design_space_id)
 
     rows = await sparql_select(
-        f"""SELECT ?content ?claimType ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inAlternative ?inPhase WHERE {{
+        f"""SELECT ?content ?uncertaintyLevel ?status ?claimedBy ?claimedAt ?inScenario ?inPhase WHERE {{
           GRAPH <{graph_uri}> {{
             <{tessera_uri}> a <{VALOR_NS}Tessera> ;
               <{VALOR_NS}claimContent> ?content ;
               <{VALOR_NS}epistemicStatus> ?status ;
               <{VALOR_NS}claimedBy> ?claimedBy ;
               <{VALOR_NS}claimedAt> ?claimedAt .
-            OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}claimType> ?claimType . }}
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}uncertaintyLevel> ?uncertaintyLevel . }}
-            OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inAlternative> ?inAlternative . }}
+            OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inScenario> ?inScenario . }}
             OPTIONAL {{ <{tessera_uri}> <{VALOR_NS}inPhase> ?inPhase . }}
           }}
         }}""",
@@ -248,25 +219,25 @@ async def get_tessera(
         raise HTTPException(status_code=404, detail="Tessera niet gevonden in deze DesignSpace.")
 
     row = rows[0]
-    raw_claim_type = row.get("claimType", "")
-    claim_type = _claim_type_label_from_raw(raw_claim_type) if raw_claim_type else "AsIs"
-
     raw_uncertainty = row.get("uncertaintyLevel", "")
     uncertainty_label_to_uri = get_uncertainty_label_to_uri()
     uncertainty_uri_to_label = {v: k for k, v in uncertainty_label_to_uri.items()}
     uncertainty_level = uncertainty_uri_to_label.get(raw_uncertainty) if raw_uncertainty else None
+
+    raw_scenario = row.get("inScenario", "")
+    scenario_prefix = f"urn:valor:ds:{design_space_id}/scenario/"
+    in_scenario = raw_scenario[len(scenario_prefix):] if raw_scenario.startswith(scenario_prefix) else None
 
     return TesseraResponse(
         tessera_id=tessera_id,
         tessera_uri=tessera_uri,
         design_space_id=design_space_id,
         claim_content=row["content"],
-        claim_type=claim_type,
         epistemic_status=_normalize_status(row["status"]),
         claimed_by=row["claimedBy"].rsplit(":", 1)[-1],
         claimed_at=row["claimedAt"],
         uncertainty_level=uncertainty_level,
-        in_alternative=row.get("inAlternative"),
+        in_scenario=in_scenario,
         in_phase=row.get("inPhase"),
     )
 
