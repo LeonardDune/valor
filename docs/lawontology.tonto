@@ -1,0 +1,373 @@
+import ObjectOntology
+
+// =============================================================
+// OntoUML model: Normative Description / Law structure
+// =============================================================
+
+package LawOntology
+
+/**
+ * Represents a formal legal normative description that is binding in a public law sense.
+ *
+ * OntoUML: This is now a subkind of LegalDocument because all laws are written legal documents
+ * that bear legal norms. This provides the correct ontological hierarchy while maintaining
+ * the existing definition. Laws maintain their identity principle but are now properly
+ * classified as a type of legal document.
+ *
+ * Example: In Dutch law, the "Burgerlijk Wetboek" (Civil Code) is a Law that regulates civil relationships.
+ */
+subkind Law specializes LegalDocument {
+    label {
+        @en "Law"
+        @nl "Wet"
+    }
+
+    description {
+        @en "A formal, public legal normative description with legal binding (law in the formal sense)."
+        @nl "Een formele, publiekrechtelijke normatieve beschrijving met juridische binding (wet in formele zin)."
+    }
+}
+
+/**
+ * This is a subkind representing systematic collections of laws on particular subjects.
+ * Corresponds to LKIF-Core's Code class, which bears norms uttered by legislative bodies.
+ * @see https://github.com/RinkeHoekstra/lkif-core/blob/master/norm.owl#Code
+ */
+subkind Code specializes Law {
+    label {
+        @en "Code"
+        @nl "Wetboek"
+    }
+    description {
+        @en "A systematic collection of laws on a particular subject"
+        @nl "Een systematische verzameling van wetten over een bepaald onderwerp"
+    }
+}
+
+/**
+ * This is a subkind representing formal enactments by legislative bodies.
+ * Corresponds to LKIF-Core's Statute class in the legal source hierarchy.
+ * @see https://github.com/RinkeHoekstra/lkif-core/blob/master/norm.owl#Statute
+ */
+subkind Statute specializes Law {
+    label {
+        @en "Statute"
+        @nl "Statuut"
+    }
+    description {
+        @en "A formal written enactment of a legislative body"
+        @nl "Een formele schriftelijke uitvaardiging van een wetgevende instantie"
+    }
+}
+
+// =============================================================
+// Deelniveaus van juridische structuur
+// =============================================================
+
+/**
+ * Represents any structural component within a law, forming a hierarchical structure.
+ *
+ * OntoUML: This is a subkind because it is a rigid specialization of NormativeDescription. LegalSections collectively form the organizational parts of a Law, each providing identity through their position in the hierarchy. They are structural substantials dependent on the whole Law.
+ *
+ * Example: An Article in the Dutch Constitution is a LegalSection with a number like "1", title "Fundamental Rights", and containing legal text. It cannot exist outside of a Law but has its own identity within it.
+ */
+subkind LegalSection specializes NormativeDescription {
+    label {
+        @en "Legal Section"
+        @nl "Juridisch Onderdeel"
+    }
+    description {
+        @en "General class for any structural component within a law (book, chapter, title, division, article, paragraph, subparagraph)."
+        @nl "Algemene klasse voor elk structureel onderdeel binnen een wet (boek, hoofdstuk, titel, afdeling, artikel, lid, subonderdeel)."
+    }
+    number : String 
+    title  : String [0..1]
+    text   : String [0..1]
+}
+
+/**
+ * An optional main division within a law that groups titles or chapters.
+ * Books provide high-level organization in comprehensive legal codes.
+ *
+ * OntoUML: This is a subkind because it is a rigid specialization of LegalSection.
+ * Books divide laws into major thematic sections when needed, maintaining structural hierarchy.
+ *
+ * Example: Book 1 of the Dutch Civil Code ("Persons and Family") is a Book containing multiple titles.
+ */
+subkind Book specializes LegalSection {
+    label {
+        @en "Book"
+        @nl "Boek"
+    }
+    description {
+        @en "An optional main division within a law, typically containing titles or chapters."
+        @nl "Een optionele hoofddeling binnen een wet, meestal bevattende titels of hoofdstukken."
+    }
+}
+
+/**
+ * A subdivision within a book or law, providing thematic grouping of chapters or divisions.
+ *
+ * OntoUML: This is a subkind because it is a rigid specialization of LegalSection. Titles hierarchically organize content, inheriting the part-whole dependency from LegalSection.
+ *
+ * Example: Title 1 in a law might be "General Provisions" as a Title under a Book, providing introductory rules.
+ */
+subkind Title specializes LegalSection {
+    label {
+        @en "Title"
+        @nl "Titel"
+    }
+    description {
+        @en "A subdivision within a book or law, often grouping related chapters or divisions."
+        @nl "Een onderverdeling binnen een boek of wet, vaak groepeerend gerelateerde hoofdstukken of afdelingen."
+    }
+}
+
+/**
+ * A main division within a title that groups related divisions or articles.
+ *
+ * OntoUML: This is a subkind because it is a rigid specialization of LegalSection. Chapters divide titles into logical groupings, maintaining the structural hierarchy and identity principles from LegalSection.
+ *
+ * Example: Chapter 2 of the Dutch Civil Code ("Legal Capacity") is a Chapter that contains divisions about legal capacity, grouping them under a common theme.
+ */
+subkind Chapter specializes LegalSection {
+    label {
+        @en "Chapter"
+        @nl "Hoofdstuk"
+    }
+    description {
+        @en "A main division within a title, typically containing divisions or articles."
+        @nl "Een hoofddeling binnen een titel, meestal bevattende afdelingen of artikelen."
+    }
+}
+/**
+ * A further subdivision within titles or chapters, organizing articles thematically.
+ *
+ * OntoUML: This is a subkind because it is a rigid specialization of LegalSection. Divisions create nested structure in legal documents, ensuring hierarchical dependency.
+ *
+ * Example: Division A within a Title might cover "Procedural Rules" in a legal act, containing multiple articles.
+ */
+subkind Division specializes LegalSection {
+    label {
+        @en "Division"
+        @nl "Afdeling"
+    }
+    description {
+        @en "A subdivision within titles or chapters, organizing articles thematically."
+        @nl "Een onderverdeling binnen titels of hoofdstukken, organiseren van artikelen thematisch."
+    }
+}
+/**
+ * The primary unit of legal content, containing specific provisions or rules.
+ *
+ * OntoUML: This is a subkind because it is a rigid specialization of LegalSection. Articles are the core elements providing detailed legal regulations, maintaining structural identity.
+ *
+ * Example: Article 7:198 of the Dutch Civil Code is an Article stating rules about assignments of claims.
+ */
+subkind Article specializes LegalSection {
+    label {
+        @en "Article"
+        @nl "Artikel"
+    }
+    description {
+        @en "The primary unit of legal content, typically containing a specific provision or rule."
+        @nl "De primaire eenheid van juridische inhoud, meestal bevattende een specifieke bepaling of regel."
+    }
+}
+/**
+ * A subdivision within an article, providing finer granularity in legal text.
+ *
+ * OntoUML: This is a subkind because it is a rigid specialization of LegalSection. Paragraphs allow for detailed structuring within articles, preserving hierarchical relationships.
+ *
+ * Example: Paragraph 2 under Article 10 might specify exceptions to the rule in the main paragraph.
+ */
+subkind Paragraph specializes LegalSection {
+    label {
+        @en "Paragraph"
+        @nl "Lid"
+    }
+    description {
+        @en "A subdivision within an article, providing finer granularity in legal provisions."
+        @nl "Een onderverdeling binnen een artikel, bieden van fijnere granulariteit in juridische bepalingen."
+    }
+}
+/**
+ * The most detailed unit within a paragraph, containing specific clauses.
+ *
+ * OntoUML: This is a subkind because it is a rigid specialization of LegalSection. Subparagraphs represent the atomic units of legal text, dependent on their containing paragraphs.
+ *
+ * Example: Under Paragraph 1, Subparagraph a) might state "The court shall..." providing precise legal language.
+ */
+subkind Subparagraph specializes LegalSection {
+    label {
+        @en "Subparagraph"
+        @nl "Subonderdeel"
+    }
+    description {
+        @en "The most detailed unit within a paragraph, containing specific clauses or sentences."
+        @nl "De meest gedetailleerde eenheid binnen een lid, bevattende specifieke clausules of zinnen."
+    }
+}
+
+// =============================================================
+// Context en geldigheid (temporal aspects)
+// =============================================================
+
+/**
+ * Represents the temporal validity period of a legal section or law.
+ *
+ * OntoUML: This is a quality because it represents a measurable characteristic (time period) that can change while maintaining the identity of the legal section. It inheres in legal sections and laws.
+ *
+ * Example: A law might be valid "from January 1, 2024" to "December 31, 2024", representing a temporal quality of the legal section.
+ */
+quality ValidityPeriod {
+    label {
+        @en "Validity Period"
+        @nl "Geldigheid Periode"
+    }
+    description {
+        @en "Temporal scope of validity for a legal section or law."
+        @nl "Tijdelijke reikwijdte van geldigheid voor een juridisch onderdeel of wet."
+    }
+    validFrom: date
+    validTo: date [0..1]
+    amendmentDate: date [0..1]
+}
+
+/**
+ * Represents the territorial jurisdiction where a legal section applies.
+ *
+ * OntoUML: This is a quality that determines the spatial applicability of legal norms, inhering in legal sections and measuring territorial scope.
+ *
+ * Example: Dutch law applies in "the Netherlands" at national level, representing the jurisdictional quality of the legal section.
+ */
+quality Jurisdiction {
+    label {
+        @en "Territorial Jurisdiction"
+        @nl "Territoriale Jurisdictie"
+    }
+    description {
+        @en "Territorial scope where legal sections or laws are applicable."
+        @nl "Territoriale reikwijdte waar juridische onderdelen of wetten van toepassing zijn."
+    }
+    country: string
+    region: string [0..1]
+    level: string  // national, EU, international, provincial, municipal
+}
+
+/**
+ * Tracks amendments and changes to legal sections over time.
+ *
+ * OntoUML: This is a mode representing the historical disposition of legal sections to be amended, capturing the intentional aspect of legal evolution.
+ *
+ * Example: The amendment of Article 10:1 Awb on January 1, 2024, represents a change mode affecting the legal section.
+ */
+mode Amendment {
+    label {
+        @en "Legal Amendment"
+        @nl "Juridische Wijziging"
+    }
+    description {
+        @en "Historical record of changes and amendments to legal sections."
+        @nl "Historisch overzicht van wijzigingen en amendementen aan juridische onderdelen."
+    }
+    amendmentDate: date
+    amendmentType: string  // addition, deletion, modification
+    previousText: string [0..1]
+    newText: string [0..1]
+}
+
+// =============================================================
+// Relaties: mereologische structuur (whole-part)
+// =============================================================
+
+/**
+ * Defines the component-of relation where legal sections are exclusive parts of other sections, forming a hierarchical structure.
+ *
+ * OntoUML: @componentOf indicates exclusive parthood, meaning the parts (sections) cannot exist independently of the whole section but are essential to it. This models meronymic structures in laws.
+ *
+ * Example: An Article is a component of a Chapter; if the Chapter ceases, so do its Articles. The relation ensures structural integrity.
+ */
+@componentOf relation LegalSection [1..*] <>-- hasPart -- [1..*] LegalSection
+/**
+ * Defines a material relation where legal sections reference other sections, creating cross-references.
+ *
+ * OntoUML: @material represents direct material relations between entities, here for referential connections that do not involve parthood but shared content or concepts.
+ *
+ * Example: Article 5 might refer to definitions in Article 1, linking them via "refersTo" without making Article 5 a part of Article 1.
+ */
+@material relation LegalSection [0..*] -- refersTo -- [0..*] LegalSection
+/**
+ * Defines the component-of relation where a law contains and exclusively owns its legal sections.
+ *
+ * OntoUML: @componentOf indicates exclusive parthood, ensuring sections are inseparable parts of the whole law, reflecting the mandatory and dependent nature of legal structure.
+ *
+ * Example: The Dutch Penal Code as a Law contains Sections like Chapters; removal of the Law dissolves its Sections.
+ */
+@componentOf relation Law [1] <>-- containsSection -- [1..*] LegalSection
+
+/**
+ * Defines the inherence relation where validity periods are qualities of legal sections.
+ *
+ * OntoUML: @inherence connects qualities to the entities they characterize, representing how temporal validity inheres in legal sections.
+ *
+ * Example: The validity period "2024-2025" inheres in Article 10:1 Awb, characterizing its temporal applicability.
+ */
+@inherence relation ValidityPeriod [1..*] -- characterizes -- [0..1] LegalSection
+
+/**
+ * Defines the inherence relation where jurisdiction qualities characterize legal sections.
+ *
+ * OntoUML: @inherence connects qualities to entities, here representing how territorial jurisdiction inheres in legal sections.
+ *
+ * Example: The jurisdiction "Netherlands, national level" inheres in the Dutch Civil Code, characterizing its territorial scope.
+ */
+@inherence relation Jurisdiction [1..*] -- characterizes -- [0..1] LegalSection
+
+/**
+ * Defines the material relation where amendments affect legal sections over time.
+ *
+ * OntoUML: @material represents material dependence, here capturing how amendments materially affect legal sections through historical change.
+ *
+ * Example: An amendment on January 1, 2024 materially affects Article 10:1 by changing its text and creating a new version.
+ */
+@material relation Amendment [0..*] -- affects -- [1] LegalSection
+
+// =============================================================
+// Specific hierarchical relations for legal structure
+// =============================================================
+
+/**
+ * Law to Book: Optional multiple books per law
+ */
+@componentOf relation Law [1] <>-- containsBook -- [0..*] Book
+
+/**
+ * Book to Title: Books contain titles
+ */
+@componentOf relation Book [1] <>-- containsTitle -- [1..*] Title
+
+/**
+ * Title to Chapter: Titles contain chapters
+ */
+@componentOf relation Title [1] <>-- containsChapter -- [1..*] Chapter
+
+/**
+ * Chapter to Division: Chapters contain divisions
+ */
+@componentOf relation Chapter [1] <>-- containsDivision -- [1..*] Division
+
+/**
+ * Division to Article: Divisions contain articles
+ */
+@componentOf relation Division [1] <>-- containsArticle -- [1..*] Article
+
+/**
+ * Article to Paragraph: Articles contain paragraphs
+ */
+@componentOf relation Article [1] <>-- containsParagraph -- [1..*] Paragraph
+
+/**
+ * Paragraph to Subparagraph: Paragraphs contain subparagraphs
+ */
+@componentOf relation Paragraph [1] <>-- containsSubparagraph -- [1..*] Subparagraph

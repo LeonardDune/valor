@@ -16,6 +16,8 @@ from app.routers import proposals, dashboard, threads, sessions, deliberation
 from app.routers import factors, claims, organizations, hierarchy
 from app.routers import tessera
 from app.routers import designspace
+from app.routers import entities
+from app.routers import socia
 
 load_dotenv()
 
@@ -95,6 +97,8 @@ app.include_router(factors.router)
 app.include_router(claims.router)
 app.include_router(tessera.router)
 app.include_router(designspace.router)
+app.include_router(entities.router)
+app.include_router(socia.router)
 
 
 @app.get("/")
@@ -107,6 +111,24 @@ async def list_epistemic_statuses():
     """Retourneert alle EpistemicStatus instanties met Engels en Nederlands label (uit VALOR-O ontologie)."""
     from app.services.ontology_cache import get_epistemic_statuses
     return get_epistemic_statuses()
+
+
+@app.get("/ontology/socia")
+async def list_socia_ontology():
+    """Retourneert SOCIA actor types, StakeholderRole instanties en DependencyType instanties (uit VALOR-O ontologie)."""
+    from app.services.ontology_cache import get_socia_actor_types, get_socia_dependency_types, get_socia_roles
+    return {
+        "actor_types": get_socia_actor_types(),
+        "roles": get_socia_roles(),
+        "dependency_types": get_socia_dependency_types(),
+    }
+
+
+@app.get("/ontology/norms")
+async def list_norm_types():
+    """Retourneert LEXA norm types (subklassen van ufoc:NormativeDescription, uit VALOR-O ontologie)."""
+    from app.services.ontology_cache import get_norm_types
+    return {"norm_types": get_norm_types()}
 
 
 @app.get("/health")
