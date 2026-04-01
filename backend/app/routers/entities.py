@@ -1,4 +1,4 @@
-"""Entity Registry API endpoints (US-AI.3 / US-AI.7).
+"""Entity Registry API endpoints (US-AI.3 / US-AI.7 / US-AI.8).
 
 Routes:
   POST /entities/                                 — nieuwe entiteit aanmaken
@@ -6,6 +6,9 @@ Routes:
   POST /entities/norms/                           — normatief object aanmaken
   GET  /entities/norms/search?q=&jurisdiction=    — normen zoeken
   GET  /entities/norms/{uri}/cross-perspective    — cross-perspectief verwijzingen
+  POST /entities/cvars/                           — CausalVariable aanmaken
+  GET  /entities/cvars/search?q=&domain=          — CausalVariables zoeken
+  GET  /entities/cvars/{uri:path}                 — CausalVariable ophalen
   GET  /entities/{uri:path}                       — entiteitsdata ophalen
   GET  /entities/{uri:path}/roles?ds_id=          — rollen per DesignSpace
 """
@@ -17,11 +20,14 @@ from app.auth import get_current_user
 from app.db.fuseki_entities import (
     ENTITY_TYPE_MAP,
     assign_role,
+    create_causal_variable,
     create_entity,
     create_norm_entity,
+    get_cvar,
     get_entity,
     get_norm_cross_perspective,
     get_roles_for_entity,
+    search_cvars,
     search_entities,
     search_norms,
 )
@@ -53,6 +59,14 @@ class NormCreateRequest(BaseModel):
     identifier: str
     jurisdiction: Optional[str] = None
     effective_date: Optional[str] = None
+
+
+class CvarCreateRequest(BaseModel):
+    label: str
+    identifier: Optional[str] = None
+    domain: Optional[str] = None
+    unit: Optional[str] = None
+    comment: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +158,48 @@ async def get_norm_cross_perspective_endpoint(
         uri = uri.replace("urn:/", "urn:").lstrip("/")
     refs = await get_norm_cross_perspective(uri)
     return {"norm_uri": uri, "references": refs, "count": len(refs)}
+
+
+@router.post("/cvars/", status_code=201)
+async def create_cvar_endpoint(
+    body: CvarCreateRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Maakt een causa:CausalVariable aan in de Entity Registry."""
+    uri = await create_causal_variable(
+        label=body.label,
+        identifier=body.identifier,
+        domain=body.domain,
+        unit=body.unit,
+        comment=body.comment,
+    )
+    return {"uri": uri, "entity_type": "CausalVariable", "label": body.label}
+
+
+@router.get("/cvars/search")
+async def search_cvars_endpoint(
+    q: str = Query(..., min_length=1),
+    domain: Optional[str] = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+):
+    """Zoekt causa:CausalVariable-instanties in de registry op label (substring, case-insensitief)."""
+    results = await search_cvars(query=q, domain=domain, limit=limit)
+    return {"results": results, "count": len(results)}
+
+
+@router.get("/cvars/{uri:path}")
+async def get_cvar_endpoint(
+    uri: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Haalt een CausalVariable op uit de registry op basis van URI."""
+    if not uri.startswith("urn:"):
+        uri = uri.replace("urn:/", "urn:").lstrip("/")
+    cvar = await get_cvar(uri=uri)
+    if cvar is None:
+        raise HTTPException(status_code=404, detail=f"CausalVariable niet gevonden: {uri}")
+    return cvar
 
 
 @router.get("/{uri:path}/roles")
