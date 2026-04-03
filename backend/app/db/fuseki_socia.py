@@ -17,9 +17,11 @@ Migratie (US-AI.6):
   naar urn:valor:entities entries. Idempotent en veilig bij lege dataset.
 """
 import logging
+import uuid as _uuid_mod
+from datetime import datetime, timezone
 
 from app.ontology import VALOR_NS
-from app.services.fuseki import sparql_select_global, sparql_update
+from app.services.fuseki import sparql_select_global, sparql_update, record_provenance_activity
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +136,97 @@ async def get_stakeholder_map(ds_id: str) -> dict:
     ]
 
     return {"actors": actors, "dependencies": dependencies}
+
+
+# ---------------------------------------------------------------------------
+# StakeholderClaim aanmaken (US-6.2)
+# ---------------------------------------------------------------------------
+
+# Geldige claim-typen als subklassen van valor:Tessera in SOCIA-namespace
+_STAKEHOLDER_CLAIM_TYPES = {
+    "InterestClaim": f"{_SOCIA_NS}InterestClaim",
+    "GoalClaim": f"{_SOCIA_NS}GoalClaim",
+    "PowerClaim": f"{_SOCIA_NS}PowerClaim",
+}
+
+_XSD_NS = "http://www.w3.org/2001/XMLSchema#"
+
+
+async def create_stakeholder_claim(
+    ds_id: str,
+    claim_type: str,
+    claim_content: str,
+    actor_uri: str,
+    user_id: str,
+) -> dict:
+    """Schrijft een socia:InterestClaim / socia:GoalClaim / socia:PowerClaim als valor:Tessera-subklasse.
+
+    Opgeslagen in urn:valor:ds:{ds_id}/agents (AgentTesserae-graph).
+    Retourneert een dict met de aangemaakte claim-gegevens.
+    """
+    claim_type_uri = _STAKEHOLDER_CLAIM_TYPES.get(claim_type)
+    if not claim_type_uri:
+        raise ValueError(
+            f"Ongeldig claim_type '{claim_type}'. "
+            f"Geldige waarden: {sorted(_STAKEHOLDER_CLAIM_TYPES)}"
+        )
+
+    tessera_id = str(_uuid_mod.uuid4())
+    tessera_uri = f"urn:valor:tessera:{tessera_id}"
+    user_uri = f"urn:valor:user:{user_id}"
+    claimed_at = datetime.now(timezone.utc).isoformat()
+
+    # StakeholderClaims gaan in de agents-graph van de DesignSpace
+    graph_uri = f"urn:valor:ds:{ds_id}/agents"
+
+    escaped_content = _escape(claim_content)
+
+    # epistemicStatus = Proposed (harde waarde — ontologie-onafhankelijk conform Tessera-patroon)
+    proposed_uri = f"{VALOR_NS}ProposedStatus"
+
+    update = f"""PREFIX valor: <{VALOR_NS}>
+PREFIX socia:  <{_SOCIA_NS}>
+PREFIX xsd:    <{_XSD_NS}>
+
+INSERT DATA {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> a <{claim_type_uri}> ;
+                   a valor:Tessera ;
+      valor:claimContent "{escaped_content}"@nl ;
+      valor:epistemicStatus <{proposed_uri}> ;
+      valor:claimedBy <{user_uri}> ;
+      valor:claimedAt "{claimed_at}"^^xsd:dateTime ;
+      valor:inDesignSpace <urn:valor:ds:{ds_id}> ;
+      socia:claimOf <{actor_uri}> .
+  }}
+}}"""
+
+    await sparql_update(update, ds_id)
+
+    await record_provenance_activity(
+        ds_id,
+        "StakeholderClaimCreated",
+        user_uri,
+        generated=tessera_uri,
+    )
+
+    logger.info(
+        "[fuseki-socia] StakeholderClaim aangemaakt: %s (%s) in %s door %s",
+        tessera_uri, claim_type, ds_id, user_id,
+    )
+
+    return {
+        "tessera_id": tessera_id,
+        "tessera_uri": tessera_uri,
+        "claim_type": claim_type,
+        "claim_type_uri": claim_type_uri,
+        "claim_content": claim_content,
+        "epistemic_status": "Proposed",
+        "actor_uri": actor_uri,
+        "claimed_by": user_id,
+        "claimed_at": claimed_at,
+        "design_space_id": ds_id,
+    }
 
 
 # ---------------------------------------------------------------------------
