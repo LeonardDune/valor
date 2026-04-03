@@ -1,6 +1,6 @@
 # Valor — Implementatieplan
 
-**Laatste update:** 2026-04-01
+**Laatste update:** 2026-04-03
 **Branch:** development
 
 ---
@@ -20,7 +20,39 @@
 
 ---
 
-## Actieve Epic
+## Actieve Epics
+
+### Epic 6 — Socia Perspectief (#273)
+
+**Branch:** `epic/issue-273-socia`
+
+| US | Issue | Status | Notitie |
+|----|-------|--------|---------|
+| US-6.1 | #306 | ⬜ open | Stakeholderkaart met actoren + IntentionalDependency edges |
+| US-6.2 | #307 | ⬜ open | StakeholderClaims (Interest/Goal/Power) |
+| US-6.4 | #364 | ⬜ open | EcosystemAgent + CollaborationCondition (NEXUS-overlay) |
+| US-6.5 | #387 | ⬜ open | StakeholderGroepen koppelen aan IssueCommunity (DEMOS-prep) |
+| US-6.3 | #363 | ⏳ geblokkeerd | CAPAX-overlay — wacht op Epic 9 US-9.4 |
+
+**Volgorde:** US-6.1 + US-6.2 parallel (Wave 1) → US-6.4 + US-6.5 parallel (Wave 2) → US-6.3 defer (Fase B)
+
+---
+
+### Epic 7 — Axia Perspectief (#274)
+
+**Branch:** `epic/issue-274-axia`
+
+| US | Issue | Status | Notitie |
+|----|-------|--------|---------|
+| US-7.1 | #308 | ⬜ open | Waardencanvas met ValueClaims per cover:ValueType |
+| US-7.2 | #309 | ⬜ open | Waardespanningen (ValueTensionClaim) |
+| US-7.3 | #310 | ⬜ open | Heatmap-overlay op Causa-workspace |
+| US-7.4 | #365 | ⬜ open | ValueBasedDesignRequirement vanuit ValueCriterion |
+| US-7.5 | #366 | ⬜ open | axia:generatesCapabilityRequirement → CAPAX-propagatie |
+
+**Volgorde:** US-7.1 + US-7.2 + US-7.3 parallel (Wave 1) → US-7.4 (Wave 2) → US-7.5 (Wave 3, na US-7.4)
+
+---
 
 ### Epic T — Tessera-engine v1.0 (#352) [deels afgerond]
 
@@ -44,7 +76,7 @@ Alle vier vereisen alleen Epic 3 ✅. Kunnen parallel lopen.
 
 | Epic | Issue | Titel | Afhankelijkheden |
 |------|-------|-------|------------------|
-| Epic 17 US-17.0 | #475 | Write-path consolidatie (prerequisite voor rest E17) | Epic 3 ✅, Epic 4 ✅ |
+| Epic 17 US-17.0 | #475 | Write-path consolidatie (prerequisite voor rest E17) | Epic 3 ✅, Epic 4 ✅ | ✅ gemerged |
 | Epic 6 | #273 | Socia Perspectief | Epic 3 ✅ |
 | Epic 7 | #274 | Axia Perspectief | Epic 3 ✅ |
 | Epic 8 | #275 | Forma Perspectief | Epic 3 ✅ |
