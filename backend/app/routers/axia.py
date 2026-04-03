@@ -9,6 +9,7 @@ from app.auth import get_current_user
 from app.db.permissions import check_permission
 from app.models.domain import Role
 from app.services.fuseki import sparql_select, sparql_update, record_provenance_activity
+from app.services.ontology_cache import get_status_label_to_uri
 from app.ontology import VALOR_NS
 
 logger = logging.getLogger(__name__)
@@ -19,6 +20,7 @@ router = APIRouter(
 )
 
 AXIA_NS = "https://valor-ecosystem.nl/ontology/axia#"
+CAPAX_NS = "https://valor-ecosystem.nl/ontology/capax#"
 COVER_NS = "https://valor-ecosystem.nl/ontology/cover#"
 XSD_NS = "http://www.w3.org/2001/XMLSchema#"
 
@@ -226,6 +228,8 @@ class ValueChainRequirementItem(BaseModel):
     tessera_uri: str
     tessera_id: str
     label: str
+    epistemic_status: str | None = None
+    capability_requirement_uri: str | None = None
 
 
 class ValueChainCriterionItem(BaseModel):
@@ -440,7 +444,7 @@ PREFIX cover: <{COVER_NS}>
 PREFIX valor: <{VALOR_NS}>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT ?criterion ?criterionLabel ?valueType ?valueTypeLabel ?requirement ?requirementLabel WHERE {{
+SELECT ?criterion ?criterionLabel ?valueType ?valueTypeLabel ?requirement ?requirementLabel ?requirementStatus ?capReq WHERE {{
   GRAPH <{graph_uri}> {{
     ?criterion a axia:ValueCriterion ;
                cover:groundedIn ?valueType .
@@ -449,6 +453,8 @@ SELECT ?criterion ?criterionLabel ?valueType ?valueTypeLabel ?requirement ?requi
     OPTIONAL {{
       ?criterion axia:groundsRequirement ?requirement .
       OPTIONAL {{ ?requirement rdfs:label ?requirementLabel . }}
+      OPTIONAL {{ ?requirement valor:epistemicStatus ?requirementStatus . }}
+      OPTIONAL {{ ?requirement axia:generatesCapabilityRequirement ?capReq . }}
     }}
   }}
 }}
@@ -468,6 +474,8 @@ ORDER BY ?valueType ?criterion ?requirement"""
         criterion_id = criterion_uri.rsplit(":", 1)[-1]
         requirement_uri = row.get("requirement", "")
         requirement_label = row.get("requirementLabel", "")
+        req_status_raw = row.get("requirementStatus", "")
+        cap_req_uri = row.get("capReq", "")
 
         if value_type_uri not in type_map:
             type_map[value_type_uri] = ValueChainTypeItem(
@@ -489,10 +497,13 @@ ORDER BY ?valueType ?criterion ?requirement"""
         if requirement_uri:
             req_id = requirement_uri.rsplit(":", 1)[-1]
             req_label = requirement_label or req_id
+            req_status_label = req_status_raw.rsplit("#", 1)[-1].rsplit("/", 1)[-1] if (req_status_raw.startswith("http") or req_status_raw.startswith("urn")) else req_status_raw
             req_item = ValueChainRequirementItem(
                 tessera_uri=requirement_uri,
                 tessera_id=req_id,
                 label=req_label,
+                epistemic_status=req_status_label or None,
+                capability_requirement_uri=cap_req_uri or None,
             )
             # Voorkom duplicaten bij meerdere rows voor dezelfde criterion+requirement
             existing_req_uris = {r.tessera_uri for r in criterion_map[criterion_uri].requirements}
@@ -503,3 +514,231 @@ ORDER BY ?valueType ?criterion ?requirement"""
         design_space_id=ds_id,
         chain=list(type_map.values()),
     )
+
+
+# ---------------------------------------------------------------------------
+# US-7.5: PATCH value-requirement status → CAPAX-propagatie
+# ---------------------------------------------------------------------------
+
+class PatchValueRequirementStatusRequest(BaseModel):
+    new_status: str
+
+
+class CapabilityRequirementOut(BaseModel):
+    tessera_uri: str
+    tessera_id: str
+    label: str
+    generated_from: str
+    epistemic_status: str
+    created_by: str
+    created_at: str
+
+
+class PatchValueRequirementStatusResponse(BaseModel):
+    tessera_uri: str
+    tessera_id: str
+    previous_status: str
+    new_status: str
+    capability_requirement: CapabilityRequirementOut | None = None
+
+
+@router.patch("/{ds_id}/value-requirement/{req_uri:path}/status", response_model=PatchValueRequirementStatusResponse)
+async def patch_value_requirement_status(
+    ds_id: str,
+    req_uri: str,
+    request: PatchValueRequirementStatusRequest,
+    user: dict = Depends(get_current_user),
+) -> PatchValueRequirementStatusResponse:
+    user_id = user["id"]
+
+    has_permission = await check_permission(user_id, ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    graph_uri = f"urn:valor:ds:{ds_id}:baseline"
+
+    # Controleer of het een axia:ValueBasedDesignRequirement is en haal huidige status op
+    rows = await sparql_select(
+        f"""PREFIX axia: <{AXIA_NS}>
+PREFIX valor: <{VALOR_NS}>
+
+SELECT ?status ?label WHERE {{
+  GRAPH <{graph_uri}> {{
+    <{req_uri}> a axia:ValueBasedDesignRequirement ;
+               valor:epistemicStatus ?status .
+    OPTIONAL {{ <{req_uri}> <http://www.w3.org/2000/01/rdf-schema#label> ?label . }}
+  }}
+}}""",
+        ds_id,
+    )
+
+    if not rows:
+        raise HTTPException(status_code=404, detail="ValueBasedDesignRequirement niet gevonden in deze DesignSpace.")
+
+    current_raw = rows[0]["status"]
+    req_label = rows[0].get("label", req_uri.rsplit(":", 1)[-1])
+
+    # Haal de nieuwe status URI op uit de ontologie
+    status_label_to_uri = get_status_label_to_uri()
+    new_status_uri = status_label_to_uri.get(request.new_status)
+    if not new_status_uri:
+        raise HTTPException(status_code=422, detail=f"Status '{request.new_status}' niet gevonden in ontologie.")
+
+    if current_raw.startswith("http") or current_raw.startswith("urn"):
+        old_status_sparql = f"<{current_raw}>"
+        current_status_label = current_raw.rsplit("#", 1)[-1].rsplit("/", 1)[-1]
+    else:
+        old_status_sparql = f'"{current_raw}"'
+        current_status_label = current_raw
+
+    # Update de status van de ValueBasedDesignRequirement
+    update = f"""PREFIX valor: <{VALOR_NS}>
+
+DELETE {{
+  GRAPH <{graph_uri}> {{
+    <{req_uri}> valor:epistemicStatus {old_status_sparql} .
+  }}
+}}
+INSERT {{
+  GRAPH <{graph_uri}> {{
+    <{req_uri}> valor:epistemicStatus <{new_status_uri}> .
+  }}
+}}
+WHERE {{
+  GRAPH <{graph_uri}> {{
+    <{req_uri}> valor:epistemicStatus {old_status_sparql} .
+  }}
+}}"""
+
+    await sparql_update(update, ds_id)
+
+    user_uri = f"urn:valor:user:{user_id}"
+    await record_provenance_activity(
+        ds_id,
+        "ValueRequirementStatusChanged",
+        user_uri,
+        used=[req_uri],
+    )
+
+    logger.info(
+        "ValueBasedDesignRequirement %s status: %s → %s (door %s)",
+        req_uri, current_status_label, request.new_status, user_id,
+    )
+
+    req_tessera_id = req_uri.rsplit(":", 1)[-1]
+    capability_out: CapabilityRequirementOut | None = None
+
+    # CAPAX-propagatie: bij Accepted → maak CapabilityRequirement Tessera aan
+    if request.new_status == "Accepted":
+        cap_req_id = str(uuid.uuid4())
+        cap_req_uri = f"urn:valor:tessera:{cap_req_id}"
+        created_at = datetime.now(timezone.utc).isoformat()
+        proposed_uri = status_label_to_uri.get("Proposed", f"{VALOR_NS}ProposedStatus")
+        escaped_label = req_label.replace("\\", "\\\\").replace('"', '\\"')
+
+        cap_sparql = f"""PREFIX axia: <{AXIA_NS}>
+PREFIX capax: <{CAPAX_NS}>
+PREFIX valor: <{VALOR_NS}>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX xsd: <{XSD_NS}>
+
+INSERT DATA {{
+  GRAPH <{graph_uri}> {{
+    <{cap_req_uri}> a capax:CapabilityRequirement ;
+      a valor:Tessera ;
+      rdfs:label "{escaped_label}"@nl ;
+      valor:epistemicStatus <{proposed_uri}> ;
+      valor:claimedBy <{user_uri}> ;
+      valor:claimedAt "{created_at}"^^xsd:dateTime .
+    <{req_uri}> axia:generatesCapabilityRequirement <{cap_req_uri}> .
+  }}
+}}"""
+
+        await sparql_update(cap_sparql, ds_id)
+
+        await record_provenance_activity(
+            ds_id,
+            "CapabilityRequirementGenerated",
+            user_uri,
+            generated=cap_req_uri,
+            used=[req_uri],
+        )
+
+        logger.info(
+            "CapabilityRequirement %s aangemaakt via CAPAX-propagatie vanuit %s in DesignSpace %s",
+            cap_req_uri, req_uri, ds_id,
+        )
+
+        capability_out = CapabilityRequirementOut(
+            tessera_uri=cap_req_uri,
+            tessera_id=cap_req_id,
+            label=req_label,
+            generated_from=req_uri,
+            epistemic_status="Proposed",
+            created_by=user_id,
+            created_at=created_at,
+        )
+
+    return PatchValueRequirementStatusResponse(
+        tessera_uri=req_uri,
+        tessera_id=req_tessera_id,
+        previous_status=current_status_label,
+        new_status=request.new_status,
+        capability_requirement=capability_out,
+    )
+
+
+# ---------------------------------------------------------------------------
+# US-7.5: GET capability-requirements
+# ---------------------------------------------------------------------------
+
+@router.get("/{ds_id}/capability-requirements", response_model=list[CapabilityRequirementOut])
+async def get_capability_requirements(
+    ds_id: str,
+    user: dict = Depends(get_current_user),
+) -> list[CapabilityRequirementOut]:
+    user_id = user["id"]
+
+    has_permission = await check_permission(user_id, ds_id, Role.VIEWER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    graph_uri = f"urn:valor:ds:{ds_id}:baseline"
+
+    query = f"""PREFIX axia: <{AXIA_NS}>
+PREFIX capax: <{CAPAX_NS}>
+PREFIX valor: <{VALOR_NS}>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?capReq ?label ?status ?claimedBy ?claimedAt ?generatedFrom WHERE {{
+  GRAPH <{graph_uri}> {{
+    ?capReq a capax:CapabilityRequirement ;
+            valor:epistemicStatus ?status ;
+            valor:claimedBy ?claimedBy ;
+            valor:claimedAt ?claimedAt .
+    OPTIONAL {{ ?capReq rdfs:label ?label . }}
+    OPTIONAL {{ ?generatedFrom axia:generatesCapabilityRequirement ?capReq . }}
+  }}
+}}
+ORDER BY ?claimedAt"""
+
+    rows = await sparql_select(query, ds_id)
+
+    result = []
+    for row in rows:
+        cap_req_uri = row.get("capReq", "")
+        cap_req_id = cap_req_uri.rsplit(":", 1)[-1]
+        status_raw = row.get("status", "")
+        status_label = status_raw.rsplit("#", 1)[-1].rsplit("/", 1)[-1] if (status_raw.startswith("http") or status_raw.startswith("urn")) else status_raw
+        claimed_by = row.get("claimedBy", "").rsplit(":", 1)[-1]
+        result.append(CapabilityRequirementOut(
+            tessera_uri=cap_req_uri,
+            tessera_id=cap_req_id,
+            label=row.get("label", cap_req_id),
+            generated_from=row.get("generatedFrom", ""),
+            epistemic_status=status_label,
+            created_by=claimed_by,
+            created_at=row.get("claimedAt", ""),
+        ))
+
+    return result

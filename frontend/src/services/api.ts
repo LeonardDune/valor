@@ -1012,6 +1012,19 @@ WHERE {
         const response = await apiClient.get<ValueChainResponse>(`/designspace/${dsId}/value-chain`);
         return response.data;
     },
+
+    patchValueRequirementStatus: async (dsId: string, reqUri: string, newStatus: string): Promise<PatchValueRequirementStatusResponse> => {
+        const response = await apiClient.patch<PatchValueRequirementStatusResponse>(
+            `/designspace/${dsId}/value-requirement/${encodeURIComponent(reqUri)}/status`,
+            { new_status: newStatus },
+        );
+        return response.data;
+    },
+
+    getCapabilityRequirements: async (dsId: string): Promise<CapabilityRequirementItem[]> => {
+        const response = await apiClient.get<CapabilityRequirementItem[]>(`/designspace/${dsId}/capability-requirements`);
+        return response.data;
+    },
 };
 
 export interface ConversationMessage {
@@ -1300,6 +1313,8 @@ export interface ValueChainRequirementItem {
     tessera_uri: string;
     tessera_id: string;
     label: string;
+    epistemic_status?: string;
+    capability_requirement_uri?: string;
 }
 
 export interface ValueChainCriterionItem {
@@ -1318,6 +1333,24 @@ export interface ValueChainTypeItem {
 export interface ValueChainResponse {
     design_space_id: string;
     chain: ValueChainTypeItem[];
+}
+
+export interface CapabilityRequirementItem {
+    tessera_uri: string;
+    tessera_id: string;
+    label: string;
+    generated_from: string;
+    epistemic_status: string;
+    created_by: string;
+    created_at: string;
+}
+
+export interface PatchValueRequirementStatusResponse {
+    tessera_uri: string;
+    tessera_id: string;
+    previous_status: string;
+    new_status: string;
+    capability_requirement: CapabilityRequirementItem | null;
 }
 
 export type LifecycleStatus = 'draft' | 'proposed' | 'accepted' | 'rejected' | 'deprecated';
