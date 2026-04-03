@@ -834,6 +834,21 @@ WHERE {
         const response = await apiClient.get<DesignImplicationCount[]>(`/designspace/${dsId}/value-implications`);
         return response.data;
     },
+
+    createValueCriterion: async (dsId: string, payload: CreateValueCriterionPayload): Promise<ValueCriterionResponse> => {
+        const response = await apiClient.post<ValueCriterionResponse>(`/designspace/${dsId}/value-criterion`, payload);
+        return response.data;
+    },
+
+    createValueBasedDesignRequirement: async (dsId: string, payload: CreateValueBasedDesignRequirementPayload): Promise<ValueBasedDesignRequirementResponse> => {
+        const response = await apiClient.post<ValueBasedDesignRequirementResponse>(`/designspace/${dsId}/value-based-design-requirement`, payload);
+        return response.data;
+    },
+
+    getValueChain: async (dsId: string): Promise<ValueChainResponse> => {
+        const response = await apiClient.get<ValueChainResponse>(`/designspace/${dsId}/value-chain`);
+        return response.data;
+    },
 };
 
 export interface ConversationMessage {
@@ -1086,6 +1101,60 @@ export interface ValueTensionResponse {
 export interface DesignImplicationCount {
     factor_uri: string;
     implication_count: number;
+}
+
+export interface CreateValueCriterionPayload {
+    label: string;
+    value_type_uri: string;
+    grounded_in_norm_uri?: string;
+}
+
+export interface ValueCriterionResponse {
+    tessera_uri: string;
+    tessera_id: string;
+    label: string;
+    value_type_uri: string;
+    grounded_in_norm_uri: string | null;
+    created_by: string;
+    created_at: string;
+}
+
+export interface CreateValueBasedDesignRequirementPayload {
+    label: string;
+    criterion_uri: string;
+}
+
+export interface ValueBasedDesignRequirementResponse {
+    tessera_uri: string;
+    tessera_id: string;
+    label: string;
+    criterion_uri: string;
+    created_by: string;
+    created_at: string;
+}
+
+export interface ValueChainRequirementItem {
+    tessera_uri: string;
+    tessera_id: string;
+    label: string;
+}
+
+export interface ValueChainCriterionItem {
+    tessera_uri: string;
+    tessera_id: string;
+    label: string;
+    requirements: ValueChainRequirementItem[];
+}
+
+export interface ValueChainTypeItem {
+    value_type_uri: string;
+    value_type_label: string;
+    criteria: ValueChainCriterionItem[];
+}
+
+export interface ValueChainResponse {
+    design_space_id: string;
+    chain: ValueChainTypeItem[];
 }
 
 export type LifecycleStatus = 'draft' | 'proposed' | 'accepted' | 'rejected' | 'deprecated';
