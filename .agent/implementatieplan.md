@@ -17,42 +17,12 @@
 | Epic 11 | #278 | Neo4j Kennisopslag Afbouwen |
 | Epic 16 | #410 | DISC: Discourse & Deliberation Threads |
 | Epic 18 | #481 | Entity Identiteitsarchitectuur (US-AI.1 t/m US-AI.8) |
+| Epic 6 | #273 | Socia Perspectief (US-6.1, 6.2, 6.4, 6.5 ✅ — US-6.3 deferred naar Fase B) |
+| Epic 7 | #274 | Axia Perspectief (US-7.1–7.5 volledig ✅) |
 
 ---
 
 ## Actieve Epics
-
-### Epic 6 — Socia Perspectief (#273)
-
-**Branch:** `epic/issue-273-socia`
-
-| US | Issue | Status | Notitie |
-|----|-------|--------|---------|
-| US-6.1 | #306 | ⬜ open | Stakeholderkaart met actoren + IntentionalDependency edges |
-| US-6.2 | #307 | ⬜ open | StakeholderClaims (Interest/Goal/Power) |
-| US-6.4 | #364 | ⬜ open | EcosystemAgent + CollaborationCondition (NEXUS-overlay) |
-| US-6.5 | #387 | ⬜ open | StakeholderGroepen koppelen aan IssueCommunity (DEMOS-prep) |
-| US-6.3 | #363 | ⏳ geblokkeerd | CAPAX-overlay — wacht op Epic 9 US-9.4 |
-
-**Volgorde:** US-6.1 + US-6.2 parallel (Wave 1) → US-6.4 + US-6.5 parallel (Wave 2) → US-6.3 defer (Fase B)
-
----
-
-### Epic 7 — Axia Perspectief (#274)
-
-**Branch:** `epic/issue-274-axia`
-
-| US | Issue | Status | Notitie |
-|----|-------|--------|---------|
-| US-7.1 | #308 | ⬜ open | Waardencanvas met ValueClaims per cover:ValueType |
-| US-7.2 | #309 | ⬜ open | Waardespanningen (ValueTensionClaim) |
-| US-7.3 | #310 | ⬜ open | Heatmap-overlay op Causa-workspace |
-| US-7.4 | #365 | ⬜ open | ValueBasedDesignRequirement vanuit ValueCriterion |
-| US-7.5 | #366 | ⬜ open | axia:generatesCapabilityRequirement → CAPAX-propagatie |
-
-**Volgorde:** US-7.1 + US-7.2 + US-7.3 parallel (Wave 1) → US-7.4 (Wave 2) → US-7.5 (Wave 3, na US-7.4)
-
----
 
 ### Epic T — Tessera-engine v1.0 (#352) [deels afgerond]
 
@@ -70,36 +40,31 @@
 
 ## Implementatievolgorde (open Epics)
 
-### Fase A — Parallelle perspectieven (onafhankelijk, starten zodra Epic T gemerged)
+### Fase A — Parallelle perspectieven ✅ AFGEROND
 
-Alle vier vereisen alleen Epic 3 ✅. Kunnen parallel lopen.
+| Epic | Issue | Titel | Status |
+|------|-------|-------|--------|
+| Epic 17 US-17.0 | #475 | Write-path consolidatie | ✅ gemerged |
+| Epic 6 | #273 | Socia Perspectief | ✅ gemerged (US-6.3 deferred) |
+| Epic 7 | #274 | Axia Perspectief | ✅ gemerged |
 
-| Epic | Issue | Titel | Afhankelijkheden |
-|------|-------|-------|------------------|
-| Epic 17 US-17.0 | #475 | Write-path consolidatie (prerequisite voor rest E17) | Epic 3 ✅, Epic 4 ✅ | ✅ gemerged |
-| Epic 6 | #273 | Socia Perspectief | Epic 3 ✅ |
-| Epic 7 | #274 | Axia Perspectief | Epic 3 ✅ |
-| Epic 8 | #275 | Forma Perspectief | Epic 3 ✅ |
-| Epic 10 | #277 | AI Agents: Socratische Gesprekspartner | Epic 3 ✅ |
-
-> **Let op US-17.0 (#475):** consolideert de twee divergerende write-paden (`fuseki_knowledge.py` → asis en `tessera.py` → main graph) naar één `baseline`-pad. Moet vóór de andere Epic 17 stories én vóór productie-migratie.
-
-### Fase B — Afhankelijk van Socia + Axia stabiel
+### Fase B — ONTSLOTEN: Socia + Axia stabiel ✅
 
 | Epic | Issue | Titel | Afhankelijkheden |
 |------|-------|-------|------------------|
-| Epic 17 (rest) | #456 | Baseline/Scenario Navigatie (US-17.1 t/m 17.5) | US-17.0 ✅, Epic 6 stabiel, Epic 7 stabiel |
-| Epic 9 | #276 | Lexa & Acta Perspectieven | Epic 3 ✅, Epic 6 stabiel, Epic 7 stabiel, Epic T ✅ |
+| Epic 17 (rest) | #456 | Baseline/Scenario Navigatie (US-17.1 t/m 17.5) | US-17.0 ✅, Epic 6 ✅, Epic 7 ✅ |
+| Epic 9 | #276 | Lexa & Acta Perspectieven | Epic 3 ✅, Epic 6 ✅, Epic 7 ✅, Epic T ✅ |
 
-> Epic 9 US-9.4 (#368) — CAPAX-engine gate-check — **deblokkert US-T.2** uit Epic T.
+> Epic 9 US-9.4 (#368) — CAPAX-engine gate-check — **deblokkert US-T.2** uit Epic T en **US-6.3** uit Epic 6.
 
 ### Fase C — Afhankelijk van Epic 9 + IssueCommunity
 
 | Epic | Issue | Titel | Afhankelijkheden |
 |------|-------|-------|------------------|
 | Epic T US-T.2 | #370 | Auto-CapabilityGap | US-9.4 (#368) uit Epic 9 |
+| US-6.3 | #363 | CAPAX-overlay in Socia | US-9.4 (#368) uit Epic 9 |
 | Epic 14 | #406 | IssueCommunity & Ecosysteem-legitimering | Epic 3 ✅, valor-core OWL-module in Fuseki |
-| Epic 12 | #405 | DEMOS: Democratische Inclusiviteitstoetsing | Epic 6 stabiel, Epic 14 ✅ |
+| Epic 12 | #405 | DEMOS: Democratische Inclusiviteitstoetsing | Epic 6 ✅, Epic 14 ✅ |
 | Epic 15 | #407 | Platform Governance: Hard & Soft Ethics | Epic 3 ✅, integreert Epic 10 & 12 |
 
 ### Fase D — Delibera afronden (alles samenkomt hier)
@@ -125,17 +90,16 @@ Alle vier vereisen alleen Epic 3 ✅. Kunnen parallel lopen.
 
 ```
 Epic 3 ✅ (fundament)
-├── Epic T (#352) ← actief
-│   └── US-T.2 ──── wacht op Epic 9 US-9.4
-├── Epic 17 US-17.0 (#475) ← start zodra Epic T gemerged
-├── Epic 6 (#273) ← Socia
-│   └── (stabiel) ──→ Epic 9, Epic 12, Epic 17 rest
-├── Epic 7 (#274) ← Axia
-│   └── (stabiel) ──→ Epic 9, Epic 17 rest
-├── Epic 8 (#275) ← Forma (onafhankelijk)
-├── Epic 10 (#277) ← AI Agents (onafhankelijk)
-├── Epic 9 (#276) ← Lexa & Acta
-│   ├── US-9.4 ──→ deblokkert US-T.2 + Epic 5 US-5.5
+├── Epic T (#352) ✅ (US-T.2 wacht op Epic 9)
+├── Epic 17 US-17.0 (#475) ✅
+├── Epic 6 (#273) ✅ (US-6.3 wacht op Epic 9)
+│   └── stabiel ──→ Epic 9, Epic 12, Epic 17 rest ← ONTSLOTEN
+├── Epic 7 (#274) ✅
+│   └── stabiel ──→ Epic 9, Epic 17 rest ← ONTSLOTEN
+├── Epic 8 (#275) ← Forma (onafhankelijk, open)
+├── Epic 10 (#277) ← AI Agents (onafhankelijk, open)
+├── Epic 9 (#276) ← Lexa & Acta ← VOLGENDE PRIORITEIT
+│   ├── US-9.4 ──→ deblokkert US-T.2 + US-6.3 + Epic 5 US-5.5
 │   └── LEXA+ (US-9.6) ──→ Epic 5 US-5.8
 ├── Epic 14 (#406) ← IssueCommunity
 │   └── (✅) ──→ Epic 12
@@ -151,12 +115,12 @@ Epic 3 ✅ (fundament)
 
 | Item | Geblokkeerd door | Verwacht in |
 |------|-----------------|-------------|
+| US-6.3 CAPAX-overlay in Socia (#363) | Epic 9 US-9.4 (#368) | Na Fase B |
 | US-T.2 Auto-CapabilityGap (#370) | Epic 9 US-9.4 (#368) | Na Fase B |
 | Epic 5 US-5.5 FeasibilityAssessment gate | Epic 9 US-9.4 (#368) | Na Fase B |
 | Epic 5 US-5.7 InclusivityAssessment gate | Epic 12 (#405) | Na Fase C |
 | Epic 5 US-5.8 NormativeFeasibility gate | Epic 9 US-9.6 LEXA+ | Na Fase B |
 | Epic 12 DEMOS | Epic 14 IssueCommunity | Na Fase C start |
-| Epic 17 rest (17.1–17.5) | Epic 6 + 7 stabiel | Na Fase A |
 
 ---
 
