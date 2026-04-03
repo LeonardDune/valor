@@ -84,6 +84,85 @@ export interface SociaOntology {
     dependency_types: SociaOntologyEntry[];
 }
 
+export interface StakeholderActor {
+    uri: string;
+    label: string;
+    entity_type: string;
+    entity_type_local: string;
+    role_uri: string | null;
+    role_label_nl: string | null;
+}
+
+export interface StakeholderDependency {
+    from_uri: string;
+    to_uri: string;
+    dependency_type: string;
+    dependency_type_local: string;
+    dependency_label_nl: string;
+}
+
+export interface StakeholderMap {
+    actors: StakeholderActor[];
+    dependencies: StakeholderDependency[];
+}
+
+export type StakeholderClaimType = 'InterestClaim' | 'GoalClaim' | 'PowerClaim';
+
+export interface CreateStakeholderClaimRequest {
+    claim_type: StakeholderClaimType;
+    claim_content: string;
+    actor_uri: string;
+}
+
+export interface StakeholderClaimResponse {
+    tessera_id: string;
+    tessera_uri: string;
+    claim_type: StakeholderClaimType;
+    claim_type_uri: string;
+    claim_content: string;
+    epistemic_status: string;
+    actor_uri: string;
+    claimed_by: string;
+    claimed_at: string;
+    design_space_id: string;
+}
+
+export type CommitmentDuration = 'Permanent' | 'ProjectBased' | 'Experimental';
+
+export interface CreateEcosystemAgentRequest {
+    label: string;
+    commitment_duration: CommitmentDuration;
+    member_agent_uris: string[];
+}
+
+export interface EcosystemAgentConditionLayers {
+    commitment: boolean;
+    architecture: boolean;
+    disposition_config: boolean;
+}
+
+export interface EcosystemAgent {
+    agent_uri: string;
+    label: string;
+    commitment_uri: string | null;
+    commitment_duration: CommitmentDuration | null;
+    member_agent_uris: string[];
+    condition_status: 'Volledig' | 'Gedeeltelijk' | 'Onvolledig';
+    condition_layers: EcosystemAgentConditionLayers;
+}
+
+export interface CreateEcosystemAgentResponse {
+    agent_id: string;
+    agent_uri: string;
+    label: string;
+    commitment_uri: string;
+    commitment_duration: CommitmentDuration;
+    member_agent_uris: string[];
+    created_by: string;
+    created_at: string;
+    design_space_id: string;
+}
+
 export interface AgentResponse {
     agent_name: string;
     perspective: string;
@@ -662,6 +741,39 @@ export const api = {
         await apiClient.post(`/designspace/${dsId}/socia/roles`, null, {
             params: { entity_uri: entityUri, role_uri: roleUri },
         });
+    },
+
+    getStakeholderMap: async (dsId: string): Promise<StakeholderMap> => {
+        const response = await apiClient.get<StakeholderMap>(`/designspace/${dsId}/stakeholder-map`);
+        return response.data;
+    },
+
+    createStakeholderClaim: async (
+        dsId: string,
+        data: CreateStakeholderClaimRequest,
+    ): Promise<StakeholderClaimResponse> => {
+        const response = await apiClient.post<StakeholderClaimResponse>(
+            `/designspace/${dsId}/stakeholder-claims`,
+            data,
+        );
+        return response.data;
+    },
+
+    // EcosystemAgents (US-6.4)
+    createEcosystemAgent: async (
+        dsId: string,
+        data: CreateEcosystemAgentRequest,
+    ): Promise<CreateEcosystemAgentResponse> => {
+        const response = await apiClient.post<CreateEcosystemAgentResponse>(
+            `/designspace/${dsId}/ecosystem-agent`,
+            data,
+        );
+        return response.data;
+    },
+
+    getEcosystemAgents: async (dsId: string): Promise<EcosystemAgent[]> => {
+        const response = await apiClient.get<EcosystemAgent[]>(`/designspace/${dsId}/ecosystem-agents`);
+        return response.data;
     },
 
     // Threads (Fuseki-backed disc endpoints, Epic 16)
