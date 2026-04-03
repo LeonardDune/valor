@@ -548,6 +548,157 @@ async def get_ecosystem_agents(ds_id: str) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# StakeholderGroepen (US-6.5)
+# ---------------------------------------------------------------------------
+
+_DEMOS_NS = "https://valor-ecosystem.nl/ontology/demos#"
+_VALID_INTEREST_LEVELS = {"High", "Medium", "Low"}
+
+
+async def create_stakeholder_group(
+    ds_id: str,
+    label: str,
+    interest_level: str,
+    represented_by_uri: str | None,
+    user_id: str,
+) -> dict:
+    """Registreert een socia:StakeholderGroup met demos:interestLevel in Fuseki.
+
+    Opgeslagen in urn:valor:ds:{ds_id}/baseline.
+    """
+    if interest_level not in _VALID_INTEREST_LEVELS:
+        raise ValueError(
+            f"Ongeldig interest_level '{interest_level}'. "
+            f"Geldige waarden: {sorted(_VALID_INTEREST_LEVELS)}"
+        )
+
+    group_id = str(_uuid_mod.uuid4())
+    group_uri = f"urn:valor:socia:group:{group_id}"
+    user_uri = f"urn:valor:user:{user_id}"
+    created_at = datetime.now(timezone.utc).isoformat()
+    escaped_label = _escape(label)
+    baseline = _baseline_graph(ds_id)
+
+    represented_triple = (
+        f'    <{group_uri}> <{_DEMOS_NS}representedBy> <{represented_by_uri}> .'
+        if represented_by_uri
+        else ""
+    )
+
+    update = f"""PREFIX socia: <{_SOCIA_NS}>
+PREFIX demos: <{_DEMOS_NS}>
+PREFIX rdfs:  <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX valor: <{VALOR_NS}>
+PREFIX xsd:   <{_XSD_NS}>
+
+INSERT DATA {{
+  GRAPH <{baseline}> {{
+    <{group_uri}> a <{_SOCIA_NS}StakeholderGroup> ;
+      rdfs:label "{escaped_label}" ;
+      <{_DEMOS_NS}interestLevel> "{interest_level}" ;
+      valor:inDesignSpace <{_ds_uri(ds_id)}> ;
+      valor:claimedBy <{user_uri}> ;
+      valor:claimedAt "{created_at}"^^xsd:dateTime .
+{represented_triple}
+  }}
+}}"""
+
+    await sparql_update(update, ds_id)
+
+    await record_provenance_activity(
+        ds_id,
+        "StakeholderGroupCreated",
+        user_uri,
+        generated=group_uri,
+    )
+
+    logger.info(
+        "[fuseki-socia] StakeholderGroup aangemaakt: %s (%s) in %s door %s",
+        group_uri, interest_level, ds_id, user_id,
+    )
+
+    return {
+        "group_id": group_id,
+        "group_uri": group_uri,
+        "label": label,
+        "interest_level": interest_level,
+        "represented_by_uri": represented_by_uri,
+        "is_represented": represented_by_uri is not None,
+        "created_by": user_id,
+        "created_at": created_at,
+        "design_space_id": ds_id,
+    }
+
+
+async def get_stakeholder_groups(ds_id: str) -> list[dict]:
+    """Haalt alle socia:StakeholderGroups op uit de baseline-graph van een DesignSpace.
+
+    Retourneert per groep ook of er een demos:representedBy aanwezig is (is_represented).
+    """
+    baseline = _baseline_graph(ds_id)
+
+    rows = await sparql_select_global(f"""
+        PREFIX socia:  <{_SOCIA_NS}>
+        PREFIX demos:  <{_DEMOS_NS}>
+        PREFIX rdfs:   <http://www.w3.org/2000/01/rdf-schema#>
+
+        SELECT ?group ?label ?interestLevel (BOUND(?rep) AS ?isRepresented) ?rep WHERE {{
+          GRAPH <{baseline}> {{
+            ?group a <{_SOCIA_NS}StakeholderGroup> ;
+                   rdfs:label ?label ;
+                   <{_DEMOS_NS}interestLevel> ?interestLevel .
+            OPTIONAL {{ ?group <{_DEMOS_NS}representedBy> ?rep . }}
+          }}
+        }}
+    """)
+
+    return [
+        {
+            "group_uri": row["group"],
+            "label": row.get("label", row["group"].split(":")[-1]),
+            "interest_level": row.get("interestLevel", ""),
+            "is_represented": str(row.get("isRepresented", "false")).lower() == "true",
+            "represented_by_uri": row.get("rep"),
+        }
+        for row in rows
+    ]
+
+
+async def get_high_interest_groups(ds_id: str) -> list[dict]:
+    """Filtert socia:StakeholderGroups op interestLevel = 'High' met representatiestatus.
+
+    Bedoeld voor DEMOS InclusivityCoverage-berekening.
+    """
+    baseline = _baseline_graph(ds_id)
+
+    rows = await sparql_select_global(f"""
+        PREFIX socia:  <{_SOCIA_NS}>
+        PREFIX demos:  <{_DEMOS_NS}>
+        PREFIX rdfs:   <http://www.w3.org/2000/01/rdf-schema#>
+
+        SELECT ?group ?label (BOUND(?rep) AS ?isRepresented) ?rep WHERE {{
+          GRAPH <{baseline}> {{
+            ?group a <{_SOCIA_NS}StakeholderGroup> ;
+                   rdfs:label ?label ;
+                   <{_DEMOS_NS}interestLevel> "High" .
+            OPTIONAL {{ ?group <{_DEMOS_NS}representedBy> ?rep . }}
+          }}
+        }}
+    """)
+
+    return [
+        {
+            "group_uri": row["group"],
+            "label": row.get("label", row["group"].split(":")[-1]),
+            "interest_level": "High",
+            "is_represented": str(row.get("isRepresented", "false")).lower() == "true",
+            "represented_by_uri": row.get("rep"),
+        }
+        for row in rows
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Migratie: legacy socia:Actor → Entity Registry (US-AI.6)
 # ---------------------------------------------------------------------------
 
