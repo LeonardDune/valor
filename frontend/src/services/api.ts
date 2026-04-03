@@ -929,7 +929,38 @@ WHERE {
     completePhase: async (sessionId: string, phase: 'refine' | 'ranking' | 'consent') => {
         const response = await apiClient.post(`/sessions/${sessionId}/complete-phase`, { phase });
         return response.data;
-    }
+    },
+
+    // Axia
+    getValueClaims: async (dsId: string): Promise<ValueCanvasResponse> => {
+        const response = await apiClient.get<ValueCanvasResponse>(`/designspace/${dsId}/value-claims`);
+        return response.data;
+    },
+
+    createValueTension: async (dsId: string, payload: CreateValueTensionPayload): Promise<ValueTensionResponse> => {
+        const response = await apiClient.post<ValueTensionResponse>(`/designspace/${dsId}/value-tension`, payload);
+        return response.data;
+    },
+
+    getValueImplications: async (dsId: string): Promise<DesignImplicationCount[]> => {
+        const response = await apiClient.get<DesignImplicationCount[]>(`/designspace/${dsId}/value-implications`);
+        return response.data;
+    },
+
+    createValueCriterion: async (dsId: string, payload: CreateValueCriterionPayload): Promise<ValueCriterionResponse> => {
+        const response = await apiClient.post<ValueCriterionResponse>(`/designspace/${dsId}/value-criterion`, payload);
+        return response.data;
+    },
+
+    createValueBasedDesignRequirement: async (dsId: string, payload: CreateValueBasedDesignRequirementPayload): Promise<ValueBasedDesignRequirementResponse> => {
+        const response = await apiClient.post<ValueBasedDesignRequirementResponse>(`/designspace/${dsId}/value-based-design-requirement`, payload);
+        return response.data;
+    },
+
+    getValueChain: async (dsId: string): Promise<ValueChainResponse> => {
+        const response = await apiClient.get<ValueChainResponse>(`/designspace/${dsId}/value-chain`);
+        return response.data;
+    },
 };
 
 export interface ConversationMessage {
@@ -1145,6 +1176,97 @@ function parseDecisionTimeline(raw: DecisionTimelineRaw): DecisionEpisodeRaw[] {
     }
 
     return Array.from(episodesMap.values());
+}
+
+// Axia interfaces
+export interface ValueClaimItem {
+    tessera_uri: string;
+    tessera_id: string;
+    claim_content: string;
+    value_type_uri: string;
+    value_type_label: string;
+    claimed_by: string;
+    claimed_at: string;
+}
+
+export interface ValueCanvasResponse {
+    design_space_id: string;
+    groups: Record<string, ValueClaimItem[]>;
+}
+
+export interface CreateValueTensionPayload {
+    value_type_a_uri: string;
+    value_type_b_uri: string;
+    description: string;
+}
+
+export interface ValueTensionResponse {
+    tessera_uri: string;
+    tessera_id: string;
+    value_type_a_uri: string;
+    value_type_b_uri: string;
+    description: string;
+    created_by: string;
+    created_at: string;
+}
+
+export interface DesignImplicationCount {
+    factor_uri: string;
+    implication_count: number;
+}
+
+export interface CreateValueCriterionPayload {
+    label: string;
+    value_type_uri: string;
+    grounded_in_norm_uri?: string;
+}
+
+export interface ValueCriterionResponse {
+    tessera_uri: string;
+    tessera_id: string;
+    label: string;
+    value_type_uri: string;
+    grounded_in_norm_uri: string | null;
+    created_by: string;
+    created_at: string;
+}
+
+export interface CreateValueBasedDesignRequirementPayload {
+    label: string;
+    criterion_uri: string;
+}
+
+export interface ValueBasedDesignRequirementResponse {
+    tessera_uri: string;
+    tessera_id: string;
+    label: string;
+    criterion_uri: string;
+    created_by: string;
+    created_at: string;
+}
+
+export interface ValueChainRequirementItem {
+    tessera_uri: string;
+    tessera_id: string;
+    label: string;
+}
+
+export interface ValueChainCriterionItem {
+    tessera_uri: string;
+    tessera_id: string;
+    label: string;
+    requirements: ValueChainRequirementItem[];
+}
+
+export interface ValueChainTypeItem {
+    value_type_uri: string;
+    value_type_label: string;
+    criteria: ValueChainCriterionItem[];
+}
+
+export interface ValueChainResponse {
+    design_space_id: string;
+    chain: ValueChainTypeItem[];
 }
 
 export type LifecycleStatus = 'draft' | 'proposed' | 'accepted' | 'rejected' | 'deprecated';

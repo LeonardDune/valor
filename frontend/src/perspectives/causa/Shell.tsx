@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Plus, Layers } from "lucide-react";
+import { HeatmapOverlay } from '@/perspectives/axia/HeatmapOverlay';
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getNodesBounds } from 'reactflow';
@@ -348,6 +349,14 @@ export const CausaShell = ({ themeId, websocket, currentUserId, onSelect, onOpen
                             <TooltipContent>Conditiedekking overlay</TooltipContent>
                         </Tooltip>
                     </TooltipProvider>
+                )}
+
+                {designSpaceId && (
+                    <HeatmapOverlay
+                        designSpaceId={designSpaceId}
+                        rfInstance={rfInstance}
+                        nodeIds={nodes.map((n) => n.id)}
+                    />
                 )}
 
             </PerspectiveToolbar>
