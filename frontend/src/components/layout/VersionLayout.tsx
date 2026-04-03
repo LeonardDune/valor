@@ -123,12 +123,8 @@ const VersionLayoutInner: React.FC<VersionLayoutInnerProps> = ({ projectName, th
                                 onValueChange={handleAgentChange}
                             >
                                 <ToggleGroupItem value="CAUSA" aria-label="Toggle CAUSA">CAUSA</ToggleGroupItem>
-                                <ToggleGroupItem value="AXIA" disabled aria-label="Toggle AXIA">
-                                    AXIA <span className="ml-1.5 text-[9px] opacity-70">SOON</span>
-                                </ToggleGroupItem>
-                                <ToggleGroupItem value="ACTOR" disabled aria-label="Toggle ACTOR">
-                                    ACTOR <span className="ml-1.5 text-[9px] opacity-70">SOON</span>
-                                </ToggleGroupItem>
+                                <ToggleGroupItem value="AXIA" aria-label="Toggle AXIA">AXIA</ToggleGroupItem>
+                                <ToggleGroupItem value="ACTOR" aria-label="Toggle ACTOR">ACTOR</ToggleGroupItem>
                                 <ToggleGroupItem value="PRAXIS" disabled aria-label="Toggle PRAXIS">
                                     PRAXIS <span className="ml-1.5 text-[9px] opacity-70">SOON</span>
                                 </ToggleGroupItem>

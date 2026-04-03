@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { OrganizationGrid } from './components/dashboard/OrganizationGrid';
 import { ProjectGrid } from './components/dashboard/ProjectGrid';
 import { ThemeGrid } from './components/dashboard/ThemeGrid';
@@ -16,6 +16,8 @@ import { UpdatePasswordPage } from './pages/UpdatePasswordPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { DashboardLayout } from './views/shell/DashboardLayout';
 import { VersionLayout } from './components/layout/VersionLayout';
+import { ValueCanvas } from './perspectives/axia/ValueCanvas';
+import { StakeholderMap } from './perspectives/socia/views/StakeholderMap';
 import { VersionDashboard } from './pages/VersionDashboard';
 import { VersionChat } from './pages/VersionChat';
 import { RefinementBoardComponent } from './components/deliberation/RefinementBoard';
@@ -171,7 +173,9 @@ const ThemeListWrapper = () => {
 
 const WorkspaceWrapper = () => {
   const { dsId } = useParams();
+  const [searchParams] = useSearchParams();
   const { organizations } = useOrganization();
+  const mode = searchParams.get('mode') || 'CAUSA';
 
   const found = organizations
     .flatMap(org => org.projects.flatMap(proj =>
@@ -179,7 +183,10 @@ const WorkspaceWrapper = () => {
     ))
     .find(item => item.theme.id === dsId);
 
-  if (!found) return null;
+  if (!found || !dsId) return null;
+
+  if (mode === 'AXIA') return <ValueCanvas designSpaceId={dsId} />;
+  if (mode === 'ACTOR') return <StakeholderMap dsId={dsId} />;
 
   return (
     <ValorWorkspace
