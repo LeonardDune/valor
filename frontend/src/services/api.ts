@@ -106,6 +106,27 @@ export interface StakeholderMap {
     dependencies: StakeholderDependency[];
 }
 
+export type StakeholderClaimType = 'InterestClaim' | 'GoalClaim' | 'PowerClaim';
+
+export interface CreateStakeholderClaimRequest {
+    claim_type: StakeholderClaimType;
+    claim_content: string;
+    actor_uri: string;
+}
+
+export interface StakeholderClaimResponse {
+    tessera_id: string;
+    tessera_uri: string;
+    claim_type: StakeholderClaimType;
+    claim_type_uri: string;
+    claim_content: string;
+    epistemic_status: string;
+    actor_uri: string;
+    claimed_by: string;
+    claimed_at: string;
+    design_space_id: string;
+}
+
 export interface AgentResponse {
     agent_name: string;
     perspective: string;
@@ -688,6 +709,17 @@ export const api = {
 
     getStakeholderMap: async (dsId: string): Promise<StakeholderMap> => {
         const response = await apiClient.get<StakeholderMap>(`/designspace/${dsId}/stakeholder-map`);
+        return response.data;
+    },
+
+    createStakeholderClaim: async (
+        dsId: string,
+        data: CreateStakeholderClaimRequest,
+    ): Promise<StakeholderClaimResponse> => {
+        const response = await apiClient.post<StakeholderClaimResponse>(
+            `/designspace/${dsId}/stakeholder-claims`,
+            data,
+        );
         return response.data;
     },
 
