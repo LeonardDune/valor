@@ -26,6 +26,7 @@ from app.services.fuseki import sparql_select_global, sparql_update, record_prov
 logger = logging.getLogger(__name__)
 
 _SOCIA_NS = f"{VALOR_NS}socia#"
+_NEXUS_NS = "https://valor-ecosystem.nl/ontology/nexus#"
 _ENTITIES_GRAPH = "urn:valor:entities"
 _RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 _RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label"
@@ -375,6 +376,175 @@ async def get_designspaces_for_agent(entity_uri: str) -> list[str]:
         row["ds"].replace("urn:valor:ds:", "")
         for row in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# EcosystemAgent aanmaken (US-6.4)
+# ---------------------------------------------------------------------------
+
+_VALID_COMMITMENT_DURATIONS = {"Permanent", "ProjectBased", "Experimental"}
+
+
+async def create_ecosystem_agent(
+    ds_id: str,
+    label: str,
+    commitment_duration: str,
+    member_agent_uris: list[str],
+    user_id: str,
+) -> dict:
+    """Registreert een nexus:EcosystemAgent met nexus:CollaborationCommitment in Fuseki.
+
+    Opgeslagen in urn:valor:ds:{ds_id}/agents (AgentTesserae-graph).
+    De EcosystemAgent is een subklasse van socia:Actor.
+    """
+    if commitment_duration not in _VALID_COMMITMENT_DURATIONS:
+        raise ValueError(
+            f"Ongeldige commitment_duration '{commitment_duration}'. "
+            f"Geldige waarden: {sorted(_VALID_COMMITMENT_DURATIONS)}"
+        )
+
+    agent_id = str(_uuid_mod.uuid4())
+    agent_uri = f"urn:valor:nexus:agent:{agent_id}"
+    commitment_uri = f"urn:valor:nexus:commitment:{agent_id}"
+    user_uri = f"urn:valor:user:{user_id}"
+    created_at = datetime.now(timezone.utc).isoformat()
+
+    graph_uri = f"urn:valor:ds:{ds_id}/agents"
+    escaped_label = _escape(label)
+
+    member_triples = "\n".join(
+        f"    <{agent_uri}> <{_NEXUS_NS}hasMember> <{uri}> ."
+        for uri in member_agent_uris
+    )
+
+    update = f"""PREFIX nexus: <{_NEXUS_NS}>
+PREFIX socia: <{_SOCIA_NS}>
+PREFIX valor: <{VALOR_NS}>
+PREFIX rdfs:  <{_RDFS_LABEL.rsplit('#', 1)[0]}#>
+PREFIX xsd:   <{_XSD_NS}>
+
+INSERT DATA {{
+  GRAPH <{graph_uri}> {{
+    <{agent_uri}> a nexus:EcosystemAgent ;
+                  a socia:Actor ;
+      rdfs:label "{escaped_label}" ;
+      nexus:hasCommitment <{commitment_uri}> ;
+      valor:inDesignSpace <urn:valor:ds:{ds_id}> ;
+      valor:claimedBy <{user_uri}> ;
+      valor:claimedAt "{created_at}"^^xsd:dateTime .
+    <{commitment_uri}> a nexus:CollaborationCommitment ;
+      nexus:commitmentDuration "{commitment_duration}" .
+{member_triples}
+  }}
+}}"""
+
+    await sparql_update(update, ds_id)
+
+    await record_provenance_activity(
+        ds_id,
+        "EcosystemAgentCreated",
+        user_uri,
+        generated=agent_uri,
+    )
+
+    logger.info(
+        "[fuseki-socia] EcosystemAgent aangemaakt: %s (%s) in %s door %s",
+        agent_uri, commitment_duration, ds_id, user_id,
+    )
+
+    return {
+        "agent_id": agent_id,
+        "agent_uri": agent_uri,
+        "label": label,
+        "commitment_uri": commitment_uri,
+        "commitment_duration": commitment_duration,
+        "member_agent_uris": member_agent_uris,
+        "created_by": user_id,
+        "created_at": created_at,
+        "design_space_id": ds_id,
+    }
+
+
+async def get_ecosystem_agents(ds_id: str) -> list[dict]:
+    """Haalt alle nexus:EcosystemAgents op met CollaborationCondition-status.
+
+    Status = "Volledig" | "Gedeeltelijk" | "Onvolledig" op basis van:
+      - commit aanwezig (nexus:hasCommitment)
+      - architectuur aanwezig (nexus:hasArchitecture — optioneel triple)
+      - dispositionele config aanwezig (nexus:hasDispositionConfig — optioneel triple)
+    """
+    graph_uri = f"urn:valor:ds:{ds_id}/agents"
+
+    rows = await sparql_select_global(f"""
+        PREFIX nexus: <{_NEXUS_NS}>
+        PREFIX socia: <{_SOCIA_NS}>
+        PREFIX rdfs:  <{_RDFS_LABEL.rsplit('#', 1)[0]}#>
+        PREFIX xsd:   <{_XSD_NS}>
+
+        SELECT ?agent ?label ?commitment ?commitmentDuration
+               (BOUND(?arch) AS ?hasArchitecture)
+               (BOUND(?dispConf) AS ?hasDispositionConfig)
+        WHERE {{
+          GRAPH <{graph_uri}> {{
+            ?agent a <{_NEXUS_NS}EcosystemAgent> .
+            OPTIONAL {{ ?agent rdfs:label ?label . }}
+            OPTIONAL {{
+              ?agent <{_NEXUS_NS}hasCommitment> ?commitment .
+              OPTIONAL {{ ?commitment <{_NEXUS_NS}commitmentDuration> ?commitmentDuration . }}
+            }}
+            OPTIONAL {{ ?agent <{_NEXUS_NS}hasArchitecture> ?arch . }}
+            OPTIONAL {{ ?agent <{_NEXUS_NS}hasDispositionConfig> ?dispConf . }}
+          }}
+        }}
+    """)
+
+    # Per agent de leden ophalen
+    member_rows = await sparql_select_global(f"""
+        PREFIX nexus: <{_NEXUS_NS}>
+
+        SELECT ?agent ?member WHERE {{
+          GRAPH <{graph_uri}> {{
+            ?agent a <{_NEXUS_NS}EcosystemAgent> ;
+                   <{_NEXUS_NS}hasMember> ?member .
+          }}
+        }}
+    """)
+
+    members_by_agent: dict[str, list[str]] = {}
+    for row in member_rows:
+        agent_uri = row["agent"]
+        members_by_agent.setdefault(agent_uri, []).append(row["member"])
+
+    result = []
+    for row in rows:
+        agent_uri = row["agent"]
+        has_commit = row.get("commitment") is not None
+        has_arch = str(row.get("hasArchitecture", "false")).lower() == "true"
+        has_disp = str(row.get("hasDispositionConfig", "false")).lower() == "true"
+
+        layers_present = sum([has_commit, has_arch, has_disp])
+        if layers_present == 3:
+            condition_status = "Volledig"
+        elif layers_present >= 1:
+            condition_status = "Gedeeltelijk"
+        else:
+            condition_status = "Onvolledig"
+
+        result.append({
+            "agent_uri": agent_uri,
+            "label": row.get("label", agent_uri.split(":")[-1]),
+            "commitment_uri": row.get("commitment"),
+            "commitment_duration": row.get("commitmentDuration"),
+            "member_agent_uris": members_by_agent.get(agent_uri, []),
+            "condition_status": condition_status,
+            "condition_layers": {
+                "commitment": has_commit,
+                "architecture": has_arch,
+                "disposition_config": has_disp,
+            },
+        })
+
+    return result
 
 
 # ---------------------------------------------------------------------------
