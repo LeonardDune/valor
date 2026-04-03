@@ -8,9 +8,12 @@ from app.db.fuseki_socia import (
     assign_actor_role,
     create_ecosystem_agent,
     create_stakeholder_claim,
+    create_stakeholder_group,
     get_actor_roles_in_ds,
     get_designspaces_for_agent,
     get_ecosystem_agents,
+    get_high_interest_groups,
+    get_stakeholder_groups,
     get_stakeholder_map,
     get_tesserae_for_agent,
     migrate_legacy_socia_actors,
@@ -31,6 +34,12 @@ class CreateEcosystemAgentRequest(BaseModel):
     label: str
     commitment_duration: str  # "Permanent" | "ProjectBased" | "Experimental"
     member_agent_uris: List[str] = []
+
+
+class CreateStakeholderGroupRequest(BaseModel):
+    label: str
+    interest_level: str  # "High" | "Medium" | "Low"
+    represented_by_uri: str | None = None
 
 
 @router.post("/designspace/{ds_id}/socia/roles")
@@ -144,6 +153,49 @@ async def get_ecosystem_agents_endpoint(
 ):
     """Haalt alle nexus:EcosystemAgents op met CollaborationCondition-status."""
     return await get_ecosystem_agents(ds_id)
+
+
+@router.post("/designspace/{ds_id}/stakeholder-group", status_code=201)
+async def create_stakeholder_group_endpoint(
+    ds_id: str,
+    request: CreateStakeholderGroupRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Registreert een socia:StakeholderGroup met demos:interestLevel in Fuseki."""
+    has_permission = await check_permission(user["id"], ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    try:
+        result = await create_stakeholder_group(
+            ds_id=ds_id,
+            label=request.label,
+            interest_level=request.interest_level,
+            represented_by_uri=request.represented_by_uri,
+            user_id=user["id"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    return result
+
+
+@router.get("/designspace/{ds_id}/stakeholder-groups")
+async def get_stakeholder_groups_endpoint(
+    ds_id: str,
+    _user=Depends(get_current_user),
+):
+    """Haalt alle socia:StakeholderGroups op met interestLevel en representatiestatus."""
+    return await get_stakeholder_groups(ds_id)
+
+
+@router.get("/designspace/{ds_id}/stakeholder-groups/high-interest")
+async def get_high_interest_groups_endpoint(
+    ds_id: str,
+    _user=Depends(get_current_user),
+):
+    """Retourneert alle StakeholderGroups met interestLevel = High (DEMOS InclusivityCoverage)."""
+    return await get_high_interest_groups(ds_id)
 
 
 @router.post("/admin/migrate-socia-actors")
