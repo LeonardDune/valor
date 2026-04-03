@@ -18,6 +18,7 @@ from app.routers import tessera
 from app.routers import designspace
 from app.routers import entities
 from app.routers import socia
+from app.routers import axia
 
 load_dotenv()
 
@@ -99,6 +100,7 @@ app.include_router(tessera.router)
 app.include_router(designspace.router)
 app.include_router(entities.router)
 app.include_router(socia.router)
+app.include_router(axia.router)
 
 
 @app.get("/")
