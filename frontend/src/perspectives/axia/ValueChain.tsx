@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ChevronRight, Plus } from 'lucide-react';
+import { ChevronRight, Plus, CheckCircle } from 'lucide-react';
 import { api } from '@/services/api';
 import type {
     ValueChainResponse,
     ValueChainTypeItem,
+    ValueChainRequirementItem,
     CreateValueCriterionPayload,
     CreateValueBasedDesignRequirementPayload,
 } from '@/services/api';
@@ -42,6 +43,7 @@ export function ValueChain({ designSpaceId }: ValueChainProps) {
         label: '',
     });
     const [submitting, setSubmitting] = useState(false);
+    const [acceptingReq, setAcceptingReq] = useState<string | null>(null);
 
     async function load() {
         setLoading(true);
@@ -78,6 +80,18 @@ export function ValueChain({ designSpaceId }: ValueChainProps) {
             setError('Aanmaken criterium mislukt.');
         } finally {
             setSubmitting(false);
+        }
+    }
+
+    async function handleAcceptRequirement(reqUri: string) {
+        setAcceptingReq(reqUri);
+        try {
+            await api.patchValueRequirementStatus(designSpaceId, reqUri, 'Accepted');
+            await load();
+        } catch {
+            setError('Accepteren van de ontwerpeis mislukt.');
+        } finally {
+            setAcceptingReq(null);
         }
     }
 
@@ -227,11 +241,42 @@ export function ValueChain({ designSpaceId }: ValueChainProps) {
                                                 Nog geen ontwerpeisen
                                             </div>
                                         ) : (
-                                            <ul className="space-y-1">
-                                                {criterion.requirements.map(req => (
-                                                    <li key={req.tessera_uri} className="text-sm text-zinc-700 flex items-start gap-1">
-                                                        <span className="text-zinc-400 mt-0.5">—</span>
-                                                        {req.label}
+                                            <ul className="space-y-2">
+                                                {criterion.requirements.map((req: ValueChainRequirementItem) => (
+                                                    <li key={req.tessera_uri} className="text-sm text-zinc-700">
+                                                        <div className="flex items-start gap-1">
+                                                            <span className="text-zinc-400 mt-0.5 shrink-0">—</span>
+                                                            <div className="flex-1 min-w-0">
+                                                                <span>{req.label}</span>
+                                                                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                                                    {req.epistemic_status && (
+                                                                        <span className={`inline-flex items-center text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                                                                            req.epistemic_status === 'Accepted'
+                                                                                ? 'bg-green-100 text-green-700'
+                                                                                : 'bg-zinc-100 text-zinc-600'
+                                                                        }`}>
+                                                                            {req.epistemic_status}
+                                                                        </span>
+                                                                    )}
+                                                                    {req.capability_requirement_uri ? (
+                                                                        <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">
+                                                                            <CheckCircle className="h-3 w-3" />
+                                                                            CapabilityRequirement voorgesteld
+                                                                        </span>
+                                                                    ) : req.epistemic_status !== 'Accepted' && (
+                                                                        <Button
+                                                                            variant="ghost"
+                                                                            size="sm"
+                                                                            className="h-5 px-1.5 text-xs text-zinc-500 hover:text-zinc-800"
+                                                                            disabled={acceptingReq === req.tessera_uri}
+                                                                            onClick={() => handleAcceptRequirement(req.tessera_uri)}
+                                                                        >
+                                                                            Accepteren
+                                                                        </Button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
                                                     </li>
                                                 ))}
                                             </ul>
