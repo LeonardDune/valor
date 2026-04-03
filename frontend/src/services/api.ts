@@ -163,6 +163,35 @@ export interface CreateEcosystemAgentResponse {
     design_space_id: string;
 }
 
+// StakeholderGroepen (US-6.5)
+export type InterestLevel = 'High' | 'Medium' | 'Low';
+
+export interface CreateStakeholderGroupRequest {
+    label: string;
+    interest_level: InterestLevel;
+    represented_by_uri?: string;
+}
+
+export interface StakeholderGroup {
+    group_uri: string;
+    label: string;
+    interest_level: InterestLevel;
+    is_represented: boolean;
+    represented_by_uri: string | null;
+}
+
+export interface CreateStakeholderGroupResponse {
+    group_id: string;
+    group_uri: string;
+    label: string;
+    interest_level: InterestLevel;
+    represented_by_uri: string | null;
+    is_represented: boolean;
+    created_by: string;
+    created_at: string;
+    design_space_id: string;
+}
+
 export interface AgentResponse {
     agent_name: string;
     perspective: string;
@@ -773,6 +802,28 @@ export const api = {
 
     getEcosystemAgents: async (dsId: string): Promise<EcosystemAgent[]> => {
         const response = await apiClient.get<EcosystemAgent[]>(`/designspace/${dsId}/ecosystem-agents`);
+        return response.data;
+    },
+
+    // StakeholderGroepen (US-6.5)
+    createStakeholderGroup: async (
+        dsId: string,
+        data: CreateStakeholderGroupRequest,
+    ): Promise<CreateStakeholderGroupResponse> => {
+        const response = await apiClient.post<CreateStakeholderGroupResponse>(
+            `/designspace/${dsId}/stakeholder-group`,
+            data,
+        );
+        return response.data;
+    },
+
+    getStakeholderGroups: async (dsId: string): Promise<StakeholderGroup[]> => {
+        const response = await apiClient.get<StakeholderGroup[]>(`/designspace/${dsId}/stakeholder-groups`);
+        return response.data;
+    },
+
+    getHighInterestGroups: async (dsId: string): Promise<StakeholderGroup[]> => {
+        const response = await apiClient.get<StakeholderGroup[]>(`/designspace/${dsId}/stakeholder-groups/high-interest`);
         return response.data;
     },
 
