@@ -73,7 +73,7 @@ async def get_value_claims(
     if not has_permission:
         raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
 
-    graph_uri = f"urn:valor:ds:{ds_id}:baseline"
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
 
     query = f"""PREFIX axia: <{AXIA_NS}>
 PREFIX cover: <{COVER_NS}>
@@ -143,7 +143,7 @@ async def create_value_tension(
     tessera_uri = f"urn:valor:tessera:{tessera_id}"
     user_uri = f"urn:valor:user:{user_id}"
     created_at = datetime.now(timezone.utc).isoformat()
-    graph_uri = f"urn:valor:ds:{ds_id}:baseline"
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
 
     escaped_desc = request.description.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -262,7 +262,7 @@ async def get_value_implications(
     if not has_permission:
         raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
 
-    graph_uri = f"urn:valor:ds:{ds_id}:baseline"
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
 
     query = f"""PREFIX axia: <{AXIA_NS}>
 
@@ -306,7 +306,7 @@ async def create_value_criterion(
     tessera_uri = f"urn:valor:tessera:{tessera_id}"
     user_uri = f"urn:valor:user:{user_id}"
     created_at = datetime.now(timezone.utc).isoformat()
-    graph_uri = f"urn:valor:ds:{ds_id}:baseline"
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
 
     escaped_label = request.label.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -373,7 +373,7 @@ async def create_value_based_design_requirement(
     tessera_uri = f"urn:valor:tessera:{tessera_id}"
     user_uri = f"urn:valor:user:{user_id}"
     created_at = datetime.now(timezone.utc).isoformat()
-    graph_uri = f"urn:valor:ds:{ds_id}:baseline"
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
 
     escaped_label = request.label.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -433,7 +433,7 @@ async def get_value_chain(
     if not has_permission:
         raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
 
-    graph_uri = f"urn:valor:ds:{ds_id}:baseline"
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
 
     query = f"""PREFIX axia: <{AXIA_NS}>
 PREFIX cover: <{COVER_NS}>
