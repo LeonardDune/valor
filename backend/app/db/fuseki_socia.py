@@ -49,6 +49,94 @@ def _local_name(uri: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Stakeholderkaart ophalen (US-6.1)
+# ---------------------------------------------------------------------------
+
+async def get_stakeholder_map(ds_id: str) -> dict:
+    """Haalt actoren en socia:IntentionalDependency-edges op uit de DesignSpace-baseline-graph.
+
+    Retourneert:
+      {
+        "actors": [{"uri": str, "label": str, "entity_type": str, "role_uri": str|None, "role_label_nl": str|None}],
+        "dependencies": [{"from_uri": str, "to_uri": str, "dependency_type": str, "dependency_label_nl": str}]
+      }
+    """
+    baseline = _baseline_graph(ds_id)
+    _RDFS = "http://www.w3.org/2000/01/rdf-schema#"
+
+    # Actoren: alle entiteiten met socia:isStakeholderIn in de baseline-graph
+    actor_rows = await sparql_select_global(f"""
+        PREFIX socia:  <{_SOCIA_NS}>
+        PREFIX valor:  <{VALOR_NS}>
+        PREFIX rdfs:   <{_RDFS}>
+        PREFIX rdf:    <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+
+        SELECT DISTINCT ?entity ?entityLabel ?entityType ?role ?roleLabel WHERE {{
+          GRAPH <{baseline}> {{
+            ?entity socia:isStakeholderIn <{_ds_uri(ds_id)}> .
+            OPTIONAL {{ ?entity socia:playsRole ?role . }}
+          }}
+          OPTIONAL {{
+            GRAPH <{_ENTITIES_GRAPH}> {{
+              OPTIONAL {{ ?entity rdfs:label ?entityLabel . }}
+              OPTIONAL {{ ?entity rdf:type ?entityType . }}
+            }}
+          }}
+          OPTIONAL {{
+            GRAPH <{VALOR_NS}socia> {{
+              ?role rdfs:label ?roleLabel . FILTER(lang(?roleLabel) = "nl")
+            }}
+          }}
+        }}
+    """)
+
+    actors = []
+    for row in actor_rows:
+        entity_uri = row["entity"]
+        actors.append({
+            "uri": entity_uri,
+            "label": row.get("entityLabel") or entity_uri.split(":")[-1],
+            "entity_type": row.get("entityType", ""),
+            "entity_type_local": _local_name(row.get("entityType", "")),
+            "role_uri": row.get("role"),
+            "role_label_nl": row.get("roleLabel"),
+        })
+
+    # IntentionalDependency-edges
+    dep_rows = await sparql_select_global(f"""
+        PREFIX socia:  <{_SOCIA_NS}>
+        PREFIX rdfs:   <http://www.w3.org/2000/01/rdf-schema#>
+
+        SELECT ?from ?to ?depType ?depLabel WHERE {{
+          GRAPH <{baseline}> {{
+            ?dep a socia:IntentionalDependency ;
+                 socia:dependsOn ?to ;
+                 socia:dependedUponBy ?from .
+            OPTIONAL {{ ?dep socia:dependencyType ?depType . }}
+          }}
+          OPTIONAL {{
+            GRAPH <{VALOR_NS}socia> {{
+              ?depType rdfs:label ?depLabel . FILTER(lang(?depLabel) = "nl")
+            }}
+          }}
+        }}
+    """)
+
+    dependencies = [
+        {
+            "from_uri": row["from"],
+            "to_uri": row["to"],
+            "dependency_type": row.get("depType", f"{_SOCIA_NS}IntentionalDependency"),
+            "dependency_type_local": _local_name(row.get("depType", "IntentionalDependency")),
+            "dependency_label_nl": row.get("depLabel") or _local_name(row.get("depType", "afhankelijkheid")),
+        }
+        for row in dep_rows
+    ]
+
+    return {"actors": actors, "dependencies": dependencies}
+
+
+# ---------------------------------------------------------------------------
 # Rol-assignatie schrijven
 # ---------------------------------------------------------------------------
 

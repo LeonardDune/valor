@@ -84,6 +84,28 @@ export interface SociaOntology {
     dependency_types: SociaOntologyEntry[];
 }
 
+export interface StakeholderActor {
+    uri: string;
+    label: string;
+    entity_type: string;
+    entity_type_local: string;
+    role_uri: string | null;
+    role_label_nl: string | null;
+}
+
+export interface StakeholderDependency {
+    from_uri: string;
+    to_uri: string;
+    dependency_type: string;
+    dependency_type_local: string;
+    dependency_label_nl: string;
+}
+
+export interface StakeholderMap {
+    actors: StakeholderActor[];
+    dependencies: StakeholderDependency[];
+}
+
 export interface AgentResponse {
     agent_name: string;
     perspective: string;
@@ -662,6 +684,11 @@ export const api = {
         await apiClient.post(`/designspace/${dsId}/socia/roles`, null, {
             params: { entity_uri: entityUri, role_uri: roleUri },
         });
+    },
+
+    getStakeholderMap: async (dsId: string): Promise<StakeholderMap> => {
+        const response = await apiClient.get<StakeholderMap>(`/designspace/${dsId}/stakeholder-map`);
+        return response.data;
     },
 
     // Threads (Fuseki-backed disc endpoints, Epic 16)

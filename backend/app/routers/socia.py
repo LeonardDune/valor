@@ -6,6 +6,7 @@ from app.db.fuseki_socia import (
     assign_actor_role,
     get_actor_roles_in_ds,
     get_designspaces_for_agent,
+    get_stakeholder_map,
     get_tesserae_for_agent,
     migrate_legacy_socia_actors,
 )
@@ -56,6 +57,15 @@ async def get_agent_designspaces_endpoint(
         agent_uri = agent_uri.replace("urn:/", "urn:").lstrip("/")
     ds_ids = await get_designspaces_for_agent(agent_uri)
     return {"agent_uri": agent_uri, "designspaces": ds_ids}
+
+
+@router.get("/designspace/{ds_id}/stakeholder-map")
+async def get_stakeholder_map_endpoint(
+    ds_id: str,
+    _user=Depends(get_current_user),
+):
+    """Retourneert de stakeholderkaart: actoren en IntentionalDependency-edges voor een DesignSpace."""
+    return await get_stakeholder_map(ds_id)
 
 
 @router.post("/admin/migrate-socia-actors")
