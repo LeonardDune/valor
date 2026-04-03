@@ -16,8 +16,8 @@ import { UpdatePasswordPage } from './pages/UpdatePasswordPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { DashboardLayout } from './views/shell/DashboardLayout';
 import { VersionLayout } from './components/layout/VersionLayout';
-import { ValueCanvas } from './perspectives/axia/ValueCanvas';
-import { StakeholderMap } from './perspectives/socia/views/StakeholderMap';
+import { AxiaShell } from './perspectives/axia/AxiaShell';
+import { SociaShell } from './perspectives/socia/SociaShell';
 import { VersionDashboard } from './pages/VersionDashboard';
 import { VersionChat } from './pages/VersionChat';
 import { RefinementBoardComponent } from './components/deliberation/RefinementBoard';
@@ -185,8 +185,8 @@ const WorkspaceWrapper = () => {
 
   if (!found || !dsId) return null;
 
-  if (mode === 'AXIA') return <ValueCanvas designSpaceId={dsId} />;
-  if (mode === 'ACTOR') return <StakeholderMap dsId={dsId} />;
+  if (mode === 'AXIA') return <AxiaShell designSpaceId={dsId} />;
+  if (mode === 'ACTOR') return <SociaShell dsId={dsId} />;
 
   return (
     <ValorWorkspace
