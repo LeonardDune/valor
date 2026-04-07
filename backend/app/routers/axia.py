@@ -35,6 +35,11 @@ class ValueClaimOut(BaseModel):
     claim_content: str
     value_type_uri: str
     value_type_label: str
+    polarity_uri: str | None = None
+    polarity_label: str | None = None
+    epistemic_status: str | None = None
+    canvas_x: float | None = None
+    canvas_y: float | None = None
     claimed_by: str
     claimed_at: str
 
@@ -87,21 +92,20 @@ PREFIX cover: <{COVER_NS}>
 PREFIX valor: <{VALOR_NS}>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT ?tessera ?content ?valueType ?valueTypeLabel ?claimedBy ?claimedAt WHERE {{
+SELECT ?tessera ?content ?valueType ?valueTypeLabel ?polarity ?polarityLabel ?status ?cx ?cy ?claimedBy ?claimedAt WHERE {{
   GRAPH <{graph_uri}> {{
     ?tessera a axia:ValueClaim ;
              valor:claimContent ?content ;
              valor:claimedBy ?claimedBy ;
              valor:claimedAt ?claimedAt .
-    OPTIONAL {{
-      ?tessera axia:groundedIn ?valueType .
-    }}
-    OPTIONAL {{
-      ?tessera axia:valueType ?valueType .
-    }}
-    OPTIONAL {{
-      ?valueType rdfs:label ?valueTypeLabel .
-    }}
+    FILTER NOT EXISTS {{ ?tessera valor:retiredAt ?t . }}
+    OPTIONAL {{ ?tessera axia:concernsValueType ?valueType . }}
+    OPTIONAL {{ ?valueType rdfs:label ?valueTypeLabel . }}
+    OPTIONAL {{ ?tessera axia:claimPolarity ?polarity . }}
+    OPTIONAL {{ ?polarity rdfs:label ?polarityLabel . }}
+    OPTIONAL {{ ?tessera valor:epistemicStatus ?status . }}
+    OPTIONAL {{ ?tessera valor:canvasX ?cx . }}
+    OPTIONAL {{ ?tessera valor:canvasY ?cy . }}
   }}
 }}
 ORDER BY ?valueType"""
@@ -114,6 +118,12 @@ ORDER BY ?valueType"""
         tessera_id = tessera_uri.rsplit(":", 1)[-1]
         value_type_uri = row.get("valueType", "")
         value_type_label = row.get("valueTypeLabel", value_type_uri.rsplit("#", 1)[-1] if "#" in value_type_uri else value_type_uri.rsplit("/", 1)[-1])
+        polarity_uri = row.get("polarity") or None
+        polarity_label_raw = row.get("polarityLabel") or None
+        status_raw = row.get("status") or None
+        status_label = status_raw.rsplit("#", 1)[-1].rsplit("/", 1)[-1] if status_raw else None
+        cx_raw = row.get("cx")
+        cy_raw = row.get("cy")
 
         claim = ValueClaimOut(
             tessera_uri=tessera_uri,
@@ -121,6 +131,11 @@ ORDER BY ?valueType"""
             claim_content=row.get("content", ""),
             value_type_uri=value_type_uri,
             value_type_label=value_type_label,
+            polarity_uri=polarity_uri,
+            polarity_label=polarity_label_raw,
+            epistemic_status=status_label,
+            canvas_x=float(cx_raw) if cx_raw is not None else None,
+            canvas_y=float(cy_raw) if cy_raw is not None else None,
             claimed_by=row.get("claimedBy", "").rsplit(":", 1)[-1],
             claimed_at=row.get("claimedAt", ""),
         )
@@ -308,6 +323,57 @@ async def delete_value_claim(
     logger.info("ValueClaim verwijderd: %s uit DesignSpace %s door %s", tessera_uri, ds_id, user_id)
 
     return {"status": "deleted", "tessera_uri": tessera_uri}
+
+
+# ---------------------------------------------------------------------------
+# US-7.2: PATCH value-claim position (canvas)
+# ---------------------------------------------------------------------------
+
+class UpdateValueClaimPositionRequest(BaseModel):
+    canvas_x: float
+    canvas_y: float
+
+
+@router.patch("/{ds_id}/value-claim/{tessera_uri:path}/position", status_code=200)
+async def update_value_claim_position(
+    ds_id: str,
+    tessera_uri: str,
+    request: UpdateValueClaimPositionRequest,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    user_id = user["id"]
+
+    has_permission = await check_permission(user_id, ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
+
+    sparql = f"""PREFIX valor: <{VALOR_NS}>
+PREFIX xsd: <{XSD_NS}>
+
+DELETE {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> valor:canvasX ?oldX ;
+                    valor:canvasY ?oldY .
+  }}
+}}
+INSERT {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> valor:canvasX "{request.canvas_x}"^^xsd:decimal ;
+                    valor:canvasY "{request.canvas_y}"^^xsd:decimal .
+  }}
+}}
+WHERE {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> a valor:Tessera .
+    OPTIONAL {{ <{tessera_uri}> valor:canvasX ?oldX . }}
+    OPTIONAL {{ <{tessera_uri}> valor:canvasY ?oldY . }}
+  }}
+}}"""
+
+    await sparql_update(sparql, ds_id)
+    return {"tessera_uri": tessera_uri, "canvas_x": request.canvas_x, "canvas_y": request.canvas_y}
 
 
 # ---------------------------------------------------------------------------
