@@ -286,7 +286,7 @@ export function AxiaShell({ designSpaceId }: AxiaShellProps) {
             </PerspectiveToolbar>
 
             <div className="w-full h-full overflow-hidden">
-                {view === 'canvas' && <ValueCanvas key={`canvas-${refreshKey}`} designSpaceId={designSpaceId} />}
+                {view === 'canvas' && <ValueCanvas refreshTrigger={refreshKey} designSpaceId={designSpaceId} />}
                 {view === 'keten' && <ValueChain key={`keten-${refreshKey}`} designSpaceId={designSpaceId} />}
                 {view === 'spanningen' && <ValueTensionView key={`spanningen-${refreshKey}`} designSpaceId={designSpaceId} />}
             </div>

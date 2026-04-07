@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import ReactFlow, {
     Background,
     useNodesState,
@@ -23,7 +23,7 @@ const START_Y = 40;
 // Helpers
 // ---------------------------------------------------------------------------
 
-function polarityBorderClass(uri?: string): string {
+function polarityBorderClass(uri?: string | null): string {
     if (!uri) return 'border-zinc-300 dark:border-zinc-600';
     if (uri.includes('Supporting')) return 'border-green-500';
     if (uri.includes('Opposing') || uri.includes('Conflicting')) return 'border-red-500';
@@ -32,7 +32,7 @@ function polarityBorderClass(uri?: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Custom node
+// Custom node — defined at module level so reference is stable
 // ---------------------------------------------------------------------------
 
 interface ValueClaimNodeData {
@@ -53,15 +53,11 @@ function ValueClaimNode({ data }: { data: ValueClaimNodeData }) {
                     {claim.value_type_label}
                 </span>
             )}
-            {claim.epistemic_status && (
-                <span className="ml-1 mt-2 inline-block text-xs text-muted-foreground italic">
-                    {claim.epistemic_status}
-                </span>
-            )}
         </div>
     );
 }
 
+// Stable module-level constant — prevents React Flow nodeTypes warning
 const NODE_TYPES = { valueClaim: ValueClaimNode };
 
 // ---------------------------------------------------------------------------
@@ -97,21 +93,32 @@ function buildNodes(claims: ValueClaimItem[]): Node[] {
 }
 
 // ---------------------------------------------------------------------------
-// Inner canvas — rendered only after claims are loaded
+// ValueCanvas
 // ---------------------------------------------------------------------------
 
-interface ValueCanvasFlowProps {
-    claims: ValueClaimItem[];
+interface ValueCanvasProps {
     designSpaceId: string;
+    refreshTrigger?: number;
 }
 
-function ValueCanvasFlow({ claims, designSpaceId }: ValueCanvasFlowProps) {
-    const initialNodes = useMemo(() => buildNodes(claims), [claims]);
-    const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
+export function ValueCanvas({ designSpaceId, refreshTrigger = 0 }: ValueCanvasProps) {
+    const [nodes, setNodes, onNodesChange] = useNodesState<ValueClaimNodeData>([]);
+
+    const load = useCallback(async () => {
+        try {
+            const result = await api.getValueClaims(designSpaceId);
+            const flat: ValueClaimItem[] = Object.values(result.groups).flat();
+            setNodes(buildNodes(flat));
+        } catch {
+            // keep canvas empty on error
+        }
+    }, [designSpaceId, setNodes]);
 
     useEffect(() => {
-        setNodes(buildNodes(claims));
-    }, [claims, setNodes]);
+        load();
+    // refreshTrigger intentionally included to reload when new claims are created
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [load, refreshTrigger]);
 
     const onNodeDragStop = useCallback(
         (_event: React.MouseEvent, node: Node) => {
@@ -120,9 +127,7 @@ function ValueCanvasFlow({ claims, designSpaceId }: ValueCanvasFlowProps) {
                 node.id,
                 node.position.x,
                 node.position.y,
-            ).catch(() => {
-                // Position persistence failure is non-critical
-            });
+            ).catch(() => {});
         },
         [designSpaceId],
     );
@@ -142,62 +147,4 @@ function ValueCanvasFlow({ claims, designSpaceId }: ValueCanvasFlowProps) {
             </ReactFlow>
         </div>
     );
-}
-
-// ---------------------------------------------------------------------------
-// ValueCanvas
-// ---------------------------------------------------------------------------
-
-interface ValueCanvasProps {
-    designSpaceId: string;
-}
-
-export function ValueCanvas({ designSpaceId }: ValueCanvasProps) {
-    const [claims, setClaims] = useState<ValueClaimItem[] | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    const load = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const result = await api.getValueClaims(designSpaceId);
-            const flat: ValueClaimItem[] = Object.values(result.groups).flat();
-            setClaims(flat);
-        } catch {
-            setError('Kon waardeclaims niet laden.');
-        } finally {
-            setLoading(false);
-        }
-    }, [designSpaceId]);
-
-    useEffect(() => {
-        load();
-    }, [load]);
-
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                Waardeclaims laden...
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="flex items-center justify-center h-full text-destructive text-sm">
-                {error}
-            </div>
-        );
-    }
-
-    if (!claims || claims.length === 0) {
-        return (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm italic">
-                Geen waardeclaims gevonden voor deze DesignSpace.
-            </div>
-        );
-    }
-
-    return <ValueCanvasFlow claims={claims} designSpaceId={designSpaceId} />;
 }
