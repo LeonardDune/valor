@@ -358,13 +358,14 @@ async def load_ontology_cache() -> None:
     ]
     logger.info("[ontology-cache] Norm types: %s", [t["local_name"] for t in _norm_types])
 
-    # AXIA: coodm:ValueType instanties
+    # AXIA: cover:ValueType instanties (staan in de coodm-graph, maar met cover:-prefix)
+    _COVER_NS = f"{VALOR_NS}cover#"
     value_type_rows = await sparql_select_global(f"""
-        PREFIX coodm: <{_COODM_NS}>
+        PREFIX cover: <{_COVER_NS}>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         SELECT ?uri ?labelEn ?labelNl WHERE {{
           GRAPH <{_COODM_GRAPH}> {{
-            ?uri a coodm:ValueType .
+            ?uri a cover:ValueType .
             OPTIONAL {{ ?uri rdfs:label ?labelEn . FILTER(lang(?labelEn) = "en") }}
             OPTIONAL {{ ?uri rdfs:label ?labelNl . FILTER(lang(?labelNl) = "nl") }}
           }}

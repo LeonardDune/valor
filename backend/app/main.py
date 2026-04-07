@@ -137,7 +137,7 @@ async def list_axia_ontology():
         get_uncertainty_label_to_uri,
     )
     uncertainty = [
-        {"uri": uri, "local_name": uri.split("#")[-1], "label_en": label}
+        {"uri": uri, "local_name": uri.split("#")[-1].split("/")[-1], "label_en": label, "label_nl": label}
         for label, uri in get_uncertainty_label_to_uri().items()
     ]
     return {
