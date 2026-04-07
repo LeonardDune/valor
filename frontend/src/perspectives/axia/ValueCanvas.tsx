@@ -115,18 +115,16 @@ function ValueCanvasFlow({ claims, designSpaceId }: ValueCanvasFlowProps) {
 
     const onNodeDragStop = useCallback(
         (_event: React.MouseEvent, node: Node) => {
-            const claim = claims.find((c) => c.tessera_id === node.id);
-            if (!claim) return;
             api.updateValueClaimPosition(
                 designSpaceId,
-                claim.tessera_uri,
+                node.id,
                 node.position.x,
                 node.position.y,
             ).catch(() => {
                 // Position persistence failure is non-critical
             });
         },
-        [claims, designSpaceId],
+        [designSpaceId],
     );
 
     return (

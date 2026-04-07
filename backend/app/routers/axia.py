@@ -228,6 +228,58 @@ INSERT DATA {{
 
 
 # ---------------------------------------------------------------------------
+# US-7.2: PATCH value-claim position (canvas) — MOET voor de algemene PATCH staan
+# ---------------------------------------------------------------------------
+
+class UpdateValueClaimPositionRequest(BaseModel):
+    canvas_x: float
+    canvas_y: float
+
+
+@router.patch("/{ds_id}/value-claim/{tessera_id}/position", status_code=200)
+async def update_value_claim_position(
+    ds_id: str,
+    tessera_id: str,
+    request: UpdateValueClaimPositionRequest,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    user_id = user["id"]
+
+    has_permission = await check_permission(user_id, ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    tessera_uri = f"urn:valor:tessera:{tessera_id}"
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
+
+    sparql = f"""PREFIX valor: <{VALOR_NS}>
+PREFIX xsd: <{XSD_NS}>
+
+DELETE {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> valor:canvasX ?oldX ;
+                    valor:canvasY ?oldY .
+  }}
+}}
+INSERT {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> valor:canvasX "{request.canvas_x}"^^xsd:decimal ;
+                    valor:canvasY "{request.canvas_y}"^^xsd:decimal .
+  }}
+}}
+WHERE {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> a valor:Tessera .
+    OPTIONAL {{ <{tessera_uri}> valor:canvasX ?oldX . }}
+    OPTIONAL {{ <{tessera_uri}> valor:canvasY ?oldY . }}
+  }}
+}}"""
+
+    await sparql_update(sparql, ds_id)
+    return {"tessera_uri": tessera_uri, "canvas_x": request.canvas_x, "canvas_y": request.canvas_y}
+
+
+# ---------------------------------------------------------------------------
 # PATCH / DELETE value-claim
 # ---------------------------------------------------------------------------
 
@@ -323,57 +375,6 @@ async def delete_value_claim(
     logger.info("ValueClaim verwijderd: %s uit DesignSpace %s door %s", tessera_uri, ds_id, user_id)
 
     return {"status": "deleted", "tessera_uri": tessera_uri}
-
-
-# ---------------------------------------------------------------------------
-# US-7.2: PATCH value-claim position (canvas)
-# ---------------------------------------------------------------------------
-
-class UpdateValueClaimPositionRequest(BaseModel):
-    canvas_x: float
-    canvas_y: float
-
-
-@router.patch("/{ds_id}/value-claim/{tessera_uri:path}/position", status_code=200)
-async def update_value_claim_position(
-    ds_id: str,
-    tessera_uri: str,
-    request: UpdateValueClaimPositionRequest,
-    user: dict = Depends(get_current_user),
-) -> dict:
-    user_id = user["id"]
-
-    has_permission = await check_permission(user_id, ds_id, Role.MEMBER)
-    if not has_permission:
-        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
-
-    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
-
-    sparql = f"""PREFIX valor: <{VALOR_NS}>
-PREFIX xsd: <{XSD_NS}>
-
-DELETE {{
-  GRAPH <{graph_uri}> {{
-    <{tessera_uri}> valor:canvasX ?oldX ;
-                    valor:canvasY ?oldY .
-  }}
-}}
-INSERT {{
-  GRAPH <{graph_uri}> {{
-    <{tessera_uri}> valor:canvasX "{request.canvas_x}"^^xsd:decimal ;
-                    valor:canvasY "{request.canvas_y}"^^xsd:decimal .
-  }}
-}}
-WHERE {{
-  GRAPH <{graph_uri}> {{
-    <{tessera_uri}> a valor:Tessera .
-    OPTIONAL {{ <{tessera_uri}> valor:canvasX ?oldX . }}
-    OPTIONAL {{ <{tessera_uri}> valor:canvasY ?oldY . }}
-  }}
-}}"""
-
-    await sparql_update(sparql, ds_id)
-    return {"tessera_uri": tessera_uri, "canvas_x": request.canvas_x, "canvas_y": request.canvas_y}
 
 
 # ---------------------------------------------------------------------------

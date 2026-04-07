@@ -1056,8 +1056,8 @@ WHERE {
         await apiClient.delete(`/designspace/${dsId}/value-claim/${encodeURIComponent(tesseraUri)}`);
     },
 
-    updateValueClaimPosition: async (dsId: string, tesseraUri: string, canvas_x: number, canvas_y: number): Promise<void> => {
-        await apiClient.patch(`/designspace/${dsId}/value-claim/${encodeURIComponent(tesseraUri)}/position`, { canvas_x, canvas_y });
+    updateValueClaimPosition: async (dsId: string, tesseraId: string, canvas_x: number, canvas_y: number): Promise<void> => {
+        await apiClient.patch(`/designspace/${dsId}/value-claim/${tesseraId}/position`, { canvas_x, canvas_y });
     },
 
     createValueTension: async (dsId: string, payload: CreateValueTensionPayload): Promise<ValueTensionResponse> => {
