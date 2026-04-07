@@ -80,6 +80,7 @@ export interface SociaOntologyEntry {
 
 export interface SociaOntology {
     actor_types: SociaOntologyEntry[];
+    claim_types: SociaOntologyEntry[];
     roles: SociaOntologyEntry[];
     dependency_types: SociaOntologyEntry[];
 }
@@ -106,10 +107,28 @@ export interface StakeholderMap {
     dependencies: StakeholderDependency[];
 }
 
-export type StakeholderClaimType = 'InterestClaim' | 'GoalClaim' | 'PowerClaim';
+export interface CreateActorRequest {
+    label: string;
+    actor_type_uri: string;  // Volledige URI uit VALOR-O SOCIA-ontologie
+}
+
+export interface CreateActorResponse {
+    actor_id: string;
+    actor_uri: string;
+    label: string;
+    actor_type_uri: string;
+    claimed_by: string;
+    claimed_at: string;
+    design_space_id: string;
+}
+
+export interface UpdateActorRequest {
+    label?: string;
+    actor_type_uri?: string;
+}
 
 export interface CreateStakeholderClaimRequest {
-    claim_type: StakeholderClaimType;
+    claim_type_uri: string;  // Volledige URI uit VALOR-O SOCIA-ontologie
     claim_content: string;
     actor_uri: string;
 }
@@ -117,7 +136,6 @@ export interface CreateStakeholderClaimRequest {
 export interface StakeholderClaimResponse {
     tessera_id: string;
     tessera_uri: string;
-    claim_type: StakeholderClaimType;
     claim_type_uri: string;
     claim_content: string;
     epistemic_status: string;
@@ -127,11 +145,9 @@ export interface StakeholderClaimResponse {
     design_space_id: string;
 }
 
-export type CommitmentDuration = 'Permanent' | 'ProjectBased' | 'Experimental';
-
 export interface CreateEcosystemAgentRequest {
     label: string;
-    commitment_duration: CommitmentDuration;
+    commitment_duration_uri: string;  // Volledige URI uit VALOR-O NEXUS-ontologie
     member_agent_uris: string[];
 }
 
@@ -145,7 +161,7 @@ export interface EcosystemAgent {
     agent_uri: string;
     label: string;
     commitment_uri: string | null;
-    commitment_duration: CommitmentDuration | null;
+    commitment_duration_uri: string | null;
     member_agent_uris: string[];
     condition_status: 'Volledig' | 'Gedeeltelijk' | 'Onvolledig';
     condition_layers: EcosystemAgentConditionLayers;
@@ -156,7 +172,7 @@ export interface CreateEcosystemAgentResponse {
     agent_uri: string;
     label: string;
     commitment_uri: string;
-    commitment_duration: CommitmentDuration;
+    commitment_duration_uri: string;
     member_agent_uris: string[];
     created_by: string;
     created_at: string;
@@ -164,18 +180,16 @@ export interface CreateEcosystemAgentResponse {
 }
 
 // StakeholderGroepen (US-6.5)
-export type InterestLevel = 'High' | 'Medium' | 'Low';
-
 export interface CreateStakeholderGroupRequest {
     label: string;
-    interest_level: InterestLevel;
+    interest_level_uri: string;  // Volledige URI uit VALOR-O DEMOS-ontologie
     represented_by_uri?: string;
 }
 
 export interface StakeholderGroup {
     group_uri: string;
     label: string;
-    interest_level: InterestLevel;
+    interest_level_uri: string;
     is_represented: boolean;
     represented_by_uri: string | null;
 }
@@ -184,7 +198,7 @@ export interface CreateStakeholderGroupResponse {
     group_id: string;
     group_uri: string;
     label: string;
-    interest_level: InterestLevel;
+    interest_level_uri: string;
     represented_by_uri: string | null;
     is_represented: boolean;
     created_by: string;
@@ -777,6 +791,19 @@ export const api = {
         return response.data;
     },
 
+    createActor: async (dsId: string, data: CreateActorRequest): Promise<CreateActorResponse> => {
+        const response = await apiClient.post<CreateActorResponse>(`/designspace/${dsId}/actor`, data);
+        return response.data;
+    },
+
+    updateActor: async (dsId: string, actorUri: string, data: UpdateActorRequest): Promise<void> => {
+        await apiClient.patch(`/designspace/${dsId}/actor/${encodeURIComponent(actorUri)}`, data);
+    },
+
+    deleteActor: async (dsId: string, actorUri: string): Promise<void> => {
+        await apiClient.delete(`/designspace/${dsId}/actor/${encodeURIComponent(actorUri)}`);
+    },
+
     createStakeholderClaim: async (
         dsId: string,
         data: CreateStakeholderClaimRequest,
@@ -986,6 +1013,19 @@ WHERE {
     getValueClaims: async (dsId: string): Promise<ValueCanvasResponse> => {
         const response = await apiClient.get<ValueCanvasResponse>(`/designspace/${dsId}/value-claims`);
         return response.data;
+    },
+
+    createValueClaim: async (dsId: string, payload: CreateValueClaimPayload): Promise<ValueClaimCreatedResponse> => {
+        const response = await apiClient.post<ValueClaimCreatedResponse>(`/designspace/${dsId}/value-claim`, payload);
+        return response.data;
+    },
+
+    updateValueClaim: async (dsId: string, tesseraUri: string, payload: UpdateValueClaimPayload): Promise<void> => {
+        await apiClient.patch(`/designspace/${dsId}/value-claim/${encodeURIComponent(tesseraUri)}`, payload);
+    },
+
+    deleteValueClaim: async (dsId: string, tesseraUri: string): Promise<void> => {
+        await apiClient.delete(`/designspace/${dsId}/value-claim/${encodeURIComponent(tesseraUri)}`);
     },
 
     createValueTension: async (dsId: string, payload: CreateValueTensionPayload): Promise<ValueTensionResponse> => {
@@ -1277,6 +1317,25 @@ export interface ValueTensionResponse {
 export interface DesignImplicationCount {
     factor_uri: string;
     implication_count: number;
+}
+
+export interface CreateValueClaimPayload {
+    claim_content: string;
+    value_type_uri?: string;
+}
+
+export interface ValueClaimCreatedResponse {
+    tessera_uri: string;
+    tessera_id: string;
+    claim_content: string;
+    value_type_uri: string | null;
+    claimed_by: string;
+    claimed_at: string;
+}
+
+export interface UpdateValueClaimPayload {
+    claim_content?: string;
+    value_type_uri?: string;
 }
 
 export interface CreateValueCriterionPayload {

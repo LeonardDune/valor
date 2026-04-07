@@ -117,10 +117,11 @@ async def list_epistemic_statuses():
 
 @app.get("/ontology/socia")
 async def list_socia_ontology():
-    """Retourneert SOCIA actor types, StakeholderRole instanties en DependencyType instanties (uit VALOR-O ontologie)."""
-    from app.services.ontology_cache import get_socia_actor_types, get_socia_dependency_types, get_socia_roles
+    """Retourneert SOCIA actor types, claim types, rollen en DependencyType instanties (uit VALOR-O ontologie)."""
+    from app.services.ontology_cache import get_socia_actor_types, get_socia_dependency_types, get_socia_roles, get_socia_claim_types
     return {
         "actor_types": get_socia_actor_types(),
+        "claim_types": get_socia_claim_types(),
         "roles": get_socia_roles(),
         "dependency_types": get_socia_dependency_types(),
     }

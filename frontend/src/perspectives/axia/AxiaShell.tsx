@@ -27,7 +27,7 @@ import { ValueCanvas } from './ValueCanvas';
 import { ValueChain } from './ValueChain';
 import { ValueTensionView } from './ValueTensionView';
 import { api } from '@/services/api';
-import type { CreateValueCriterionPayload } from '@/services/api';
+import type { CreateValueClaimPayload } from '@/services/api';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -65,19 +65,19 @@ function CreateValueClaimModal({ open, onOpenChange, designSpaceId, onCreated }:
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!inhoud.trim() || !waardetype.trim()) return;
+        if (!inhoud.trim()) return;
 
         setIsSubmitting(true);
         setError(null);
 
         const slug = waardetype.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-        const payload: CreateValueCriterionPayload = {
-            label: inhoud.trim(),
-            value_type_uri: `urn:valor:cover:${slug}`,
+        const payload: CreateValueClaimPayload = {
+            claim_content: inhoud.trim(),
+            value_type_uri: slug ? `urn:valor:cover:${slug}` : undefined,
         };
 
         try {
-            await api.createValueCriterion(designSpaceId, payload);
+            await api.createValueClaim(designSpaceId, payload);
             onCreated();
             handleClose();
         } catch (err) {
@@ -123,7 +123,7 @@ function CreateValueClaimModal({ open, onOpenChange, designSpaceId, onCreated }:
                         <Button type="button" variant="outline" onClick={handleClose} disabled={isSubmitting}>
                             Annuleren
                         </Button>
-                        <Button type="submit" disabled={!inhoud.trim() || !waardetype.trim() || isSubmitting}>
+                        <Button type="submit" disabled={!inhoud.trim() || isSubmitting}>
                             {isSubmitting && <Loader2 className="animate-spin mr-2 h-4 w-4" />}
                             Aanmaken
                         </Button>
