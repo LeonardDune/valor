@@ -105,14 +105,14 @@ interface ValueCanvasProps {
 export function ValueCanvas({ designSpaceId, refreshTrigger = 0 }: ValueCanvasProps) {
     const [nodes, setNodes, onNodesChange] = useNodesState<ValueClaimNodeData>([]);
     const rfInstance = useRef<ReactFlowInstance | null>(null);
+    const shouldFitRef = useRef(false);
 
     const load = useCallback(async () => {
         try {
             const result = await api.getValueClaims(designSpaceId);
             const flat: ValueClaimItem[] = Object.values(result.groups).flat();
+            shouldFitRef.current = true;
             setNodes(buildNodes(flat));
-            // fitView na setNodes zodat alle nodes zichtbaar zijn
-            setTimeout(() => rfInstance.current?.fitView({ padding: 0.1 }), 50);
         } catch {
             // keep canvas empty on error
         }
@@ -123,6 +123,19 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0 }: ValueCanvasPr
     // refreshTrigger intentionally included to reload when new claims are created
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [load, refreshTrigger]);
+
+    // fitView nadat React Flow de nodes heeft gerenderd en gemeten (double RAF)
+    useEffect(() => {
+        if (!shouldFitRef.current || nodes.length === 0) return;
+        shouldFitRef.current = false;
+        const id1 = requestAnimationFrame(() => {
+            const id2 = requestAnimationFrame(() => {
+                rfInstance.current?.fitView({ padding: 0.15 });
+            });
+            return () => cancelAnimationFrame(id2);
+        });
+        return () => cancelAnimationFrame(id1);
+    }, [nodes]);
 
     const onNodeDragStop = useCallback(
         (_event: React.MouseEvent, node: Node) => {
