@@ -1,8 +1,9 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import ReactFlow, {
     Background,
     useNodesState,
     type Node,
+    type ReactFlowInstance,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { api } from '@/services/api';
@@ -103,12 +104,15 @@ interface ValueCanvasProps {
 
 export function ValueCanvas({ designSpaceId, refreshTrigger = 0 }: ValueCanvasProps) {
     const [nodes, setNodes, onNodesChange] = useNodesState<ValueClaimNodeData>([]);
+    const rfInstance = useRef<ReactFlowInstance | null>(null);
 
     const load = useCallback(async () => {
         try {
             const result = await api.getValueClaims(designSpaceId);
             const flat: ValueClaimItem[] = Object.values(result.groups).flat();
             setNodes(buildNodes(flat));
+            // fitView na setNodes zodat alle nodes zichtbaar zijn
+            setTimeout(() => rfInstance.current?.fitView({ padding: 0.1 }), 50);
         } catch {
             // keep canvas empty on error
         }
@@ -139,8 +143,8 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0 }: ValueCanvasPr
                 edges={[]}
                 onNodesChange={onNodesChange}
                 onNodeDragStop={onNodeDragStop}
+                onInit={(instance) => { rfInstance.current = instance; }}
                 nodeTypes={NODE_TYPES}
-                fitView
                 proOptions={{ hideAttribution: true }}
             >
                 <Background />
