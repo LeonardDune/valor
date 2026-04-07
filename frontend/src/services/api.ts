@@ -80,8 +80,153 @@ export interface SociaOntologyEntry {
 
 export interface SociaOntology {
     actor_types: SociaOntologyEntry[];
+    claim_types: SociaOntologyEntry[];
     roles: SociaOntologyEntry[];
     dependency_types: SociaOntologyEntry[];
+}
+
+// AXIA schema (ontologie-gedreven, geladen bij perspectief-initialisatie)
+export interface AxiaOntologyEntry {
+    uri: string;
+    local_name: string;
+    label_en: string;
+    label_nl: string;
+}
+
+export interface AxiaEpistemicStatus {
+    uri: string;
+    label_en: string;
+    label_nl: string;
+    allowed_transitions: string[];
+    requires_decision_episode: boolean;
+}
+
+export interface AxiaSchema {
+    value_types: AxiaOntologyEntry[];
+    claim_polarities: AxiaOntologyEntry[];
+    epistemic_statuses: AxiaEpistemicStatus[];
+    uncertainty_levels: AxiaOntologyEntry[];
+}
+
+export interface StakeholderActor {
+    uri: string;
+    label: string;
+    entity_type: string;
+    entity_type_local: string;
+    role_uri: string | null;
+    role_label_nl: string | null;
+}
+
+export interface StakeholderDependency {
+    from_uri: string;
+    to_uri: string;
+    dependency_type: string;
+    dependency_type_local: string;
+    dependency_label_nl: string;
+}
+
+export interface StakeholderMap {
+    actors: StakeholderActor[];
+    dependencies: StakeholderDependency[];
+}
+
+export interface CreateActorRequest {
+    label: string;
+    actor_type_uri: string;  // Volledige URI uit VALOR-O SOCIA-ontologie
+}
+
+export interface CreateActorResponse {
+    actor_id: string;
+    actor_uri: string;
+    label: string;
+    actor_type_uri: string;
+    claimed_by: string;
+    claimed_at: string;
+    design_space_id: string;
+}
+
+export interface UpdateActorRequest {
+    label?: string;
+    actor_type_uri?: string;
+}
+
+export interface CreateStakeholderClaimRequest {
+    claim_type_uri: string;  // Volledige URI uit VALOR-O SOCIA-ontologie
+    claim_content: string;
+    actor_uri: string;
+}
+
+export interface StakeholderClaimResponse {
+    tessera_id: string;
+    tessera_uri: string;
+    claim_type_uri: string;
+    claim_content: string;
+    epistemic_status: string;
+    actor_uri: string;
+    claimed_by: string;
+    claimed_at: string;
+    design_space_id: string;
+}
+
+export interface CreateEcosystemAgentRequest {
+    label: string;
+    commitment_duration_uri: string;  // Volledige URI uit VALOR-O NEXUS-ontologie
+    member_agent_uris: string[];
+}
+
+export interface EcosystemAgentConditionLayers {
+    commitment: boolean;
+    architecture: boolean;
+    disposition_config: boolean;
+}
+
+export interface EcosystemAgent {
+    agent_uri: string;
+    label: string;
+    commitment_uri: string | null;
+    commitment_duration_uri: string | null;
+    member_agent_uris: string[];
+    condition_status: 'Volledig' | 'Gedeeltelijk' | 'Onvolledig';
+    condition_layers: EcosystemAgentConditionLayers;
+}
+
+export interface CreateEcosystemAgentResponse {
+    agent_id: string;
+    agent_uri: string;
+    label: string;
+    commitment_uri: string;
+    commitment_duration_uri: string;
+    member_agent_uris: string[];
+    created_by: string;
+    created_at: string;
+    design_space_id: string;
+}
+
+// StakeholderGroepen (US-6.5)
+export interface CreateStakeholderGroupRequest {
+    label: string;
+    interest_level_uri: string;  // Volledige URI uit VALOR-O DEMOS-ontologie
+    represented_by_uri?: string;
+}
+
+export interface StakeholderGroup {
+    group_uri: string;
+    label: string;
+    interest_level_uri: string;
+    is_represented: boolean;
+    represented_by_uri: string | null;
+}
+
+export interface CreateStakeholderGroupResponse {
+    group_id: string;
+    group_uri: string;
+    label: string;
+    interest_level_uri: string;
+    represented_by_uri: string | null;
+    is_represented: boolean;
+    created_by: string;
+    created_at: string;
+    design_space_id: string;
 }
 
 export interface AgentResponse {
@@ -645,6 +790,11 @@ export const api = {
         return response.data;
     },
 
+    getAxiaSchema: async (): Promise<AxiaSchema> => {
+        const response = await apiClient.get<AxiaSchema>('/ontology/axia');
+        return response.data;
+    },
+
     // Entity Registry
     searchEntities: async (q: string, entityType?: string, limit = 20): Promise<EntityRegistryEntry[]> => {
         const params: Record<string, string | number> = { q, limit };
@@ -662,6 +812,74 @@ export const api = {
         await apiClient.post(`/designspace/${dsId}/socia/roles`, null, {
             params: { entity_uri: entityUri, role_uri: roleUri },
         });
+    },
+
+    getStakeholderMap: async (dsId: string): Promise<StakeholderMap> => {
+        const response = await apiClient.get<StakeholderMap>(`/designspace/${dsId}/stakeholder-map`);
+        return response.data;
+    },
+
+    createActor: async (dsId: string, data: CreateActorRequest): Promise<CreateActorResponse> => {
+        const response = await apiClient.post<CreateActorResponse>(`/designspace/${dsId}/actor`, data);
+        return response.data;
+    },
+
+    updateActor: async (dsId: string, actorUri: string, data: UpdateActorRequest): Promise<void> => {
+        await apiClient.patch(`/designspace/${dsId}/actor/${encodeURIComponent(actorUri)}`, data);
+    },
+
+    deleteActor: async (dsId: string, actorUri: string): Promise<void> => {
+        await apiClient.delete(`/designspace/${dsId}/actor/${encodeURIComponent(actorUri)}`);
+    },
+
+    createStakeholderClaim: async (
+        dsId: string,
+        data: CreateStakeholderClaimRequest,
+    ): Promise<StakeholderClaimResponse> => {
+        const response = await apiClient.post<StakeholderClaimResponse>(
+            `/designspace/${dsId}/stakeholder-claims`,
+            data,
+        );
+        return response.data;
+    },
+
+    // EcosystemAgents (US-6.4)
+    createEcosystemAgent: async (
+        dsId: string,
+        data: CreateEcosystemAgentRequest,
+    ): Promise<CreateEcosystemAgentResponse> => {
+        const response = await apiClient.post<CreateEcosystemAgentResponse>(
+            `/designspace/${dsId}/ecosystem-agent`,
+            data,
+        );
+        return response.data;
+    },
+
+    getEcosystemAgents: async (dsId: string): Promise<EcosystemAgent[]> => {
+        const response = await apiClient.get<EcosystemAgent[]>(`/designspace/${dsId}/ecosystem-agents`);
+        return response.data;
+    },
+
+    // StakeholderGroepen (US-6.5)
+    createStakeholderGroup: async (
+        dsId: string,
+        data: CreateStakeholderGroupRequest,
+    ): Promise<CreateStakeholderGroupResponse> => {
+        const response = await apiClient.post<CreateStakeholderGroupResponse>(
+            `/designspace/${dsId}/stakeholder-group`,
+            data,
+        );
+        return response.data;
+    },
+
+    getStakeholderGroups: async (dsId: string): Promise<StakeholderGroup[]> => {
+        const response = await apiClient.get<StakeholderGroup[]>(`/designspace/${dsId}/stakeholder-groups`);
+        return response.data;
+    },
+
+    getHighInterestGroups: async (dsId: string): Promise<StakeholderGroup[]> => {
+        const response = await apiClient.get<StakeholderGroup[]>(`/designspace/${dsId}/stakeholder-groups/high-interest`);
+        return response.data;
     },
 
     // Threads (Fuseki-backed disc endpoints, Epic 16)
@@ -823,6 +1041,19 @@ WHERE {
     getValueClaims: async (dsId: string): Promise<ValueCanvasResponse> => {
         const response = await apiClient.get<ValueCanvasResponse>(`/designspace/${dsId}/value-claims`);
         return response.data;
+    },
+
+    createValueClaim: async (dsId: string, payload: CreateValueClaimPayload): Promise<ValueClaimCreatedResponse> => {
+        const response = await apiClient.post<ValueClaimCreatedResponse>(`/designspace/${dsId}/value-claim`, payload);
+        return response.data;
+    },
+
+    updateValueClaim: async (dsId: string, tesseraUri: string, payload: UpdateValueClaimPayload): Promise<void> => {
+        await apiClient.patch(`/designspace/${dsId}/value-claim/${encodeURIComponent(tesseraUri)}`, payload);
+    },
+
+    deleteValueClaim: async (dsId: string, tesseraUri: string): Promise<void> => {
+        await apiClient.delete(`/designspace/${dsId}/value-claim/${encodeURIComponent(tesseraUri)}`);
     },
 
     createValueTension: async (dsId: string, payload: CreateValueTensionPayload): Promise<ValueTensionResponse> => {
@@ -1114,6 +1345,26 @@ export interface ValueTensionResponse {
 export interface DesignImplicationCount {
     factor_uri: string;
     implication_count: number;
+}
+
+export interface CreateValueClaimPayload {
+    claim_content: string;
+    value_type_uri?: string;
+    claim_polarity_uri?: string;
+}
+
+export interface ValueClaimCreatedResponse {
+    tessera_uri: string;
+    tessera_id: string;
+    claim_content: string;
+    value_type_uri: string | null;
+    claimed_by: string;
+    claimed_at: string;
+}
+
+export interface UpdateValueClaimPayload {
+    claim_content?: string;
+    value_type_uri?: string;
 }
 
 export interface CreateValueCriterionPayload {

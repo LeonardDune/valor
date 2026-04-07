@@ -117,12 +117,34 @@ async def list_epistemic_statuses():
 
 @app.get("/ontology/socia")
 async def list_socia_ontology():
-    """Retourneert SOCIA actor types, StakeholderRole instanties en DependencyType instanties (uit VALOR-O ontologie)."""
-    from app.services.ontology_cache import get_socia_actor_types, get_socia_dependency_types, get_socia_roles
+    """Retourneert SOCIA actor types, claim types, rollen en DependencyType instanties (uit VALOR-O ontologie)."""
+    from app.services.ontology_cache import get_socia_actor_types, get_socia_dependency_types, get_socia_roles, get_socia_claim_types
     return {
         "actor_types": get_socia_actor_types(),
+        "claim_types": get_socia_claim_types(),
         "roles": get_socia_roles(),
         "dependency_types": get_socia_dependency_types(),
+    }
+
+
+@app.get("/ontology/axia")
+async def list_axia_ontology():
+    """Retourneert AXIA schema: ValueTypes, ClaimPolarities en EpistemicStatus-transitiematrix (uit VALOR-O ontologie)."""
+    from app.services.ontology_cache import (
+        get_axia_value_types,
+        get_axia_claim_polarities,
+        get_axia_epistemic_schema,
+        get_uncertainty_label_to_uri,
+    )
+    uncertainty = [
+        {"uri": uri, "local_name": uri.split("#")[-1].split("/")[-1], "label_en": label, "label_nl": label}
+        for label, uri in get_uncertainty_label_to_uri().items()
+    ]
+    return {
+        "value_types": get_axia_value_types(),
+        "claim_polarities": get_axia_claim_polarities(),
+        "epistemic_statuses": get_axia_epistemic_schema(),
+        "uncertainty_levels": uncertainty,
     }
 
 

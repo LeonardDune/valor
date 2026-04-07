@@ -16,6 +16,10 @@ from app.ontology import UFOC_NS, VALOR_NS, VALOR_SITE_BASE
 
 _LEXA_NS = f"{VALOR_NS}lexa-ext#"
 _LEXA_EXT_GRAPH = f"{VALOR_NS}lexa-ext"
+_AXIA_NS = f"{VALOR_NS}axia#"
+_AXIA_GRAPH = f"{VALOR_NS}axia"
+_COODM_NS = f"{VALOR_NS}coodm#"
+_COODM_GRAPH = f"{VALOR_NS}coodm"
 from app.services.fuseki import sparql_select_global
 
 logger = logging.getLogger(__name__)
@@ -46,9 +50,14 @@ _SOCIA_NS = f"{VALOR_NS}socia#"
 _socia_actor_types: list[dict] = []
 _socia_roles: list[dict] = []
 _socia_dependency_types: list[dict] = []
+_socia_claim_types: list[dict] = []
 
 # LEXA norm types (subklassen van ufoc:NormativeDescription)
 _norm_types: list[dict] = []
+
+# AXIA ontologie-data
+_axia_value_types: list[dict] = []     # coodm:ValueType instanties [{uri, local_name, label_en, label_nl}]
+_axia_claim_polarities: list[dict] = []  # axia:ClaimPolarity instanties
 
 
 _DISC_GRAPH = f"{VALOR_NS}disc"
@@ -60,8 +69,9 @@ async def load_ontology_cache() -> None:
     global _uncertainty_label_to_uri, _participant_role_data, _rbac_role_weights
     global _disc_contribution_type_label_to_uri, _status_uri_to_nl_label
     global _system_situation_uris
-    global _socia_actor_types, _socia_roles, _socia_dependency_types
+    global _socia_actor_types, _socia_roles, _socia_dependency_types, _socia_claim_types
     global _norm_types
+    global _axia_value_types, _axia_claim_polarities
 
     logger.info("[ontology-cache] Ontologie-data laden van Fuseki...")
 
@@ -302,6 +312,29 @@ async def load_ontology_cache() -> None:
     ]
     logger.info("[ontology-cache] SOCIA dependency types: %s", [d["local_name"] for d in _socia_dependency_types])
 
+    # SOCIA: StakeholderClaim subklassen
+    claim_type_rows = await sparql_select_global(f"""
+        PREFIX socia: <{_SOCIA_NS}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?uri ?labelEn ?labelNl WHERE {{
+          GRAPH <{_SOCIA_GRAPH}> {{
+            ?uri rdfs:subClassOf+ socia:StakeholderClaim .
+            OPTIONAL {{ ?uri rdfs:label ?labelEn . FILTER(lang(?labelEn) = "en") }}
+            OPTIONAL {{ ?uri rdfs:label ?labelNl . FILTER(lang(?labelNl) = "nl") }}
+          }}
+        }}
+    """)
+    _socia_claim_types = [
+        {
+            "uri": row["uri"],
+            "local_name": row["uri"].split("#")[-1],
+            "label_en": row.get("labelEn", row["uri"].split("#")[-1]),
+            "label_nl": row.get("labelNl", row.get("labelEn", row["uri"].split("#")[-1])),
+        }
+        for row in claim_type_rows
+    ]
+    logger.info("[ontology-cache] SOCIA claim types: %s", [t["local_name"] for t in _socia_claim_types])
+
     # LEXA: norm types (subklassen van ufoc:NormativeDescription)
     norm_type_rows = await sparql_select_global(f"""
         PREFIX ufoc: <{UFOC_NS}>
@@ -324,6 +357,53 @@ async def load_ontology_cache() -> None:
         for row in norm_type_rows
     ]
     logger.info("[ontology-cache] Norm types: %s", [t["local_name"] for t in _norm_types])
+
+    # AXIA: cover:ValueType instanties (staan in de coodm-graph, maar met cover:-prefix)
+    _COVER_NS = f"{VALOR_NS}cover#"
+    value_type_rows = await sparql_select_global(f"""
+        PREFIX cover: <{_COVER_NS}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?uri ?labelEn ?labelNl WHERE {{
+          GRAPH <{_COODM_GRAPH}> {{
+            ?uri a cover:ValueType .
+            OPTIONAL {{ ?uri rdfs:label ?labelEn . FILTER(lang(?labelEn) = "en") }}
+            OPTIONAL {{ ?uri rdfs:label ?labelNl . FILTER(lang(?labelNl) = "nl") }}
+          }}
+        }}
+    """)
+    _axia_value_types = [
+        {
+            "uri": row["uri"],
+            "local_name": row["uri"].split("#")[-1],
+            "label_en": row.get("labelEn", row["uri"].split("#")[-1]),
+            "label_nl": row.get("labelNl", row.get("labelEn", row["uri"].split("#")[-1])),
+        }
+        for row in value_type_rows
+    ]
+    logger.info("[ontology-cache] AXIA value types: %s", [t["local_name"] for t in _axia_value_types])
+
+    # AXIA: axia:ClaimPolarity instanties
+    polarity_rows = await sparql_select_global(f"""
+        PREFIX axia: <{_AXIA_NS}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?uri ?labelEn ?labelNl WHERE {{
+          GRAPH <{_AXIA_GRAPH}> {{
+            ?uri a axia:ClaimPolarity .
+            OPTIONAL {{ ?uri rdfs:label ?labelEn . FILTER(lang(?labelEn) = "en") }}
+            OPTIONAL {{ ?uri rdfs:label ?labelNl . FILTER(lang(?labelNl) = "nl") }}
+          }}
+        }}
+    """)
+    _axia_claim_polarities = [
+        {
+            "uri": row["uri"],
+            "local_name": row["uri"].split("#")[-1],
+            "label_en": row.get("labelEn", row["uri"].split("#")[-1]),
+            "label_nl": row.get("labelNl", row.get("labelEn", row["uri"].split("#")[-1])),
+        }
+        for row in polarity_rows
+    ]
+    logger.info("[ontology-cache] AXIA claim polarities: %s", [p["local_name"] for p in _axia_claim_polarities])
 
     if not _evidence_label_to_uri or not _status_label_to_uri or not _valid_transitions:
         logger.warning(
@@ -426,6 +506,40 @@ def get_socia_dependency_types() -> list[dict]:
     return _socia_dependency_types
 
 
+def get_socia_claim_types() -> list[dict]:
+    """Retourneert socia:StakeholderClaim subklassen met URI, local_name, label_en, label_nl."""
+    return _socia_claim_types
+
+
 def get_norm_types() -> list[dict]:
     """Retourneert LEXA norm types (subklassen van ufoc:NormativeDescription) met URI, local_name, label_en, label_nl."""
     return _norm_types
+
+
+def get_axia_value_types() -> list[dict]:
+    """Retourneert coodm:ValueType instanties met URI, local_name, label_en, label_nl."""
+    return _axia_value_types
+
+
+def get_axia_claim_polarities() -> list[dict]:
+    """Retourneert axia:ClaimPolarity instanties met URI, local_name, label_en, label_nl."""
+    return _axia_claim_polarities
+
+
+def get_axia_epistemic_schema() -> list[dict]:
+    """Retourneert EpistemicStatus instanties met transitiematrix en requiresDecisionEpisode-vlag.
+
+    Format: [{uri, label_en, label_nl, allowed_transitions: [uri], requires_decision_episode: bool}]
+    """
+    result = []
+    for label_en, uri in _status_label_to_uri.items():
+        next_labels = _valid_transitions.get(label_en, set())
+        next_uris = [_status_label_to_uri[lbl] for lbl in next_labels if lbl in _status_label_to_uri]
+        result.append({
+            "uri": uri,
+            "label_en": label_en,
+            "label_nl": _status_uri_to_nl_label.get(uri, label_en),
+            "allowed_transitions": next_uris,
+            "requires_decision_episode": uri in _requires_decision_episode,
+        })
+    return result

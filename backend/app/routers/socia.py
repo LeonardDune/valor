@@ -1,16 +1,58 @@
 """SOCIA API-endpoints voor het cross-perspectief rolpatroon (US-AI.5/AI.6)."""
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
+from typing import List
 
 from app.auth import get_current_user
 from app.db.fuseki_socia import (
     assign_actor_role,
+    create_actor,
+    delete_actor,
+    update_actor,
+    create_ecosystem_agent,
+    create_stakeholder_claim,
+    create_stakeholder_group,
     get_actor_roles_in_ds,
     get_designspaces_for_agent,
+    get_ecosystem_agents,
+    get_high_interest_groups,
+    get_stakeholder_groups,
+    get_stakeholder_map,
     get_tesserae_for_agent,
     migrate_legacy_socia_actors,
 )
+from app.db.permissions import check_permission
+from app.models.domain import Role
 
 router = APIRouter(tags=["socia"])
+
+
+class CreateActorRequest(BaseModel):
+    label: str
+    actor_type_uri: str  # Volledige URI uit VALOR-O SOCIA-ontologie, bijv. socia:HumanStakeholder
+
+
+class UpdateActorRequest(BaseModel):
+    label: str | None = None
+    actor_type_uri: str | None = None
+
+
+class CreateStakeholderClaimRequest(BaseModel):
+    claim_type_uri: str  # Volledige URI, bijv. socia:InterestClaim uit VALOR-O SOCIA-ontologie
+    claim_content: str
+    actor_uri: str  # URI van de actor waarover de claim gaat
+
+
+class CreateEcosystemAgentRequest(BaseModel):
+    label: str
+    commitment_duration_uri: str  # Volledige URI zodra nexus:CommitmentDuration in ontologie is
+    member_agent_uris: List[str] = []
+
+
+class CreateStakeholderGroupRequest(BaseModel):
+    label: str
+    interest_level_uri: str  # Volledige URI zodra demos:InterestLevel in ontologie is
+    represented_by_uri: str | None = None
 
 
 @router.post("/designspace/{ds_id}/socia/roles")
@@ -56,6 +98,182 @@ async def get_agent_designspaces_endpoint(
         agent_uri = agent_uri.replace("urn:/", "urn:").lstrip("/")
     ds_ids = await get_designspaces_for_agent(agent_uri)
     return {"agent_uri": agent_uri, "designspaces": ds_ids}
+
+
+@router.post("/designspace/{ds_id}/actor", status_code=201)
+async def create_actor_endpoint(
+    ds_id: str,
+    request: CreateActorRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Registreert een nieuwe actor in de entities-graph en als stakeholder in de DesignSpace."""
+    has_permission = await check_permission(user["id"], ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    return await create_actor(
+        ds_id=ds_id,
+        label=request.label,
+        actor_type_uri=request.actor_type_uri,
+        user_id=user["id"],
+    )
+
+
+@router.patch("/designspace/{ds_id}/actor/{actor_uri:path}", status_code=200)
+async def update_actor_endpoint(
+    ds_id: str,
+    actor_uri: str,
+    request: UpdateActorRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Wijzigt label en/of type van een bestaande actor."""
+    has_permission = await check_permission(user["id"], ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    if not actor_uri.startswith("urn:"):
+        actor_uri = actor_uri.replace("urn:/", "urn:").lstrip("/")
+
+    try:
+        result = await update_actor(
+            ds_id=ds_id,
+            actor_uri=actor_uri,
+            label=request.label,
+            actor_type_uri=request.actor_type_uri,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    return result
+
+
+@router.delete("/designspace/{ds_id}/actor/{actor_uri:path}", status_code=200)
+async def delete_actor_endpoint(
+    ds_id: str,
+    actor_uri: str,
+    user: dict = Depends(get_current_user),
+):
+    """Verwijdert een actor uit de entities-graph en de DesignSpace baseline."""
+    has_permission = await check_permission(user["id"], ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    if not actor_uri.startswith("urn:"):
+        actor_uri = actor_uri.replace("urn:/", "urn:").lstrip("/")
+
+    await delete_actor(ds_id=ds_id, actor_uri=actor_uri)
+    return {"status": "deleted", "actor_uri": actor_uri}
+
+
+@router.get("/designspace/{ds_id}/stakeholder-map")
+async def get_stakeholder_map_endpoint(
+    ds_id: str,
+    _user=Depends(get_current_user),
+):
+    """Retourneert de stakeholderkaart: actoren en IntentionalDependency-edges voor een DesignSpace."""
+    return await get_stakeholder_map(ds_id)
+
+
+@router.post("/designspace/{ds_id}/stakeholder-claims", status_code=201)
+async def create_stakeholder_claim_endpoint(
+    ds_id: str,
+    request: CreateStakeholderClaimRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Maakt een socia:InterestClaim, socia:GoalClaim of socia:PowerClaim aan als Tessera-subklasse."""
+    has_permission = await check_permission(user["id"], ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    try:
+        result = await create_stakeholder_claim(
+            ds_id=ds_id,
+            claim_type_uri=request.claim_type_uri,
+            claim_content=request.claim_content,
+            actor_uri=request.actor_uri,
+            user_id=user["id"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    return result
+
+
+@router.post("/designspace/{ds_id}/ecosystem-agent", status_code=201)
+async def create_ecosystem_agent_endpoint(
+    ds_id: str,
+    request: CreateEcosystemAgentRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Registreert een nexus:EcosystemAgent met nexus:CollaborationCommitment in Fuseki."""
+    has_permission = await check_permission(user["id"], ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    try:
+        result = await create_ecosystem_agent(
+            ds_id=ds_id,
+            label=request.label,
+            commitment_duration_uri=request.commitment_duration_uri,
+            member_agent_uris=request.member_agent_uris,
+            user_id=user["id"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    return result
+
+
+@router.get("/designspace/{ds_id}/ecosystem-agents")
+async def get_ecosystem_agents_endpoint(
+    ds_id: str,
+    _user=Depends(get_current_user),
+):
+    """Haalt alle nexus:EcosystemAgents op met CollaborationCondition-status."""
+    return await get_ecosystem_agents(ds_id)
+
+
+@router.post("/designspace/{ds_id}/stakeholder-group", status_code=201)
+async def create_stakeholder_group_endpoint(
+    ds_id: str,
+    request: CreateStakeholderGroupRequest,
+    user: dict = Depends(get_current_user),
+):
+    """Registreert een socia:StakeholderGroup met demos:interestLevel in Fuseki."""
+    has_permission = await check_permission(user["id"], ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    try:
+        result = await create_stakeholder_group(
+            ds_id=ds_id,
+            label=request.label,
+            interest_level_uri=request.interest_level_uri,
+            represented_by_uri=request.represented_by_uri,
+            user_id=user["id"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    return result
+
+
+@router.get("/designspace/{ds_id}/stakeholder-groups")
+async def get_stakeholder_groups_endpoint(
+    ds_id: str,
+    _user=Depends(get_current_user),
+):
+    """Haalt alle socia:StakeholderGroups op met interestLevel en representatiestatus."""
+    return await get_stakeholder_groups(ds_id)
+
+
+@router.get("/designspace/{ds_id}/stakeholder-groups/high-interest")
+async def get_high_interest_groups_endpoint(
+    ds_id: str,
+    _user=Depends(get_current_user),
+):
+    """Retourneert alle StakeholderGroups met interestLevel = High (DEMOS InclusivityCoverage)."""
+    return await get_high_interest_groups(ds_id)
 
 
 @router.post("/admin/migrate-socia-actors")
