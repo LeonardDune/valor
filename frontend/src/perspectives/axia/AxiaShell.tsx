@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, GitBranch, AlertTriangle, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -227,6 +227,12 @@ export function AxiaShell({ designSpaceId }: AxiaShellProps) {
     const [view, setView] = useState<AxiaView>('canvas');
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
+
+    useEffect(() => {
+        const prev = document.title;
+        document.title = 'AXIA — Waardeperspectief';
+        return () => { document.title = prev; };
+    }, []);
 
     const handleCreated = () => {
         setRefreshKey((k) => k + 1);
