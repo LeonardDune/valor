@@ -136,7 +136,8 @@ ORDER BY ?valueType"""
 
 class CreateValueClaimRequest(BaseModel):
     claim_content: str
-    value_type_uri: str | None = None  # bijv. urn:valor:cover:rechtvaardigheid
+    value_type_uri: str | None = None      # volledige URI, bijv. https://valor-ecosystem.nl/ontology/cover#FairnessExperience
+    claim_polarity_uri: str | None = None  # volledige URI, bijv. https://valor-ecosystem.nl/ontology/axia#SupportingPolarity
 
 
 class ValueClaimCreatedOut(BaseModel):
@@ -170,7 +171,11 @@ async def create_value_claim(
 
     value_type_triple = ""
     if request.value_type_uri:
-        value_type_triple = f'\n      axia:groundedIn <{request.value_type_uri}> ;'
+        value_type_triple = f'\n      axia:concernsValueType <{request.value_type_uri}> ;'
+
+    polarity_triple = ""
+    if request.claim_polarity_uri:
+        polarity_triple = f'\n      axia:claimPolarity <{request.claim_polarity_uri}> ;'
 
     sparql = f"""PREFIX axia: <{AXIA_NS}>
 PREFIX valor: <{VALOR_NS}>
@@ -180,7 +185,7 @@ INSERT DATA {{
   GRAPH <{graph_uri}> {{
     <{tessera_uri}> a axia:ValueClaim ;
       a valor:Tessera ;
-      valor:claimContent "{escaped_content}"@nl ;{value_type_triple}
+      valor:claimContent "{escaped_content}"@nl ;{value_type_triple}{polarity_triple}
       valor:claimedBy <{user_uri}> ;
       valor:claimedAt "{created_at}"^^xsd:dateTime .
   }}

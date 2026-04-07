@@ -127,6 +127,27 @@ async def list_socia_ontology():
     }
 
 
+@app.get("/ontology/axia")
+async def list_axia_ontology():
+    """Retourneert AXIA schema: ValueTypes, ClaimPolarities en EpistemicStatus-transitiematrix (uit VALOR-O ontologie)."""
+    from app.services.ontology_cache import (
+        get_axia_value_types,
+        get_axia_claim_polarities,
+        get_axia_epistemic_schema,
+        get_uncertainty_label_to_uri,
+    )
+    uncertainty = [
+        {"uri": uri, "local_name": uri.split("#")[-1], "label_en": label}
+        for label, uri in get_uncertainty_label_to_uri().items()
+    ]
+    return {
+        "value_types": get_axia_value_types(),
+        "claim_polarities": get_axia_claim_polarities(),
+        "epistemic_statuses": get_axia_epistemic_schema(),
+        "uncertainty_levels": uncertainty,
+    }
+
+
 @app.get("/ontology/norms")
 async def list_norm_types():
     """Retourneert LEXA norm types (subklassen van ufoc:NormativeDescription, uit VALOR-O ontologie)."""

@@ -1,9 +1,15 @@
 import { useState } from 'react';
-import { Plus, GitBranch, AlertTriangle } from 'lucide-react';
+import { Plus, GitBranch, AlertTriangle, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2 } from 'lucide-react';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import {
     Dialog,
     DialogContent,
@@ -27,7 +33,8 @@ import { ValueCanvas } from './ValueCanvas';
 import { ValueChain } from './ValueChain';
 import { ValueTensionView } from './ValueTensionView';
 import { api } from '@/services/api';
-import type { CreateValueClaimPayload } from '@/services/api';
+import type { CreateValueClaimPayload, AxiaSchema } from '@/services/api';
+import { useAxiaSchema } from './hooks/useAxiaSchema';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,18 +54,21 @@ interface CreateValueClaimModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     designSpaceId: string;
+    schema: AxiaSchema;
     onCreated: () => void;
 }
 
-function CreateValueClaimModal({ open, onOpenChange, designSpaceId, onCreated }: CreateValueClaimModalProps) {
+function CreateValueClaimModal({ open, onOpenChange, designSpaceId, schema, onCreated }: CreateValueClaimModalProps) {
     const [inhoud, setInhoud] = useState('');
-    const [waardetype, setWaardetype] = useState('');
+    const [valueTypeUri, setValueTypeUri] = useState('');
+    const [polarityUri, setPolarityUri] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const handleClose = () => {
         setInhoud('');
-        setWaardetype('');
+        setValueTypeUri('');
+        setPolarityUri('');
         setError(null);
         onOpenChange(false);
     };
@@ -70,10 +80,10 @@ function CreateValueClaimModal({ open, onOpenChange, designSpaceId, onCreated }:
         setIsSubmitting(true);
         setError(null);
 
-        const slug = waardetype.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
         const payload: CreateValueClaimPayload = {
             claim_content: inhoud.trim(),
-            value_type_uri: slug ? `urn:valor:cover:${slug}` : undefined,
+            value_type_uri: valueTypeUri || undefined,
+            claim_polarity_uri: polarityUri || undefined,
         };
 
         try {
@@ -108,13 +118,34 @@ function CreateValueClaimModal({ open, onOpenChange, designSpaceId, onCreated }:
                         />
                     </div>
                     <div className="grid gap-2">
-                        <Label htmlFor="vc-waardetype">Waardetype</Label>
-                        <Input
-                            id="vc-waardetype"
-                            value={waardetype}
-                            onChange={(e) => setWaardetype(e.target.value)}
-                            placeholder="bijv. Rechtvaardigheid"
-                        />
+                        <Label>Waardetype</Label>
+                        <Select value={valueTypeUri} onValueChange={setValueTypeUri}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Kies een waardetype" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {schema.value_types.map((vt) => (
+                                    <SelectItem key={vt.uri} value={vt.uri}>
+                                        {vt.label_nl || vt.label_en}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="grid gap-2">
+                        <Label>Polariteit</Label>
+                        <Select value={polarityUri} onValueChange={setPolarityUri}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Kies een polariteit" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {schema.claim_polarities.map((p) => (
+                                    <SelectItem key={p.uri} value={p.uri}>
+                                        {p.label_nl || p.label_en}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
                     {error && (
                         <p className="text-xs text-destructive">{error}</p>
@@ -192,6 +223,7 @@ function AxiaViewToggle({ value, onChange }: AxiaViewToggleProps) {
 // ---------------------------------------------------------------------------
 
 export function AxiaShell({ designSpaceId }: AxiaShellProps) {
+    const { schema, loading, error } = useAxiaSchema();
     const [view, setView] = useState<AxiaView>('canvas');
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
@@ -199,6 +231,31 @@ export function AxiaShell({ designSpaceId }: AxiaShellProps) {
     const handleCreated = () => {
         setRefreshKey((k) => k + 1);
     };
+
+    if (loading) {
+        return (
+            <div className="w-full h-full flex items-center justify-center bg-background">
+                <div className="flex flex-col items-center gap-3 text-muted-foreground">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                    <span className="text-sm">AXIA-schema laden...</span>
+                </div>
+            </div>
+        );
+    }
+
+    if (error || !schema) {
+        return (
+            <div className="w-full h-full flex items-center justify-center bg-background">
+                <div className="flex flex-col items-center gap-3 text-destructive max-w-sm text-center">
+                    <AlertCircle className="h-6 w-6" />
+                    <p className="text-sm font-medium">AXIA-schema kon niet worden geladen</p>
+                    <p className="text-xs text-muted-foreground">
+                        {error?.message ?? 'Controleer of de ontologie beschikbaar is in Fuseki.'}
+                    </p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="w-full h-full bg-background relative">
@@ -232,6 +289,7 @@ export function AxiaShell({ designSpaceId }: AxiaShellProps) {
                 open={isCreateModalOpen}
                 onOpenChange={setIsCreateModalOpen}
                 designSpaceId={designSpaceId}
+                schema={schema}
                 onCreated={handleCreated}
             />
         </div>

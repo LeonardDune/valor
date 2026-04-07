@@ -85,6 +85,29 @@ export interface SociaOntology {
     dependency_types: SociaOntologyEntry[];
 }
 
+// AXIA schema (ontologie-gedreven, geladen bij perspectief-initialisatie)
+export interface AxiaOntologyEntry {
+    uri: string;
+    local_name: string;
+    label_en: string;
+    label_nl: string;
+}
+
+export interface AxiaEpistemicStatus {
+    uri: string;
+    label_en: string;
+    label_nl: string;
+    allowed_transitions: string[];
+    requires_decision_episode: boolean;
+}
+
+export interface AxiaSchema {
+    value_types: AxiaOntologyEntry[];
+    claim_polarities: AxiaOntologyEntry[];
+    epistemic_statuses: AxiaEpistemicStatus[];
+    uncertainty_levels: AxiaOntologyEntry[];
+}
+
 export interface StakeholderActor {
     uri: string;
     label: string;
@@ -767,6 +790,11 @@ export const api = {
         return response.data;
     },
 
+    getAxiaSchema: async (): Promise<AxiaSchema> => {
+        const response = await apiClient.get<AxiaSchema>('/ontology/axia');
+        return response.data;
+    },
+
     // Entity Registry
     searchEntities: async (q: string, entityType?: string, limit = 20): Promise<EntityRegistryEntry[]> => {
         const params: Record<string, string | number> = { q, limit };
@@ -1322,6 +1350,7 @@ export interface DesignImplicationCount {
 export interface CreateValueClaimPayload {
     claim_content: string;
     value_type_uri?: string;
+    claim_polarity_uri?: string;
 }
 
 export interface ValueClaimCreatedResponse {
