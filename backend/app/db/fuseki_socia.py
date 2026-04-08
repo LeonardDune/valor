@@ -93,17 +93,35 @@ async def get_stakeholder_map(ds_id: str) -> dict:
         }}
     """)
 
-    actors = []
+    # Dedupliceer op entity URI — SPARQL geeft meerdere rijen per actor
+    # bij meerdere rdf:type of socia:playsRole triples.
+    seen: dict[str, dict] = {}
     for row in actor_rows:
-        entity_uri = row["entity"]
-        actors.append({
-            "uri": entity_uri,
-            "label": row.get("entityLabel") or entity_uri.split(":")[-1],
+        uri = row["entity"]
+        if uri in seen:
+            # Vul ontbrekende velden aan als de latere rij betere data heeft
+            existing = seen[uri]
+            if not existing.get("entityLabel") and row.get("entityLabel"):
+                existing["entityLabel"] = row["entityLabel"]
+            if not existing.get("entityType") and row.get("entityType"):
+                existing["entityType"] = row["entityType"]
+            if not existing.get("role") and row.get("role"):
+                existing["role"] = row["role"]
+                existing["roleLabel"] = row.get("roleLabel")
+        else:
+            seen[uri] = dict(row)
+
+    actors = [
+        {
+            "uri": uri,
+            "label": row.get("entityLabel") or uri.split(":")[-1],
             "entity_type": row.get("entityType", ""),
             "entity_type_local": _local_name(row.get("entityType", "")),
             "role_uri": row.get("role"),
             "role_label_nl": row.get("roleLabel"),
-        })
+        }
+        for uri, row in seen.items()
+    ]
 
     # IntentionalDependency-edges
     dep_rows = await sparql_select_global(f"""
@@ -140,37 +158,179 @@ async def get_stakeholder_map(ds_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# StakeholderClaim aanmaken (US-6.2)
+# Actor aanmaken (US-6.1 — canvas write-path)
 # ---------------------------------------------------------------------------
 
-# Geldige claim-typen als subklassen van valor:Tessera in SOCIA-namespace
-_STAKEHOLDER_CLAIM_TYPES = {
-    "InterestClaim": f"{_SOCIA_NS}InterestClaim",
-    "GoalClaim": f"{_SOCIA_NS}GoalClaim",
-    "PowerClaim": f"{_SOCIA_NS}PowerClaim",
-}
+async def create_actor(
+    ds_id: str,
+    label: str,
+    actor_type_uri: str,
+    user_id: str,
+) -> dict:
+    """Registreert een nieuwe actor in de entities-graph en markeert hem als
+    stakeholder in de DesignSpace (socia:isStakeholderIn in baseline-graph).
+
+    actor_type_uri: een volledige URI uit de VALOR-O SOCIA-ontologie,
+    bijv. 'https://valor-ecosystem.nl/ontology/socia#HumanStakeholder'.
+
+    Retourneert de aangemaakte actor-gegevens.
+    """
+    actor_id = str(_uuid_mod.uuid4())
+    actor_uri = f"urn:valor:actor:{actor_id}"
+    user_uri = f"urn:valor:user:{user_id}"
+    created_at = datetime.now(timezone.utc).isoformat()
+    baseline = _baseline_graph(ds_id)
+    ds_uri = _ds_uri(ds_id)
+
+    escaped_label = _escape(label)
+
+    # Stap 1: label opslaan in entities-graph
+    update_entities = f"""PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+
+INSERT DATA {{
+  GRAPH <{_ENTITIES_GRAPH}> {{
+    <{actor_uri}> a <{actor_type_uri}> ;
+      rdfs:label "{escaped_label}"@nl .
+  }}
+}}"""
+
+    await sparql_update(update_entities, ds_id)
+
+    # Stap 2: isStakeholderIn registreren in baseline-graph
+    update_baseline = f"""PREFIX socia: <{_SOCIA_NS}>
+PREFIX valor: <{VALOR_NS}>
+PREFIX xsd:   <http://www.w3.org/2001/XMLSchema#>
+
+INSERT DATA {{
+  GRAPH <{baseline}> {{
+    <{actor_uri}> socia:isStakeholderIn <{ds_uri}> ;
+      valor:inDesignSpace <{ds_uri}> ;
+      valor:claimedBy <{user_uri}> ;
+      valor:claimedAt "{created_at}"^^xsd:dateTime .
+  }}
+}}"""
+
+    await sparql_update(update_baseline, ds_id)
+
+    await record_provenance_activity(
+        ds_id,
+        "ActorCreated",
+        user_uri,
+        generated=actor_uri,
+    )
+
+    logger.info("[fuseki-socia] Actor aangemaakt: %s (%s) in %s door %s", actor_uri, actor_type_uri, ds_id, user_id)
+
+    return {
+        "actor_id": actor_id,
+        "actor_uri": actor_uri,
+        "label": label,
+        "actor_type_uri": actor_type_uri,
+        "claimed_by": user_id,
+        "claimed_at": created_at,
+        "design_space_id": ds_id,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Actor bijwerken + verwijderen
+# ---------------------------------------------------------------------------
+
+async def update_actor(
+    ds_id: str,
+    actor_uri: str,
+    label: str | None = None,
+    actor_type_uri: str | None = None,
+) -> dict:
+    """Overschrijft het rdfs:label en/of rdf:type van een actor in de entities-graph."""
+    if label is None and actor_type_uri is None:
+        raise ValueError("Minimaal label of actor_type_uri is vereist.")
+
+    delete_parts = []
+    insert_parts = []
+
+    if label is not None:
+        escaped_label = _escape(label)
+        delete_parts.append(f"    <{actor_uri}> rdfs:label ?oldLabel .")
+        insert_parts.append(f'    <{actor_uri}> rdfs:label "{escaped_label}"@nl .')
+
+    if actor_type_uri is not None:
+        delete_parts.append(f"    <{actor_uri}> rdf:type ?oldType .")
+        insert_parts.append(f"    <{actor_uri}> rdf:type <{actor_type_uri}> .")
+
+    sparql = f"""PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+
+DELETE {{
+  GRAPH <{_ENTITIES_GRAPH}> {{
+{chr(10).join(delete_parts)}
+  }}
+}}
+INSERT {{
+  GRAPH <{_ENTITIES_GRAPH}> {{
+{chr(10).join(insert_parts)}
+  }}
+}}
+WHERE {{
+  GRAPH <{_ENTITIES_GRAPH}> {{
+    OPTIONAL {{ <{actor_uri}> rdfs:label ?oldLabel . }}
+    OPTIONAL {{ <{actor_uri}> rdf:type ?oldType . }}
+  }}
+}}"""
+
+    await sparql_update(sparql, ds_id)
+
+    logger.info("[fuseki-socia] Actor bijgewerkt: %s in %s", actor_uri, ds_id)
+
+    return {"actor_uri": actor_uri, "label": label, "actor_type_uri": actor_type_uri}
+
+
+async def delete_actor(ds_id: str, actor_uri: str) -> None:
+    """Verwijdert een actor uit de entities-graph en de baseline-graph van de DesignSpace."""
+    baseline = _baseline_graph(ds_id)
+
+    # Verwijder uit entities-graph
+    sparql_entities = f"""DELETE WHERE {{
+  GRAPH <{_ENTITIES_GRAPH}> {{
+    <{actor_uri}> ?p ?o .
+  }}
+}}"""
+    await sparql_update(sparql_entities, ds_id)
+
+    # Verwijder isStakeholderIn + inDesignSpace triples uit baseline
+    sparql_baseline = f"""DELETE WHERE {{
+  GRAPH <{baseline}> {{
+    <{actor_uri}> ?p ?o .
+  }}
+}}"""
+    await sparql_update(sparql_baseline, ds_id)
+
+    logger.info("[fuseki-socia] Actor verwijderd: %s uit %s", actor_uri, ds_id)
+
+
+# ---------------------------------------------------------------------------
+# StakeholderClaim aanmaken (US-6.2)
+# ---------------------------------------------------------------------------
 
 _XSD_NS = "http://www.w3.org/2001/XMLSchema#"
 
 
 async def create_stakeholder_claim(
     ds_id: str,
-    claim_type: str,
+    claim_type_uri: str,
     claim_content: str,
     actor_uri: str,
     user_id: str,
 ) -> dict:
-    """Schrijft een socia:InterestClaim / socia:GoalClaim / socia:PowerClaim als valor:Tessera-subklasse.
+    """Schrijft een socia:StakeholderClaim-subklasse als valor:Tessera.
+
+    claim_type_uri: volledige URI uit de VALOR-O SOCIA-ontologie,
+    bijv. 'https://valor-ecosystem.nl/ontology/socia#InterestClaim'.
 
     Opgeslagen in urn:valor:ds:{ds_id}/agents (AgentTesserae-graph).
     Retourneert een dict met de aangemaakte claim-gegevens.
     """
-    claim_type_uri = _STAKEHOLDER_CLAIM_TYPES.get(claim_type)
-    if not claim_type_uri:
-        raise ValueError(
-            f"Ongeldig claim_type '{claim_type}'. "
-            f"Geldige waarden: {sorted(_STAKEHOLDER_CLAIM_TYPES)}"
-        )
 
     tessera_id = str(_uuid_mod.uuid4())
     tessera_uri = f"urn:valor:tessera:{tessera_id}"
@@ -213,13 +373,12 @@ INSERT DATA {{
 
     logger.info(
         "[fuseki-socia] StakeholderClaim aangemaakt: %s (%s) in %s door %s",
-        tessera_uri, claim_type, ds_id, user_id,
+        tessera_uri, claim_type_uri, ds_id, user_id,
     )
 
     return {
         "tessera_id": tessera_id,
         "tessera_uri": tessera_uri,
-        "claim_type": claim_type,
         "claim_type_uri": claim_type_uri,
         "claim_content": claim_content,
         "epistemic_status": "Proposed",
@@ -382,27 +541,20 @@ async def get_designspaces_for_agent(entity_uri: str) -> list[str]:
 # EcosystemAgent aanmaken (US-6.4)
 # ---------------------------------------------------------------------------
 
-_VALID_COMMITMENT_DURATIONS = {"Permanent", "ProjectBased", "Experimental"}
-
-
 async def create_ecosystem_agent(
     ds_id: str,
     label: str,
-    commitment_duration: str,
+    commitment_duration_uri: str,
     member_agent_uris: list[str],
     user_id: str,
 ) -> dict:
     """Registreert een nexus:EcosystemAgent met nexus:CollaborationCommitment in Fuseki.
 
+    commitment_duration_uri: volledige URI uit de VALOR-O NEXUS-ontologie.
+
     Opgeslagen in urn:valor:ds:{ds_id}/agents (AgentTesserae-graph).
     De EcosystemAgent is een subklasse van socia:Actor.
     """
-    if commitment_duration not in _VALID_COMMITMENT_DURATIONS:
-        raise ValueError(
-            f"Ongeldige commitment_duration '{commitment_duration}'. "
-            f"Geldige waarden: {sorted(_VALID_COMMITMENT_DURATIONS)}"
-        )
-
     agent_id = str(_uuid_mod.uuid4())
     agent_uri = f"urn:valor:nexus:agent:{agent_id}"
     commitment_uri = f"urn:valor:nexus:commitment:{agent_id}"
@@ -433,7 +585,7 @@ INSERT DATA {{
       valor:claimedBy <{user_uri}> ;
       valor:claimedAt "{created_at}"^^xsd:dateTime .
     <{commitment_uri}> a nexus:CollaborationCommitment ;
-      nexus:commitmentDuration "{commitment_duration}" .
+      nexus:commitmentDuration <{commitment_duration_uri}> .
 {member_triples}
   }}
 }}"""
@@ -449,7 +601,7 @@ INSERT DATA {{
 
     logger.info(
         "[fuseki-socia] EcosystemAgent aangemaakt: %s (%s) in %s door %s",
-        agent_uri, commitment_duration, ds_id, user_id,
+        agent_uri, commitment_duration_uri, ds_id, user_id,
     )
 
     return {
@@ -457,7 +609,7 @@ INSERT DATA {{
         "agent_uri": agent_uri,
         "label": label,
         "commitment_uri": commitment_uri,
-        "commitment_duration": commitment_duration,
+        "commitment_duration_uri": commitment_duration_uri,
         "member_agent_uris": member_agent_uris,
         "created_by": user_id,
         "created_at": created_at,
@@ -552,26 +704,21 @@ async def get_ecosystem_agents(ds_id: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 _DEMOS_NS = "https://valor-ecosystem.nl/ontology/demos#"
-_VALID_INTEREST_LEVELS = {"High", "Medium", "Low"}
 
 
 async def create_stakeholder_group(
     ds_id: str,
     label: str,
-    interest_level: str,
+    interest_level_uri: str,
     represented_by_uri: str | None,
     user_id: str,
 ) -> dict:
     """Registreert een socia:StakeholderGroup met demos:interestLevel in Fuseki.
 
+    interest_level_uri: volledige URI uit de VALOR-O DEMOS-ontologie.
+
     Opgeslagen in urn:valor:ds:{ds_id}/baseline.
     """
-    if interest_level not in _VALID_INTEREST_LEVELS:
-        raise ValueError(
-            f"Ongeldig interest_level '{interest_level}'. "
-            f"Geldige waarden: {sorted(_VALID_INTEREST_LEVELS)}"
-        )
-
     group_id = str(_uuid_mod.uuid4())
     group_uri = f"urn:valor:socia:group:{group_id}"
     user_uri = f"urn:valor:user:{user_id}"
@@ -595,7 +742,7 @@ INSERT DATA {{
   GRAPH <{baseline}> {{
     <{group_uri}> a <{_SOCIA_NS}StakeholderGroup> ;
       rdfs:label "{escaped_label}" ;
-      <{_DEMOS_NS}interestLevel> "{interest_level}" ;
+      <{_DEMOS_NS}interestLevel> <{interest_level_uri}> ;
       valor:inDesignSpace <{_ds_uri(ds_id)}> ;
       valor:claimedBy <{user_uri}> ;
       valor:claimedAt "{created_at}"^^xsd:dateTime .
@@ -614,14 +761,14 @@ INSERT DATA {{
 
     logger.info(
         "[fuseki-socia] StakeholderGroup aangemaakt: %s (%s) in %s door %s",
-        group_uri, interest_level, ds_id, user_id,
+        group_uri, interest_level_uri, ds_id, user_id,
     )
 
     return {
         "group_id": group_id,
         "group_uri": group_uri,
         "label": label,
-        "interest_level": interest_level,
+        "interest_level_uri": interest_level_uri,
         "represented_by_uri": represented_by_uri,
         "is_represented": represented_by_uri is not None,
         "created_by": user_id,

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, Layers, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -28,7 +28,7 @@ import {
 import { PerspectiveToolbar } from '@/components/shell/PerspectiveToolbar';
 import { StakeholderMap } from './views/StakeholderMap';
 import { StakeholderGroupPanel } from './views/StakeholderGroupPanel';
-import { api, type StakeholderClaimType } from '@/services/api';
+import { api, type SociaOntologyEntry } from '@/services/api';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,15 +37,6 @@ import { api, type StakeholderClaimType } from '@/services/api';
 interface SociaShellProps {
     dsId: string;
 }
-
-type ActorType = 'Burger' | 'Organisatie' | 'Overheid' | 'Bedrijf';
-
-const ACTOR_TYPE_OPTIONS: { value: ActorType; label: string }[] = [
-    { value: 'Burger', label: 'Burger' },
-    { value: 'Organisatie', label: 'Organisatie' },
-    { value: 'Overheid', label: 'Overheid' },
-    { value: 'Bedrijf', label: 'Bedrijf' },
-];
 
 // ---------------------------------------------------------------------------
 // CreateActorModal
@@ -60,36 +51,35 @@ interface CreateActorModalProps {
 
 function CreateActorModal({ open, onOpenChange, dsId, onCreated }: CreateActorModalProps) {
     const [naam, setNaam] = useState('');
-    const [type, setType] = useState<ActorType>('Organisatie');
+    const [actorTypeUri, setActorTypeUri] = useState('');
+    const [actorTypes, setActorTypes] = useState<SociaOntologyEntry[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    useEffect(() => {
+        api.getSociaOntology().then((ont) => {
+            setActorTypes(ont.actor_types);
+            if (ont.actor_types.length > 0 && !actorTypeUri) {
+                setActorTypeUri(ont.actor_types[0].uri);
+            }
+        }).catch(() => {/* ontologie niet beschikbaar, dropdown blijft leeg */});
+    }, []);
+
     const handleClose = () => {
         setNaam('');
-        setType('Organisatie');
         setError(null);
         onOpenChange(false);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!naam.trim()) return;
+        if (!naam.trim() || !actorTypeUri) return;
 
         setIsSubmitting(true);
         setError(null);
 
-        // Tijdelijke workaround: actor aanmaken via stakeholder claim (GoalClaim)
-        // totdat er een dedicated POST /actor endpoint bestaat.
-        const claimType: StakeholderClaimType = 'GoalClaim';
-        const actorSlug = naam.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-        const actorUri = `urn:valor:socia:actor:${actorSlug}`;
-
         try {
-            await api.createStakeholderClaim(dsId, {
-                claim_type: claimType,
-                claim_content: naam.trim(),
-                actor_uri: actorUri,
-            });
+            await api.createActor(dsId, { label: naam.trim(), actor_type_uri: actorTypeUri });
             onCreated();
             handleClose();
         } catch (err) {
@@ -121,14 +111,14 @@ function CreateActorModal({ open, onOpenChange, dsId, onCreated }: CreateActorMo
                     </div>
                     <div className="grid gap-2">
                         <Label htmlFor="actor-type">Type</Label>
-                        <Select value={type} onValueChange={(v) => setType(v as ActorType)}>
+                        <Select value={actorTypeUri} onValueChange={setActorTypeUri}>
                             <SelectTrigger id="actor-type">
                                 <SelectValue placeholder="Kies een type" />
                             </SelectTrigger>
                             <SelectContent>
-                                {ACTOR_TYPE_OPTIONS.map((opt) => (
-                                    <SelectItem key={opt.value} value={opt.value}>
-                                        {opt.label}
+                                {actorTypes.map((t) => (
+                                    <SelectItem key={t.uri} value={t.uri}>
+                                        {t.label_nl || t.label_en || t.local_name}
                                     </SelectItem>
                                 ))}
                             </SelectContent>
@@ -141,7 +131,7 @@ function CreateActorModal({ open, onOpenChange, dsId, onCreated }: CreateActorMo
                         <Button type="button" variant="outline" onClick={handleClose} disabled={isSubmitting}>
                             Annuleren
                         </Button>
-                        <Button type="submit" disabled={!naam.trim() || isSubmitting}>
+                        <Button type="submit" disabled={!naam.trim() || !actorTypeUri || isSubmitting}>
                             {isSubmitting && <Loader2 className="animate-spin mr-2 h-4 w-4" />}
                             Aanmaken
                         </Button>

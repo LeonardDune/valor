@@ -5,27 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
-import {
     api,
-    type CommitmentDuration,
     type EcosystemAgent,
 } from '@/services/api';
-
-// ---------------------------------------------------------------------------
-// Constanten
-// ---------------------------------------------------------------------------
-
-const COMMITMENT_OPTIONS: { value: CommitmentDuration; label: string }[] = [
-    { value: 'Permanent', label: 'Permanent' },
-    { value: 'ProjectBased', label: 'Projectgebonden' },
-    { value: 'Experimental', label: 'Experimenteel' },
-];
 
 const CONDITION_BADGE_VARIANT: Record<EcosystemAgent['condition_status'], 'default' | 'secondary' | 'destructive'> = {
     Volledig: 'default',
@@ -68,11 +50,9 @@ function AgentCard({ agent }: { agent: EcosystemAgent }) {
                 </div>
             </div>
 
-            {agent.commitment_duration && (
+            {agent.commitment_duration_uri && (
                 <p className="text-xs text-muted-foreground">
-                    Commitment:{' '}
-                    {COMMITMENT_OPTIONS.find((o) => o.value === agent.commitment_duration)?.label ??
-                        agent.commitment_duration}
+                    Commitment: {agent.commitment_duration_uri.split('#').pop() ?? agent.commitment_duration_uri}
                 </p>
             )}
 
@@ -127,7 +107,7 @@ interface CreateFormProps {
 
 function CreateEcosystemAgentForm({ dsId, onCreated, onCancel }: CreateFormProps) {
     const [label, setLabel] = useState('');
-    const [commitmentDuration, setCommitmentDuration] = useState<CommitmentDuration>('Permanent');
+    const [commitmentDurationUri, setCommitmentDurationUri] = useState('');
     const [memberInput, setMemberInput] = useState('');
     const [memberUris, setMemberUris] = useState<string[]>([]);
     const [submitting, setSubmitting] = useState(false);
@@ -153,7 +133,7 @@ function CreateEcosystemAgentForm({ dsId, onCreated, onCancel }: CreateFormProps
         try {
             await api.createEcosystemAgent(dsId, {
                 label: label.trim(),
-                commitment_duration: commitmentDuration,
+                commitment_duration_uri: commitmentDurationUri,
                 member_agent_uris: memberUris,
             });
             onCreated();
@@ -180,22 +160,13 @@ function CreateEcosystemAgentForm({ dsId, onCreated, onCancel }: CreateFormProps
             </div>
 
             <div className="space-y-1.5">
-                <Label htmlFor="ea-commitment">Commitment-duur</Label>
-                <Select
-                    value={commitmentDuration}
-                    onValueChange={(v) => setCommitmentDuration(v as CommitmentDuration)}
-                >
-                    <SelectTrigger id="ea-commitment">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {COMMITMENT_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                                {opt.label}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+                <Label htmlFor="ea-commitment">Commitment-duur (URI)</Label>
+                <Input
+                    id="ea-commitment"
+                    value={commitmentDurationUri}
+                    onChange={(e) => setCommitmentDurationUri(e.target.value)}
+                    placeholder="bijv. https://valor-ecosystem.nl/ontology/nexus#Permanent"
+                />
             </div>
 
             <div className="space-y-1.5">

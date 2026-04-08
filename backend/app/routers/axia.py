@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from app.auth import get_current_user
 from app.db.permissions import check_permission
 from app.models.domain import Role
-from app.services.fuseki import sparql_select, sparql_update, record_provenance_activity
+from app.services.fuseki import sparql_select_global, sparql_update, record_provenance_activity
 from app.services.ontology_cache import get_status_label_to_uri
 from app.ontology import VALOR_NS
 
@@ -35,6 +35,11 @@ class ValueClaimOut(BaseModel):
     claim_content: str
     value_type_uri: str
     value_type_label: str
+    polarity_uri: str | None = None
+    polarity_label: str | None = None
+    epistemic_status: str | None = None
+    canvas_x: float | None = None
+    canvas_y: float | None = None
     claimed_by: str
     claimed_at: str
 
@@ -42,6 +47,11 @@ class ValueClaimOut(BaseModel):
 class ValueCanvasOut(BaseModel):
     design_space_id: str
     groups: dict[str, list[ValueClaimOut]]
+
+
+class UpdateValueClaimRequest(BaseModel):
+    claim_content: str | None = None
+    value_type_uri: str | None = None
 
 
 class CreateValueTensionRequest(BaseModel):
@@ -82,26 +92,38 @@ PREFIX cover: <{COVER_NS}>
 PREFIX valor: <{VALOR_NS}>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
-SELECT ?tessera ?content ?valueType ?valueTypeLabel ?claimedBy ?claimedAt WHERE {{
+SELECT ?tessera ?content ?valueType ?valueTypeLabel ?polarity ?polarityLabel ?status ?cx ?cy ?claimedBy ?claimedAt WHERE {{
   GRAPH <{graph_uri}> {{
     ?tessera a axia:ValueClaim ;
              valor:claimContent ?content ;
              valor:claimedBy ?claimedBy ;
              valor:claimedAt ?claimedAt .
+    FILTER NOT EXISTS {{ ?tessera valor:retiredAt ?t . }}
     OPTIONAL {{
-      ?tessera axia:groundedIn ?valueType .
+      ?tessera axia:concernsValueType ?valueType .
+      FILTER(STRSTARTS(STR(?valueType), "https://"))
     }}
-    OPTIONAL {{
-      ?tessera axia:valueType ?valueType .
-    }}
-    OPTIONAL {{
-      ?valueType rdfs:label ?valueTypeLabel .
-    }}
+    OPTIONAL {{ ?valueType rdfs:label ?valueTypeLabel . }}
+    OPTIONAL {{ ?tessera axia:claimPolarity ?polarity . }}
+    OPTIONAL {{ ?polarity rdfs:label ?polarityLabel . }}
+    OPTIONAL {{ ?tessera valor:epistemicStatus ?status . }}
+    OPTIONAL {{ ?tessera valor:canvasX ?cx . }}
+    OPTIONAL {{ ?tessera valor:canvasY ?cy . }}
   }}
 }}
 ORDER BY ?valueType"""
 
-    rows = await sparql_select(query, ds_id)
+    rows = await sparql_select_global(query)
+
+    # Dedupliceer: houd per tessera_uri alleen de eerste rij (bescherming tegen meerdere valueType-triples)
+    seen_tesserae: set[str] = set()
+    deduped: list[dict] = []
+    for row in rows:
+        uri = row.get("tessera", "")
+        if uri not in seen_tesserae:
+            seen_tesserae.add(uri)
+            deduped.append(row)
+    rows = deduped
 
     groups: dict[str, list[ValueClaimOut]] = {}
     for row in rows:
@@ -109,6 +131,12 @@ ORDER BY ?valueType"""
         tessera_id = tessera_uri.rsplit(":", 1)[-1]
         value_type_uri = row.get("valueType", "")
         value_type_label = row.get("valueTypeLabel", value_type_uri.rsplit("#", 1)[-1] if "#" in value_type_uri else value_type_uri.rsplit("/", 1)[-1])
+        polarity_uri = row.get("polarity") or None
+        polarity_label_raw = row.get("polarityLabel") or None
+        status_raw = row.get("status") or None
+        status_label = status_raw.rsplit("#", 1)[-1].rsplit("/", 1)[-1] if status_raw else None
+        cx_raw = row.get("cx")
+        cy_raw = row.get("cy")
 
         claim = ValueClaimOut(
             tessera_uri=tessera_uri,
@@ -116,6 +144,11 @@ ORDER BY ?valueType"""
             claim_content=row.get("content", ""),
             value_type_uri=value_type_uri,
             value_type_label=value_type_label,
+            polarity_uri=polarity_uri,
+            polarity_label=polarity_label_raw,
+            epistemic_status=status_label,
+            canvas_x=float(cx_raw) if cx_raw is not None else None,
+            canvas_y=float(cy_raw) if cy_raw is not None else None,
             claimed_by=row.get("claimedBy", "").rsplit(":", 1)[-1],
             claimed_at=row.get("claimedAt", ""),
         )
@@ -123,6 +156,238 @@ ORDER BY ?valueType"""
         groups.setdefault(value_type_uri, []).append(claim)
 
     return ValueCanvasOut(design_space_id=ds_id, groups=groups)
+
+
+# ---------------------------------------------------------------------------
+# US-7.1: POST value-claim
+# ---------------------------------------------------------------------------
+
+class CreateValueClaimRequest(BaseModel):
+    claim_content: str
+    value_type_uri: str | None = None      # volledige URI, bijv. https://valor-ecosystem.nl/ontology/cover#FairnessExperience
+    claim_polarity_uri: str | None = None  # volledige URI, bijv. https://valor-ecosystem.nl/ontology/axia#SupportingPolarity
+
+
+class ValueClaimCreatedOut(BaseModel):
+    tessera_uri: str
+    tessera_id: str
+    claim_content: str
+    value_type_uri: str | None
+    claimed_by: str
+    claimed_at: str
+
+
+@router.post("/{ds_id}/value-claim", response_model=ValueClaimCreatedOut, status_code=201)
+async def create_value_claim(
+    ds_id: str,
+    request: CreateValueClaimRequest,
+    user: dict = Depends(get_current_user),
+) -> ValueClaimCreatedOut:
+    user_id = user["id"]
+
+    has_permission = await check_permission(user_id, ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    tessera_id = str(uuid.uuid4())
+    tessera_uri = f"urn:valor:tessera:{tessera_id}"
+    user_uri = f"urn:valor:user:{user_id}"
+    created_at = datetime.now(timezone.utc).isoformat()
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
+
+    escaped_content = request.claim_content.replace("\\", "\\\\").replace('"', '\\"')
+
+    value_type_triple = ""
+    if request.value_type_uri:
+        value_type_triple = f'\n      axia:concernsValueType <{request.value_type_uri}> ;'
+
+    polarity_triple = ""
+    if request.claim_polarity_uri:
+        polarity_triple = f'\n      axia:claimPolarity <{request.claim_polarity_uri}> ;'
+
+    sparql = f"""PREFIX axia: <{AXIA_NS}>
+PREFIX valor: <{VALOR_NS}>
+PREFIX xsd: <{XSD_NS}>
+
+INSERT DATA {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> a axia:ValueClaim ;
+      a valor:Tessera ;
+      valor:claimContent "{escaped_content}"@nl ;{value_type_triple}{polarity_triple}
+      valor:claimedBy <{user_uri}> ;
+      valor:claimedAt "{created_at}"^^xsd:dateTime .
+  }}
+}}"""
+
+    await sparql_update(sparql, ds_id)
+
+    await record_provenance_activity(
+        ds_id,
+        "ValueClaimCreated",
+        user_uri,
+        generated=tessera_uri,
+    )
+
+    logger.info("ValueClaim aangemaakt: %s in DesignSpace %s door %s", tessera_uri, ds_id, user_id)
+
+    return ValueClaimCreatedOut(
+        tessera_uri=tessera_uri,
+        tessera_id=tessera_id,
+        claim_content=request.claim_content,
+        value_type_uri=request.value_type_uri,
+        claimed_by=user_id,
+        claimed_at=created_at,
+    )
+
+
+# ---------------------------------------------------------------------------
+# US-7.2: PATCH value-claim position (canvas) — MOET voor de algemene PATCH staan
+# ---------------------------------------------------------------------------
+
+class UpdateValueClaimPositionRequest(BaseModel):
+    canvas_x: float
+    canvas_y: float
+
+
+@router.patch("/{ds_id}/value-claim/{tessera_id}/position", status_code=200)
+async def update_value_claim_position(
+    ds_id: str,
+    tessera_id: str,
+    request: UpdateValueClaimPositionRequest,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    user_id = user["id"]
+
+    has_permission = await check_permission(user_id, ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    tessera_uri = f"urn:valor:tessera:{tessera_id}"
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
+
+    sparql = f"""PREFIX valor: <{VALOR_NS}>
+PREFIX xsd: <{XSD_NS}>
+
+DELETE {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> valor:canvasX ?oldX ;
+                    valor:canvasY ?oldY .
+  }}
+}}
+INSERT {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> valor:canvasX "{request.canvas_x}"^^xsd:decimal ;
+                    valor:canvasY "{request.canvas_y}"^^xsd:decimal .
+  }}
+}}
+WHERE {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> a valor:Tessera .
+    OPTIONAL {{ <{tessera_uri}> valor:canvasX ?oldX . }}
+    OPTIONAL {{ <{tessera_uri}> valor:canvasY ?oldY . }}
+  }}
+}}"""
+
+    await sparql_update(sparql, ds_id)
+    return {"tessera_uri": tessera_uri, "canvas_x": request.canvas_x, "canvas_y": request.canvas_y}
+
+
+# ---------------------------------------------------------------------------
+# PATCH / DELETE value-claim
+# ---------------------------------------------------------------------------
+
+@router.patch("/{ds_id}/value-claim/{tessera_uri:path}", status_code=200)
+async def update_value_claim(
+    ds_id: str,
+    tessera_uri: str,
+    request: UpdateValueClaimRequest,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    user_id = user["id"]
+
+    has_permission = await check_permission(user_id, ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    if request.claim_content is None and request.value_type_uri is None:
+        raise HTTPException(status_code=422, detail="Minimaal claim_content of value_type_uri is vereist.")
+
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
+
+    delete_parts = []
+    insert_parts = []
+
+    if request.claim_content is not None:
+        escaped = request.claim_content.replace("\\", "\\\\").replace('"', '\\"')
+        delete_parts.append(f'    <{tessera_uri}> valor:claimContent ?oldContent .')
+        insert_parts.append(f'    <{tessera_uri}> valor:claimContent "{escaped}"@nl .')
+
+    if request.value_type_uri is not None:
+        delete_parts.append(f'    <{tessera_uri}> axia:concernsValueType ?oldType .')
+        insert_parts.append(f'    <{tessera_uri}> axia:concernsValueType <{request.value_type_uri}> .')
+
+    delete_block = "\n".join(delete_parts)
+    insert_block = "\n".join(insert_parts)
+
+    sparql = f"""PREFIX axia: <{AXIA_NS}>
+PREFIX valor: <{VALOR_NS}>
+
+DELETE {{
+  GRAPH <{graph_uri}> {{
+{delete_block}
+  }}
+}}
+INSERT {{
+  GRAPH <{graph_uri}> {{
+{insert_block}
+  }}
+}}
+WHERE {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> a axia:ValueClaim .
+    OPTIONAL {{ <{tessera_uri}> valor:claimContent ?oldContent . }}
+    OPTIONAL {{ <{tessera_uri}> axia:concernsValueType ?oldType . }}
+  }}
+}}"""
+
+    await sparql_update(sparql, ds_id)
+
+    user_uri = f"urn:valor:user:{user_id}"
+    await record_provenance_activity(ds_id, "ValueClaimUpdated", user_uri, used=[tessera_uri])
+
+    logger.info("ValueClaim bijgewerkt: %s in DesignSpace %s door %s", tessera_uri, ds_id, user_id)
+
+    return {"tessera_uri": tessera_uri, "updated": True}
+
+
+@router.delete("/{ds_id}/value-claim/{tessera_uri:path}", status_code=200)
+async def delete_value_claim(
+    ds_id: str,
+    tessera_uri: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    user_id = user["id"]
+
+    has_permission = await check_permission(user_id, ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
+
+    sparql = f"""DELETE WHERE {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> ?p ?o .
+  }}
+}}"""
+
+    await sparql_update(sparql, ds_id)
+
+    user_uri = f"urn:valor:user:{user_id}"
+    await record_provenance_activity(ds_id, "ValueClaimDeleted", user_uri, used=[tessera_uri])
+
+    logger.info("ValueClaim verwijderd: %s uit DesignSpace %s door %s", tessera_uri, ds_id, user_id)
+
+    return {"status": "deleted", "tessera_uri": tessera_uri}
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +544,7 @@ SELECT ?factor (COUNT(?implication) AS ?count) WHERE {{
 GROUP BY ?factor
 ORDER BY DESC(?count)"""
 
-    rows = await sparql_select(query, ds_id)
+    rows = await sparql_select_global(query)
 
     return [
         DesignImplicationCount(
@@ -460,7 +725,7 @@ SELECT ?criterion ?criterionLabel ?valueType ?valueTypeLabel ?requirement ?requi
 }}
 ORDER BY ?valueType ?criterion ?requirement"""
 
-    rows = await sparql_select(query, ds_id)
+    rows = await sparql_select_global(query)
 
     # Opbouwen geneste structuur: valueType → criteria → requirements
     type_map: dict[str, ValueChainTypeItem] = {}
@@ -555,10 +820,10 @@ async def patch_value_requirement_status(
     if not has_permission:
         raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
 
-    graph_uri = f"urn:valor:ds:{ds_id}:baseline"
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
 
     # Controleer of het een axia:ValueBasedDesignRequirement is en haal huidige status op
-    rows = await sparql_select(
+    rows = await sparql_select_global(
         f"""PREFIX axia: <{AXIA_NS}>
 PREFIX valor: <{VALOR_NS}>
 
@@ -568,8 +833,7 @@ SELECT ?status ?label WHERE {{
                valor:epistemicStatus ?status .
     OPTIONAL {{ <{req_uri}> <http://www.w3.org/2000/01/rdf-schema#label> ?label . }}
   }}
-}}""",
-        ds_id,
+}}"""
     )
 
     if not rows:
@@ -722,7 +986,7 @@ SELECT ?capReq ?label ?status ?claimedBy ?claimedAt ?generatedFrom WHERE {{
 }}
 ORDER BY ?claimedAt"""
 
-    rows = await sparql_select(query, ds_id)
+    rows = await sparql_select_global(query)
 
     result = []
     for row in rows:

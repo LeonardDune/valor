@@ -5,40 +5,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
-import {
     api,
-    type InterestLevel,
     type StakeholderGroup,
 } from '@/services/api';
-
-// ---------------------------------------------------------------------------
-// Constanten
-// ---------------------------------------------------------------------------
-
-const INTEREST_OPTIONS: { value: InterestLevel; label: string }[] = [
-    { value: 'High', label: 'Hoog' },
-    { value: 'Medium', label: 'Middel' },
-    { value: 'Low', label: 'Laag' },
-];
-
-const INTEREST_BADGE_CLASS: Record<InterestLevel, string> = {
-    High: 'bg-destructive/15 text-destructive border-destructive/30',
-    Medium: 'bg-yellow-500/15 text-yellow-700 border-yellow-500/30 dark:text-yellow-400',
-    Low: 'bg-green-500/15 text-green-700 border-green-500/30 dark:text-green-400',
-};
 
 // ---------------------------------------------------------------------------
 // Groepskaart
 // ---------------------------------------------------------------------------
 
 function GroupCard({ group }: { group: StakeholderGroup }) {
-    const interestOpt = INTEREST_OPTIONS.find((o) => o.value === group.interest_level);
+    const levelLabel = group.interest_level_uri?.split('#').pop() ?? group.interest_level_uri;
 
     return (
         <div className="border border-border rounded-lg p-3 space-y-1.5 bg-card">
@@ -47,11 +23,8 @@ function GroupCard({ group }: { group: StakeholderGroup }) {
                     <Users className="h-4 w-4 shrink-0 text-primary" />
                     <span className="text-sm font-medium truncate">{group.label}</span>
                 </div>
-                <Badge
-                    variant="outline"
-                    className={`text-xs shrink-0 ${INTEREST_BADGE_CLASS[group.interest_level]}`}
-                >
-                    {interestOpt?.label ?? group.interest_level}
+                <Badge variant="outline" className="text-xs shrink-0">
+                    {levelLabel}
                 </Badge>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -81,20 +54,20 @@ interface CreateFormProps {
 
 function CreateStakeholderGroupForm({ dsId, onCreated, onCancel }: CreateFormProps) {
     const [label, setLabel] = useState('');
-    const [interestLevel, setInterestLevel] = useState<InterestLevel>('Medium');
+    const [interestLevelUri, setInterestLevelUri] = useState('');
     const [representedByUri, setRepresentedByUri] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!label.trim()) return;
+        if (!label.trim() || !interestLevelUri.trim()) return;
         setSubmitting(true);
         setError(null);
         try {
             await api.createStakeholderGroup(dsId, {
                 label: label.trim(),
-                interest_level: interestLevel,
+                interest_level_uri: interestLevelUri.trim(),
                 represented_by_uri: representedByUri.trim() || undefined,
             });
             onCreated();
@@ -121,22 +94,13 @@ function CreateStakeholderGroupForm({ dsId, onCreated, onCancel }: CreateFormPro
             </div>
 
             <div className="space-y-1.5">
-                <Label htmlFor="sg-interest">Interesseniveau</Label>
-                <Select
-                    value={interestLevel}
-                    onValueChange={(v) => setInterestLevel(v as InterestLevel)}
-                >
-                    <SelectTrigger id="sg-interest">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {INTEREST_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>
-                                {opt.label}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+                <Label htmlFor="sg-interest">Interesseniveau (URI)</Label>
+                <Input
+                    id="sg-interest"
+                    value={interestLevelUri}
+                    onChange={(e) => setInterestLevelUri(e.target.value)}
+                    placeholder="bijv. https://valor-ecosystem.nl/ontology/demos#HighInterest"
+                />
             </div>
 
             <div className="space-y-1.5">
@@ -155,7 +119,7 @@ function CreateStakeholderGroupForm({ dsId, onCreated, onCancel }: CreateFormPro
                 <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
                     Annuleren
                 </Button>
-                <Button type="submit" size="sm" disabled={submitting || !label.trim()}>
+                <Button type="submit" size="sm" disabled={submitting || !label.trim() || !interestLevelUri.trim()}>
                     {submitting ? 'Opslaan\u2026' : 'Aanmaken'}
                 </Button>
             </div>

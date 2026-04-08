@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,32 +12,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import {
     api,
-    type StakeholderClaimType,
     type StakeholderClaimResponse,
     type StakeholderActor,
+    type SociaOntologyEntry,
 } from '@/services/api';
-
-// ---------------------------------------------------------------------------
-// Claim-type metadata
-// ---------------------------------------------------------------------------
-
-const CLAIM_TYPE_OPTIONS: { value: StakeholderClaimType; label: string; description: string }[] = [
-    {
-        value: 'InterestClaim',
-        label: 'Belang',
-        description: 'Wat heeft de actor te winnen of verliezen?',
-    },
-    {
-        value: 'GoalClaim',
-        label: 'Doel',
-        description: 'Wat wil de actor bereiken?',
-    },
-    {
-        value: 'PowerClaim',
-        label: 'Macht',
-        description: 'Welke invloed of macht heeft de actor?',
-    },
-];
 
 const STATUS_LABEL: Record<string, string> = {
     Proposed: 'Voorgesteld',
@@ -45,19 +23,15 @@ const STATUS_LABEL: Record<string, string> = {
     Rejected: 'Verworpen',
 };
 
-// ---------------------------------------------------------------------------
-// Subcomponent: ingediende claim
-// ---------------------------------------------------------------------------
-
-function ClaimItem({ claim }: { claim: StakeholderClaimResponse }) {
-    const typeMeta = CLAIM_TYPE_OPTIONS.find((o) => o.value === claim.claim_type);
+function ClaimItem({ claim, claimTypes }: { claim: StakeholderClaimResponse; claimTypes: SociaOntologyEntry[] }) {
+    const typeMeta = claimTypes.find((t) => t.uri === claim.claim_type_uri);
     const statusLabel = STATUS_LABEL[claim.epistemic_status] ?? claim.epistemic_status;
 
     return (
         <div className="rounded-md border border-border bg-card p-3 space-y-1">
             <div className="flex items-center gap-2">
                 <Badge variant="outline" className="text-xs">
-                    {typeMeta?.label ?? claim.claim_type}
+                    {typeMeta?.label_nl ?? typeMeta?.label_en ?? claim.claim_type_uri.split('#').pop()}
                 </Badge>
                 <Badge variant="secondary" className="text-xs">
                     {statusLabel}
@@ -68,10 +42,6 @@ function ClaimItem({ claim }: { claim: StakeholderClaimResponse }) {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Hoofdcomponent
-// ---------------------------------------------------------------------------
-
 interface StakeholderClaimsPanelProps {
     dsId: string;
     actors: StakeholderActor[];
@@ -79,21 +49,31 @@ interface StakeholderClaimsPanelProps {
 
 export function StakeholderClaimsPanel({ dsId, actors }: StakeholderClaimsPanelProps) {
     const [actorUri, setActorUri] = useState('');
-    const [claimType, setClaimType] = useState<StakeholderClaimType | ''>('');
+    const [claimTypeUri, setClaimTypeUri] = useState('');
     const [content, setContent] = useState('');
+    const [claimTypes, setClaimTypes] = useState<SociaOntologyEntry[]>([]);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [submitted, setSubmitted] = useState<StakeholderClaimResponse[]>([]);
 
+    useEffect(() => {
+        api.getSociaOntology().then((ont) => {
+            setClaimTypes(ont.claim_types);
+            if (ont.claim_types.length > 0 && !claimTypeUri) {
+                setClaimTypeUri(ont.claim_types[0].uri);
+            }
+        }).catch(() => {/* ontologie niet beschikbaar */});
+    }, []);
+
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
-        if (!actorUri || !claimType || !content.trim()) return;
+        if (!actorUri || !claimTypeUri || !content.trim()) return;
 
         setSubmitting(true);
         setError(null);
         try {
             const result = await api.createStakeholderClaim(dsId, {
-                claim_type: claimType,
+                claim_type_uri: claimTypeUri,
                 claim_content: content.trim(),
                 actor_uri: actorUri,
             });
@@ -111,7 +91,6 @@ export function StakeholderClaimsPanel({ dsId, actors }: StakeholderClaimsPanelP
             <h3 className="text-sm font-semibold">Stakeholderclaim toevoegen</h3>
 
             <form onSubmit={handleSubmit} className="space-y-3">
-                {/* Actor selectie */}
                 <div className="space-y-1">
                     <Label htmlFor="sc-actor">Actor</Label>
                     <Select value={actorUri} onValueChange={setActorUri}>
@@ -128,30 +107,22 @@ export function StakeholderClaimsPanel({ dsId, actors }: StakeholderClaimsPanelP
                     </Select>
                 </div>
 
-                {/* Claim-type */}
                 <div className="space-y-1">
                     <Label htmlFor="sc-type">Type claim</Label>
-                    <Select
-                        value={claimType}
-                        onValueChange={(v) => setClaimType(v as StakeholderClaimType)}
-                    >
+                    <Select value={claimTypeUri} onValueChange={setClaimTypeUri}>
                         <SelectTrigger id="sc-type">
                             <SelectValue placeholder="Kies een type" />
                         </SelectTrigger>
                         <SelectContent>
-                            {CLAIM_TYPE_OPTIONS.map((o) => (
-                                <SelectItem key={o.value} value={o.value}>
-                                    <span>{o.label}</span>
-                                    <span className="ml-2 text-xs text-muted-foreground">
-                                        {o.description}
-                                    </span>
+                            {claimTypes.map((t) => (
+                                <SelectItem key={t.uri} value={t.uri}>
+                                    {t.label_nl || t.label_en || t.local_name}
                                 </SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
                 </div>
 
-                {/* Inhoud */}
                 <div className="space-y-1">
                     <Label htmlFor="sc-content">Inhoud</Label>
                     <Input
@@ -168,21 +139,20 @@ export function StakeholderClaimsPanel({ dsId, actors }: StakeholderClaimsPanelP
 
                 <Button
                     type="submit"
-                    disabled={!actorUri || !claimType || !content.trim() || submitting}
+                    disabled={!actorUri || !claimTypeUri || !content.trim() || submitting}
                     className="w-full"
                 >
                     {submitting ? 'Opslaan…' : 'Claim opslaan'}
                 </Button>
             </form>
 
-            {/* Ingediende claims in deze sessie */}
             {submitted.length > 0 && (
                 <div className="space-y-2">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
                         Zojuist toegevoegd
                     </p>
                     {submitted.map((c) => (
-                        <ClaimItem key={c.tessera_id} claim={c} />
+                        <ClaimItem key={c.tessera_id} claim={c} claimTypes={claimTypes} />
                     ))}
                 </div>
             )}
