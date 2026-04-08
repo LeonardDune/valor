@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Plus, GitBranch, AlertTriangle, Loader2, AlertCircle, X } from 'lucide-react';
+import { Plus, GitBranch, AlertTriangle, Loader2, AlertCircle, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { toast } from 'sonner';
 import {
     Select,
     SelectContent,
@@ -18,6 +20,7 @@ import {
     DialogFooter,
     DialogHeader,
     DialogTitle,
+    DialogClose,
 } from '@/components/ui/dialog';
 import {
     Tooltip,
@@ -167,81 +170,144 @@ function CreateValueClaimModal({ open, onOpenChange, designSpaceId, schema, onCr
 }
 
 // ---------------------------------------------------------------------------
-// ValueClaimDetailPanel
+// EditValueClaimModal — volgt exact het CAUSA EditFactorDetailModal patroon
 // ---------------------------------------------------------------------------
 
-interface ValueClaimDetailPanelProps {
-    claim: ValueClaimItem;
-    onClose: () => void;
+interface EditValueClaimModalProps {
+    claim: ValueClaimItem | null;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    designSpaceId: string;
+    schema: AxiaSchema;
+    onRefresh: () => void;
 }
 
-function polarityLabel(uri?: string | null): string {
-    if (!uri) return 'Onbekend';
-    if (uri.includes('Supporting')) return 'Ondersteunend';
-    if (uri.includes('Undermining')) return 'Ondermijnend';
-    if (uri.includes('Ambiguous')) return 'Ambigu';
-    return uri.split('#').pop() ?? uri;
-}
+function EditValueClaimModal({ claim, open, onOpenChange, designSpaceId, schema, onRefresh }: EditValueClaimModalProps) {
+    const [inhoud, setInhoud] = useState('');
+    const [valueTypeUri, setValueTypeUri] = useState('');
+    const [polarityUri, setPolarityUri] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false);
 
-function polarityVariant(uri?: string | null): 'default' | 'destructive' | 'secondary' | 'outline' {
-    if (!uri) return 'outline';
-    if (uri.includes('Supporting')) return 'default';
-    if (uri.includes('Undermining')) return 'destructive';
-    return 'secondary';
-}
+    useEffect(() => {
+        if (!claim || !open) return;
+        setInhoud(claim.claim_content);
+        setValueTypeUri(claim.value_type_uri ?? '');
+        setPolarityUri(claim.polarity_uri ?? '');
+    }, [claim, open]);
 
-function ValueClaimDetailPanel({ claim, onClose }: ValueClaimDetailPanelProps) {
+    if (!claim) return null;
+
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            await api.updateValueClaim(designSpaceId, claim.tessera_uri, {
+                claim_content: inhoud.trim() || undefined,
+                value_type_uri: valueTypeUri || undefined,
+            });
+            toast.success('Waardeclaim opgeslagen.');
+            onRefresh();
+            onOpenChange(false);
+        } catch {
+            toast.error('Fout bij het opslaan.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleDelete = async () => {
+        setIsSaving(true);
+        try {
+            await api.deleteValueClaim(designSpaceId, claim.tessera_uri);
+            toast.success('Waardeclaim verwijderd.');
+            onRefresh();
+            onOpenChange(false);
+        } catch {
+            toast.error('Fout bij het verwijderen.');
+        } finally {
+            setIsSaving(false);
+            setIsDeleteOpen(false);
+        }
+    };
+
     return (
-        <div className="absolute top-0 right-0 h-full w-80 bg-background border-l border-border shadow-xl z-20 flex flex-col">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                <span className="text-sm font-semibold">Waardeclaim</span>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onClose}>
-                    <X className="h-4 w-4" />
-                </Button>
-            </div>
+        <>
+            <Dialog open={open} onOpenChange={onOpenChange}>
+                <DialogContent className="sm:max-w-[440px] overflow-y-auto max-h-[90vh]">
+                    <DialogHeader>
+                        <DialogTitle>Waardeclaim bewerken</DialogTitle>
+                    </DialogHeader>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                <div>
-                    <p className="text-xs text-muted-foreground mb-1">Inhoud</p>
-                    <p className="text-sm leading-relaxed">{claim.claim_content}</p>
-                </div>
-
-                {claim.value_type_label && (
-                    <div>
-                        <p className="text-xs text-muted-foreground mb-1">Waardetype</p>
-                        <Badge variant="secondary">{claim.value_type_label}</Badge>
+                    <div className="grid gap-4 py-4">
+                        <div className="grid gap-2">
+                            <Label htmlFor="vc-inhoud">Inhoud</Label>
+                            <Textarea
+                                id="vc-inhoud"
+                                value={inhoud}
+                                onChange={(e) => setInhoud(e.target.value)}
+                                rows={3}
+                            />
+                        </div>
+                        <div className="grid gap-2">
+                            <Label>Waardetype</Label>
+                            <Select value={valueTypeUri} onValueChange={setValueTypeUri}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Kies een waardetype" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {schema.value_types.map((vt) => (
+                                        <SelectItem key={vt.uri} value={vt.uri}>
+                                            {vt.label_nl || vt.label_en}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="grid gap-2">
+                            <Label>Polariteit</Label>
+                            <Select value={polarityUri} onValueChange={setPolarityUri}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Kies een polariteit" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {schema.claim_polarities.map((p) => (
+                                        <SelectItem key={p.uri} value={p.uri}>
+                                            {p.label_nl || p.label_en}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="text-xs text-muted-foreground border-t pt-3">
+                            <span>Aangemaakt op: {new Date(claim.claimed_at).toLocaleString('nl-NL')}</span>
+                        </div>
                     </div>
-                )}
 
-                {claim.polarity_uri && (
-                    <div>
-                        <p className="text-xs text-muted-foreground mb-1">Polariteit</p>
-                        <Badge variant={polarityVariant(claim.polarity_uri)}>
-                            {claim.polarity_label ?? polarityLabel(claim.polarity_uri)}
-                        </Badge>
-                    </div>
-                )}
+                    <DialogFooter className="flex justify-between sm:justify-between">
+                        <Button variant="destructive" size="sm" onClick={() => setIsDeleteOpen(true)} disabled={isSaving}>
+                            <Trash2 size={14} className="mr-2" /> Verwijderen
+                        </Button>
+                        <div className="flex gap-2">
+                            <DialogClose asChild>
+                                <Button variant="outline" size="sm">Annuleren</Button>
+                            </DialogClose>
+                            <Button size="sm" onClick={handleSave} disabled={!inhoud.trim() || isSaving}>
+                                <Save size={14} className="mr-2" />
+                                {isSaving ? 'Opslaan...' : 'Opslaan'}
+                            </Button>
+                        </div>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
-                {claim.epistemic_status && (
-                    <div>
-                        <p className="text-xs text-muted-foreground mb-1">Epistemische status</p>
-                        <Badge variant="outline">{claim.epistemic_status}</Badge>
-                    </div>
-                )}
-
-                <div>
-                    <p className="text-xs text-muted-foreground mb-1">Aangemaakt door</p>
-                    <p className="text-xs text-foreground font-mono truncate">{claim.claimed_by}</p>
-                </div>
-
-                <div>
-                    <p className="text-xs text-muted-foreground mb-1">Aangemaakt op</p>
-                    <p className="text-xs text-foreground">
-                        {new Date(claim.claimed_at).toLocaleString('nl-NL')}
-                    </p>
-                </div>
-            </div>
-        </div>
+            <ConfirmModal
+                isOpen={isDeleteOpen}
+                title="Verwijderen bevestigen"
+                message="Weet je zeker dat je deze waardeclaim wilt verwijderen? Dit kan niet ongedaan worden gemaakt."
+                onConfirm={handleDelete}
+                onCancel={() => setIsDeleteOpen(false)}
+            />
+        </>
     );
 }
 
@@ -307,7 +373,8 @@ export function AxiaShell({ designSpaceId }: AxiaShellProps) {
     const [view, setView] = useState<AxiaView>('canvas');
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [refreshKey, setRefreshKey] = useState(0);
-    const [selectedClaim, setSelectedClaim] = useState<ValueClaimItem | null>(null);
+    const [editClaim, setEditClaim] = useState<ValueClaimItem | null>(null);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
     useEffect(() => {
         const prev = document.title;
@@ -371,19 +438,15 @@ export function AxiaShell({ designSpaceId }: AxiaShellProps) {
                     <ValueCanvas
                         refreshTrigger={refreshKey}
                         designSpaceId={designSpaceId}
-                        onSelect={setSelectedClaim}
+                        onEdit={(claim) => {
+                            setEditClaim(claim);
+                            setIsEditModalOpen(true);
+                        }}
                     />
                 )}
                 {view === 'keten' && <ValueChain key={`keten-${refreshKey}`} designSpaceId={designSpaceId} />}
                 {view === 'spanningen' && <ValueTensionView key={`spanningen-${refreshKey}`} designSpaceId={designSpaceId} />}
             </div>
-
-            {selectedClaim && (
-                <ValueClaimDetailPanel
-                    claim={selectedClaim}
-                    onClose={() => setSelectedClaim(null)}
-                />
-            )}
 
             <CreateValueClaimModal
                 open={isCreateModalOpen}
@@ -391,6 +454,15 @@ export function AxiaShell({ designSpaceId }: AxiaShellProps) {
                 designSpaceId={designSpaceId}
                 schema={schema}
                 onCreated={handleCreated}
+            />
+
+            <EditValueClaimModal
+                claim={editClaim}
+                open={isEditModalOpen}
+                onOpenChange={setIsEditModalOpen}
+                designSpaceId={designSpaceId}
+                schema={schema}
+                onRefresh={handleCreated}
             />
         </div>
     );

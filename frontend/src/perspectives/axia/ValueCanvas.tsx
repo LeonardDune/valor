@@ -134,10 +134,10 @@ function buildNodes(claims: ValueClaimItem[]): Node[] {
 interface ValueCanvasProps {
     designSpaceId: string;
     refreshTrigger?: number;
-    onSelect?: (claim: ValueClaimItem | null) => void;
+    onEdit?: (claim: ValueClaimItem) => void;
 }
 
-export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onSelect }: ValueCanvasProps) {
+export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: ValueCanvasProps) {
     const [nodes, setNodes, onNodesChange] = useNodesState<ValueClaimNodeData>([]);
     const shouldFitRef = useRef(false);
 
@@ -158,11 +158,12 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onSelect }: Val
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [load, refreshTrigger]);
 
-    const handleNodeClick = useCallback(
+    // Dubbelklik opent edit modal — exact zoals CAUSA (onNodeDoubleClick → onEdit)
+    const handleNodeDoubleClick = useCallback(
         (_: React.MouseEvent, node: { data: ValueClaimNodeData }) => {
-            onSelect?.(node.data.claim);
+            onEdit?.(node.data.claim);
         },
-        [onSelect],
+        [onEdit],
     );
 
     return (
@@ -171,8 +172,7 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onSelect }: Val
                 nodes={nodes}
                 edges={[]}
                 onNodesChange={onNodesChange}
-                onNodeClick={handleNodeClick}
-                onPaneClick={() => onSelect?.(null)}
+                onNodeDoubleClick={handleNodeDoubleClick}
                 nodeTypes={NODE_TYPES}
                 proOptions={{ hideAttribution: true }}
             >

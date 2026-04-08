@@ -310,8 +310,8 @@ async def update_value_claim(
         insert_parts.append(f'    <{tessera_uri}> valor:claimContent "{escaped}"@nl .')
 
     if request.value_type_uri is not None:
-        delete_parts.append(f'    <{tessera_uri}> axia:groundedIn ?oldType .')
-        insert_parts.append(f'    <{tessera_uri}> axia:groundedIn <{request.value_type_uri}> .')
+        delete_parts.append(f'    <{tessera_uri}> axia:concernsValueType ?oldType .')
+        insert_parts.append(f'    <{tessera_uri}> axia:concernsValueType <{request.value_type_uri}> .')
 
     delete_block = "\n".join(delete_parts)
     insert_block = "\n".join(insert_parts)
@@ -333,7 +333,7 @@ WHERE {{
   GRAPH <{graph_uri}> {{
     <{tessera_uri}> a axia:ValueClaim .
     OPTIONAL {{ <{tessera_uri}> valor:claimContent ?oldContent . }}
-    OPTIONAL {{ <{tessera_uri}> axia:groundedIn ?oldType . }}
+    OPTIONAL {{ <{tessera_uri}> axia:concernsValueType ?oldType . }}
   }}
 }}"""
 
