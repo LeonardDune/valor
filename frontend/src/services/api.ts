@@ -1374,6 +1374,7 @@ export interface ValueClaimCreatedResponse {
 export interface UpdateValueClaimPayload {
     claim_content?: string;
     value_type_uri?: string;
+    claim_polarity_uri?: string;
 }
 
 export interface CreateValueCriterionPayload {
