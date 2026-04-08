@@ -52,6 +52,7 @@ class ValueCanvasOut(BaseModel):
 class UpdateValueClaimRequest(BaseModel):
     claim_content: str | None = None
     value_type_uri: str | None = None
+    claim_polarity_uri: str | None = None
 
 
 class CreateValueTensionRequest(BaseModel):
@@ -311,25 +312,34 @@ async def update_value_claim(
     if not has_permission:
         raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
 
-    if request.claim_content is None and request.value_type_uri is None:
-        raise HTTPException(status_code=422, detail="Minimaal claim_content of value_type_uri is vereist.")
+    if request.claim_content is None and request.value_type_uri is None and request.claim_polarity_uri is None:
+        raise HTTPException(status_code=422, detail="Minimaal één veld is vereist.")
 
     graph_uri = f"urn:valor:ds:{ds_id}/baseline"
 
     delete_parts = []
     insert_parts = []
+    where_optionals = []
 
     if request.claim_content is not None:
         escaped = request.claim_content.replace("\\", "\\\\").replace('"', '\\"')
         delete_parts.append(f'    <{tessera_uri}> valor:claimContent ?oldContent .')
         insert_parts.append(f'    <{tessera_uri}> valor:claimContent "{escaped}"@nl .')
+        where_optionals.append(f'    OPTIONAL {{ <{tessera_uri}> valor:claimContent ?oldContent . }}')
 
     if request.value_type_uri is not None:
         delete_parts.append(f'    <{tessera_uri}> axia:concernsValueType ?oldType .')
         insert_parts.append(f'    <{tessera_uri}> axia:concernsValueType <{request.value_type_uri}> .')
+        where_optionals.append(f'    OPTIONAL {{ <{tessera_uri}> axia:concernsValueType ?oldType . }}')
+
+    if request.claim_polarity_uri is not None:
+        delete_parts.append(f'    <{tessera_uri}> axia:claimPolarity ?oldPolarity .')
+        insert_parts.append(f'    <{tessera_uri}> axia:claimPolarity <{request.claim_polarity_uri}> .')
+        where_optionals.append(f'    OPTIONAL {{ <{tessera_uri}> axia:claimPolarity ?oldPolarity . }}')
 
     delete_block = "\n".join(delete_parts)
     insert_block = "\n".join(insert_parts)
+    where_block = "\n".join(where_optionals)
 
     sparql = f"""PREFIX axia: <{AXIA_NS}>
 PREFIX valor: <{VALOR_NS}>
@@ -347,8 +357,7 @@ INSERT {{
 WHERE {{
   GRAPH <{graph_uri}> {{
     <{tessera_uri}> a axia:ValueClaim .
-    OPTIONAL {{ <{tessera_uri}> valor:claimContent ?oldContent . }}
-    OPTIONAL {{ <{tessera_uri}> axia:concernsValueType ?oldType . }}
+{where_block}
   }}
 }}"""
 

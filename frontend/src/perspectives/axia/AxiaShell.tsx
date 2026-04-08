@@ -204,6 +204,7 @@ function EditValueClaimModal({ claim, open, onOpenChange, designSpaceId, schema,
             await api.updateValueClaim(designSpaceId, claim.tessera_uri, {
                 claim_content: inhoud.trim() || undefined,
                 value_type_uri: valueTypeUri || undefined,
+                claim_polarity_uri: polarityUri || undefined,
             });
             toast.success('Waardeclaim opgeslagen.');
             onRefresh();
