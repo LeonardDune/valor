@@ -59,6 +59,7 @@ class CreateValueTensionRequest(BaseModel):
     value_type_a_uri: str
     value_type_b_uri: str
     description: str
+    tension_context: str | None = None
 
 
 class ValueTensionOut(BaseModel):
@@ -67,6 +68,7 @@ class ValueTensionOut(BaseModel):
     value_type_a_uri: str
     value_type_b_uri: str
     description: str
+    tension_context: str | None = None
     created_by: str
     created_at: str
 
@@ -424,6 +426,10 @@ async def create_value_tension(
     graph_uri = f"urn:valor:ds:{ds_id}/baseline"
 
     escaped_desc = request.description.replace("\\", "\\\\").replace('"', '\\"')
+    context_triple = ""
+    if request.tension_context:
+        escaped_ctx = request.tension_context.replace("\\", "\\\\").replace('"', '\\"')
+        context_triple = f'\n      axia:tensionContext "{escaped_ctx}"@nl ;'
 
     sparql = f"""PREFIX axia: <{AXIA_NS}>
 PREFIX cover: <{COVER_NS}>
@@ -437,8 +443,8 @@ INSERT DATA {{
       valor:claimContent "{escaped_desc}"@nl ;
       axia:tensionBetween <{request.value_type_a_uri}> ;
       axia:tensionBetween <{request.value_type_b_uri}> ;
-      axia:spanningWaarde <{request.value_type_a_uri}> ;
-      axia:spanningWaarde <{request.value_type_b_uri}> ;
+      valor:epistemicStatus <{VALOR_NS}ProposedStatus> ;
+      valor:claimType <{VALOR_NS}AsIsType> ;{context_triple}
       valor:claimedBy <{user_uri}> ;
       valor:claimedAt "{created_at}"^^xsd:dateTime .
   }}
@@ -461,9 +467,128 @@ INSERT DATA {{
         value_type_a_uri=request.value_type_a_uri,
         value_type_b_uri=request.value_type_b_uri,
         description=request.description,
+        tension_context=request.tension_context,
         created_by=user_id,
         created_at=created_at,
     )
+
+
+# ---------------------------------------------------------------------------
+# US-7.04: GET value-tensions
+# ---------------------------------------------------------------------------
+
+class ValueTensionListOut(BaseModel):
+    tensions: list[ValueTensionOut]
+
+
+@router.get("/{ds_id}/value-tensions", response_model=ValueTensionListOut)
+async def get_value_tensions(
+    ds_id: str,
+    user: dict = Depends(get_current_user),
+) -> ValueTensionListOut:
+    user_id = user["id"]
+    has_permission = await check_permission(user_id, ds_id, Role.VIEWER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
+    query = f"""PREFIX axia: <{AXIA_NS}>
+PREFIX valor: <{VALOR_NS}>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+SELECT ?tessera ?content ?context ?claimedBy ?claimedAt WHERE {{
+  GRAPH <{graph_uri}> {{
+    ?tessera a axia:ValueTensionClaim ;
+             valor:claimContent ?content ;
+             valor:claimedBy ?claimedBy ;
+             valor:claimedAt ?claimedAt .
+    FILTER NOT EXISTS {{ ?tessera valor:retiredAt ?t . }}
+    OPTIONAL {{ ?tessera axia:tensionContext ?context . }}
+  }}
+}}
+ORDER BY ?claimedAt"""
+
+    rows = await sparql_select_global(query)
+
+    # Per tessera: laad de twee tensionBetween-waarden
+    tensions = []
+    for row in rows:
+        tessera_uri = row.get("tessera", "")
+        tessera_id = tessera_uri.rsplit(":", 1)[-1]
+
+        between_query = f"""PREFIX axia: <{AXIA_NS}>
+SELECT ?vt WHERE {{
+  GRAPH <{graph_uri}> {{
+    <{tessera_uri}> axia:tensionBetween ?vt .
+  }}
+}}"""
+        between_rows = await sparql_select_global(between_query)
+        uris = [r.get("vt", "") for r in between_rows if r.get("vt")]
+        if len(uris) < 2:
+            continue
+
+        tensions.append(ValueTensionOut(
+            tessera_uri=tessera_uri,
+            tessera_id=tessera_id,
+            value_type_a_uri=uris[0],
+            value_type_b_uri=uris[1],
+            description=row.get("content", ""),
+            tension_context=row.get("context") or None,
+            created_by=row.get("claimedBy", "").rsplit(":", 1)[-1],
+            created_at=row.get("claimedAt", ""),
+        ))
+
+    return ValueTensionListOut(tensions=tensions)
+
+
+# ---------------------------------------------------------------------------
+# US-7.04: SPARQL ASK — transitieve spanningsdetectie
+# ---------------------------------------------------------------------------
+
+@router.get("/{ds_id}/value-tensions/transitive-check", response_model=dict)
+async def check_transitive_tensions(
+    ds_id: str,
+    value_type_a: str,
+    value_type_b: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Detecteer of er een transitieve spanning bestaat via een derde ValueType."""
+    user_id = user["id"]
+    has_permission = await check_permission(user_id, ds_id, Role.VIEWER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
+    ask_query = f"""PREFIX axia: <{AXIA_NS}>
+ASK {{
+  GRAPH <{graph_uri}> {{
+    ?t1 a axia:ValueTensionClaim ;
+        axia:tensionBetween <{value_type_a}> ;
+        axia:tensionBetween ?mid .
+    ?t2 a axia:ValueTensionClaim ;
+        axia:tensionBetween ?mid ;
+        axia:tensionBetween <{value_type_b}> .
+    FILTER(?mid != <{value_type_a}> && ?mid != <{value_type_b}>)
+  }}
+}}"""
+
+    result = await sparql_select_global(ask_query.replace("ASK", "SELECT (COUNT(*) AS ?count)").replace("}", "} LIMIT 1}"))
+    # Gebruik een directe ASK via sparql_select_global workaround: check via COUNT
+    count_query = f"""PREFIX axia: <{AXIA_NS}>
+SELECT (COUNT(*) AS ?cnt) WHERE {{
+  GRAPH <{graph_uri}> {{
+    ?t1 a axia:ValueTensionClaim ;
+        axia:tensionBetween <{value_type_a}> ;
+        axia:tensionBetween ?mid .
+    ?t2 a axia:ValueTensionClaim ;
+        axia:tensionBetween ?mid ;
+        axia:tensionBetween <{value_type_b}> .
+    FILTER(?mid != <{value_type_a}> && ?mid != <{value_type_b}>)
+  }}
+}}"""
+    rows = await sparql_select_global(count_query)
+    count = int(rows[0].get("cnt", "0")) if rows else 0
+    return {"transitive": count > 0}
 
 
 # ---------------------------------------------------------------------------
