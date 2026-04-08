@@ -15,9 +15,9 @@ import type { ValueClaimItem } from '@/services/api';
 // ---------------------------------------------------------------------------
 
 const NODE_WIDTH = 220;
-const COL_GAP = 60;
-const NODE_HEIGHT = 110;
-const NODE_GAP = 20;
+const COL_GAP = 80;
+const NODE_HEIGHT = 120;
+const NODE_GAP = 16;
 const GROUP_HEADER_H = 32;
 const START_X = 60;
 const START_Y = 60;
@@ -26,16 +26,23 @@ const START_Y = 60;
 // Helpers
 // ---------------------------------------------------------------------------
 
-function polarityBorderClass(uri?: string | null): string {
-    if (!uri) return 'border-zinc-300 dark:border-zinc-600';
-    if (uri.includes('Supporting')) return 'border-green-500';
-    if (uri.includes('Opposing') || uri.includes('Conflicting')) return 'border-red-500';
-    if (uri.includes('Neutral')) return 'border-zinc-400';
-    return 'border-zinc-300 dark:border-zinc-600';
+const HEX_W = 220;
+const HEX_H = 120;
+// Platte hexagoon (punt links/rechts)
+const HEX_CLIP = 'polygon(8% 0%, 92% 0%, 100% 50%, 92% 100%, 8% 100%, 0% 50%)';
+
+function polarityColors(uri?: string | null): { bg: string; text: string; label: string } {
+    if (!uri) return { bg: '#e2e8f0', text: '#475569', label: '#94a3b8' };
+    if (uri.includes('Supporting')) return { bg: '#dcfce7', text: '#15803d', label: '#16a34a' };
+    if (uri.includes('Undermining') || uri.includes('Opposing') || uri.includes('Conflicting'))
+        return { bg: '#fee2e2', text: '#b91c1c', label: '#dc2626' };
+    if (uri.includes('Ambiguous') || uri.includes('Neutral'))
+        return { bg: '#fef9c3', text: '#854d0e', label: '#ca8a04' };
+    return { bg: '#e2e8f0', text: '#475569', label: '#94a3b8' };
 }
 
 // ---------------------------------------------------------------------------
-// Custom node — defined at module level so reference is stable
+// Custom node — hexagonale vorm, module-niveau voor stabiele referentie
 // ---------------------------------------------------------------------------
 
 interface ValueClaimNodeData {
@@ -44,15 +51,55 @@ interface ValueClaimNodeData {
 
 function ValueClaimNode({ data }: { data: ValueClaimNodeData }) {
     const { claim } = data;
-    const borderClass = polarityBorderClass(claim.polarity_uri);
+    const colors = polarityColors(claim.polarity_uri);
 
     return (
-        <div className={`w-[220px] rounded-md border-2 ${borderClass} bg-card shadow-sm p-3`}>
-            <p className="text-sm leading-snug text-card-foreground line-clamp-3">
+        <div
+            style={{
+                width: HEX_W,
+                height: HEX_H,
+                clipPath: HEX_CLIP,
+                backgroundColor: colors.bg,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '12px 32px',
+                boxSizing: 'border-box',
+                cursor: 'pointer',
+            }}
+        >
+            <p
+                style={{
+                    fontSize: 11,
+                    lineHeight: 1.4,
+                    color: colors.text,
+                    textAlign: 'center',
+                    margin: 0,
+                    overflow: 'hidden',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: 'vertical',
+                    fontWeight: 500,
+                }}
+            >
                 {claim.claim_content}
             </p>
             {claim.value_type_label && (
-                <span className="mt-2 inline-block text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-sm max-w-full truncate">
+                <span
+                    style={{
+                        marginTop: 4,
+                        fontSize: 9,
+                        color: colors.label,
+                        fontWeight: 600,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        maxWidth: '80%',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                    }}
+                >
                     {claim.value_type_label}
                 </span>
             )}
@@ -120,7 +167,7 @@ function buildNodes(claims: ValueClaimItem[]): Node[] {
                     y: START_Y + GROUP_HEADER_H + rowIndex * (NODE_HEIGHT + NODE_GAP),
                 },
                 data: { claim },
-                style: { width: NODE_WIDTH },
+                style: { width: HEX_W, height: HEX_H },
             });
         });
     });

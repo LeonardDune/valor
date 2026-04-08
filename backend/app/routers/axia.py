@@ -214,6 +214,8 @@ INSERT DATA {{
     <{tessera_uri}> a axia:ValueClaim ;
       a valor:Tessera ;
       valor:claimContent "{escaped_content}"@nl ;{value_type_triple}{polarity_triple}
+      valor:epistemicStatus <{VALOR_NS}ProposedStatus> ;
+      valor:claimType <{VALOR_NS}ToBeType> ;
       valor:claimedBy <{user_uri}> ;
       valor:claimedAt "{created_at}"^^xsd:dateTime .
   }}
