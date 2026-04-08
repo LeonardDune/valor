@@ -99,7 +99,10 @@ SELECT ?tessera ?content ?valueType ?valueTypeLabel ?polarity ?polarityLabel ?st
              valor:claimedBy ?claimedBy ;
              valor:claimedAt ?claimedAt .
     FILTER NOT EXISTS {{ ?tessera valor:retiredAt ?t . }}
-    OPTIONAL {{ ?tessera axia:concernsValueType ?valueType . }}
+    OPTIONAL {{
+      ?tessera axia:concernsValueType ?valueType .
+      FILTER(STRSTARTS(STR(?valueType), "https://"))
+    }}
     OPTIONAL {{ ?valueType rdfs:label ?valueTypeLabel . }}
     OPTIONAL {{ ?tessera axia:claimPolarity ?polarity . }}
     OPTIONAL {{ ?polarity rdfs:label ?polarityLabel . }}
@@ -111,6 +114,16 @@ SELECT ?tessera ?content ?valueType ?valueTypeLabel ?polarity ?polarityLabel ?st
 ORDER BY ?valueType"""
 
     rows = await sparql_select_global(query)
+
+    # Dedupliceer: houd per tessera_uri alleen de eerste rij (bescherming tegen meerdere valueType-triples)
+    seen_tesserae: set[str] = set()
+    deduped: list[dict] = []
+    for row in rows:
+        uri = row.get("tessera", "")
+        if uri not in seen_tesserae:
+            seen_tesserae.add(uri)
+            deduped.append(row)
+    rows = deduped
 
     groups: dict[str, list[ValueClaimOut]] = {}
     for row in rows:
