@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 import ReactFlow, {
     Background,
     useNodesState,
+    useNodesInitialized,
+    useReactFlow,
     type Node,
-    type ReactFlowInstance,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { api } from '@/services/api';
@@ -13,12 +14,13 @@ import type { ValueClaimItem } from '@/services/api';
 // Layout constants
 // ---------------------------------------------------------------------------
 
-const COL_WIDTH = 240;
-const COL_GAP = 40;
+const NODE_WIDTH = 220;
+const COL_GAP = 60;
 const NODE_HEIGHT = 110;
-const NODE_GAP = 16;
-const START_X = 40;
-const START_Y = 40;
+const NODE_GAP = 20;
+const GROUP_HEADER_H = 32;
+const START_X = 60;
+const START_Y = 60;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,34 +64,66 @@ function ValueClaimNode({ data }: { data: ValueClaimNodeData }) {
 const NODE_TYPES = { valueClaim: ValueClaimNode };
 
 // ---------------------------------------------------------------------------
+// AutoFitView — binnenin <ReactFlow> zodat RF hooks werken
+// ---------------------------------------------------------------------------
+
+function AutoFitView({ shouldFitRef }: { shouldFitRef: MutableRefObject<boolean> }) {
+    const { fitView } = useReactFlow();
+    const nodesInitialized = useNodesInitialized();
+
+    useEffect(() => {
+        if (!nodesInitialized || !shouldFitRef.current) return;
+        shouldFitRef.current = false;
+        fitView({ padding: 0.2, duration: 400 });
+    }, [nodesInitialized, fitView, shouldFitRef]);
+
+    return null;
+}
+
+// ---------------------------------------------------------------------------
 // Auto-layout: column per value type
 // ---------------------------------------------------------------------------
 
 function buildNodes(claims: ValueClaimItem[]): Node[] {
-    const grouped: Record<string, ValueClaimItem[]> = {};
+    // Groepeer per ValueType — geordend zodat named types voor ungrouped komen
+    const named: Record<string, ValueClaimItem[]> = {};
+    const ungrouped: ValueClaimItem[] = [];
+
     for (const claim of claims) {
-        const key = claim.value_type_uri || '__ungrouped';
-        (grouped[key] ??= []).push(claim);
+        if (claim.value_type_uri) {
+            (named[claim.value_type_uri] ??= []).push(claim);
+        } else {
+            ungrouped.push(claim);
+        }
     }
 
+    // Sorteer groepen op label voor stabiele volgorde
+    const groups = Object.values(named).sort((a, b) => {
+        const la = a[0]?.value_type_label ?? '';
+        const lb = b[0]?.value_type_label ?? '';
+        return la.localeCompare(lb, 'nl');
+    });
+    if (ungrouped.length > 0) groups.push(ungrouped);
+
     const nodes: Node[] = [];
-    let colIndex = 0;
-    for (const group of Object.values(grouped)) {
+    const colStep = NODE_WIDTH + COL_GAP;
+
+    groups.forEach((group, colIndex) => {
+        const x = START_X + colIndex * colStep;
         group.forEach((claim, rowIndex) => {
-            const hasPosition = claim.canvas_x != null && claim.canvas_y != null;
             nodes.push({
                 id: claim.tessera_id,
                 type: 'valueClaim',
+                // Altijd auto-layout — geslagen stored positions veroorzaken verstrooide canvas
                 position: {
-                    x: hasPosition ? claim.canvas_x! : START_X + colIndex * (COL_WIDTH + COL_GAP),
-                    y: hasPosition ? claim.canvas_y! : START_Y + rowIndex * (NODE_HEIGHT + NODE_GAP),
+                    x,
+                    y: START_Y + GROUP_HEADER_H + rowIndex * (NODE_HEIGHT + NODE_GAP),
                 },
                 data: { claim },
-                style: { width: 220 },
+                style: { width: NODE_WIDTH },
             });
         });
-        colIndex++;
-    }
+    });
     return nodes;
 }
 
@@ -104,7 +138,6 @@ interface ValueCanvasProps {
 
 export function ValueCanvas({ designSpaceId, refreshTrigger = 0 }: ValueCanvasProps) {
     const [nodes, setNodes, onNodesChange] = useNodesState<ValueClaimNodeData>([]);
-    const rfInstance = useRef<ReactFlowInstance | null>(null);
     const shouldFitRef = useRef(false);
 
     const load = useCallback(async () => {
@@ -124,43 +157,17 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0 }: ValueCanvasPr
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [load, refreshTrigger]);
 
-    // fitView nadat React Flow de nodes heeft gerenderd en gemeten (double RAF)
-    useEffect(() => {
-        if (!shouldFitRef.current || nodes.length === 0) return;
-        shouldFitRef.current = false;
-        const id1 = requestAnimationFrame(() => {
-            const id2 = requestAnimationFrame(() => {
-                rfInstance.current?.fitView({ padding: 0.15 });
-            });
-            return () => cancelAnimationFrame(id2);
-        });
-        return () => cancelAnimationFrame(id1);
-    }, [nodes]);
-
-    const onNodeDragStop = useCallback(
-        (_event: React.MouseEvent, node: Node) => {
-            api.updateValueClaimPosition(
-                designSpaceId,
-                node.id,
-                node.position.x,
-                node.position.y,
-            ).catch(() => {});
-        },
-        [designSpaceId],
-    );
-
     return (
         <div className="h-full w-full">
             <ReactFlow
                 nodes={nodes}
                 edges={[]}
                 onNodesChange={onNodesChange}
-                onNodeDragStop={onNodeDragStop}
-                onInit={(instance) => { rfInstance.current = instance; }}
                 nodeTypes={NODE_TYPES}
                 proOptions={{ hideAttribution: true }}
             >
                 <Background />
+                <AutoFitView shouldFitRef={shouldFitRef} />
             </ReactFlow>
         </div>
     );
