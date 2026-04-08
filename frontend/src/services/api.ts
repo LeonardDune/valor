@@ -1056,6 +1056,10 @@ WHERE {
         await apiClient.delete(`/designspace/${dsId}/value-claim/${encodeURIComponent(tesseraUri)}`);
     },
 
+    updateValueClaimPosition: async (dsId: string, tesseraId: string, canvas_x: number, canvas_y: number): Promise<void> => {
+        await apiClient.patch(`/designspace/${dsId}/value-claim/${tesseraId}/position`, { canvas_x, canvas_y });
+    },
+
     createValueTension: async (dsId: string, payload: CreateValueTensionPayload): Promise<ValueTensionResponse> => {
         const response = await apiClient.post<ValueTensionResponse>(`/designspace/${dsId}/value-tension`, payload);
         return response.data;
@@ -1317,6 +1321,11 @@ export interface ValueClaimItem {
     claim_content: string;
     value_type_uri: string;
     value_type_label: string;
+    polarity_uri?: string;
+    polarity_label?: string;
+    epistemic_status?: string;
+    canvas_x?: number;
+    canvas_y?: number;
     claimed_by: string;
     claimed_at: string;
 }

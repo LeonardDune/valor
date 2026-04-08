@@ -1,214 +1,184 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Pencil, Trash2, Check, X } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
+import ReactFlow, {
+    Background,
+    useNodesState,
+    useNodesInitialized,
+    useReactFlow,
+    type Node,
+} from 'reactflow';
+import 'reactflow/dist/style.css';
 import { api } from '@/services/api';
-import type { ValueCanvasResponse, ValueClaimItem } from '@/services/api';
+import type { ValueClaimItem } from '@/services/api';
+
+// ---------------------------------------------------------------------------
+// Layout constants
+// ---------------------------------------------------------------------------
+
+const NODE_WIDTH = 220;
+const COL_GAP = 60;
+const NODE_HEIGHT = 110;
+const NODE_GAP = 20;
+const GROUP_HEADER_H = 32;
+const START_X = 60;
+const START_Y = 60;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function polarityBorderClass(uri?: string | null): string {
+    if (!uri) return 'border-zinc-300 dark:border-zinc-600';
+    if (uri.includes('Supporting')) return 'border-green-500';
+    if (uri.includes('Opposing') || uri.includes('Conflicting')) return 'border-red-500';
+    if (uri.includes('Neutral')) return 'border-zinc-400';
+    return 'border-zinc-300 dark:border-zinc-600';
+}
+
+// ---------------------------------------------------------------------------
+// Custom node — defined at module level so reference is stable
+// ---------------------------------------------------------------------------
+
+interface ValueClaimNodeData {
+    claim: ValueClaimItem;
+}
+
+function ValueClaimNode({ data }: { data: ValueClaimNodeData }) {
+    const { claim } = data;
+    const borderClass = polarityBorderClass(claim.polarity_uri);
+
+    return (
+        <div className={`w-[220px] rounded-md border-2 ${borderClass} bg-card shadow-sm p-3`}>
+            <p className="text-sm leading-snug text-card-foreground line-clamp-3">
+                {claim.claim_content}
+            </p>
+            {claim.value_type_label && (
+                <span className="mt-2 inline-block text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-sm max-w-full truncate">
+                    {claim.value_type_label}
+                </span>
+            )}
+        </div>
+    );
+}
+
+// Stable module-level constant — prevents React Flow nodeTypes warning
+const NODE_TYPES = { valueClaim: ValueClaimNode };
+
+// ---------------------------------------------------------------------------
+// AutoFitView — binnenin <ReactFlow> zodat RF hooks werken
+// ---------------------------------------------------------------------------
+
+function AutoFitView({ shouldFitRef }: { shouldFitRef: MutableRefObject<boolean> }) {
+    const { fitView } = useReactFlow();
+    const nodesInitialized = useNodesInitialized();
+
+    useEffect(() => {
+        if (!nodesInitialized || !shouldFitRef.current) return;
+        shouldFitRef.current = false;
+        fitView({ padding: 0.2, duration: 400 });
+    }, [nodesInitialized, fitView, shouldFitRef]);
+
+    return null;
+}
+
+// ---------------------------------------------------------------------------
+// Auto-layout: column per value type
+// ---------------------------------------------------------------------------
+
+function buildNodes(claims: ValueClaimItem[]): Node[] {
+    // Groepeer per ValueType — geordend zodat named types voor ungrouped komen
+    const named: Record<string, ValueClaimItem[]> = {};
+    const ungrouped: ValueClaimItem[] = [];
+
+    for (const claim of claims) {
+        if (claim.value_type_uri) {
+            (named[claim.value_type_uri] ??= []).push(claim);
+        } else {
+            ungrouped.push(claim);
+        }
+    }
+
+    // Sorteer groepen op label voor stabiele volgorde
+    const groups = Object.values(named).sort((a, b) => {
+        const la = a[0]?.value_type_label ?? '';
+        const lb = b[0]?.value_type_label ?? '';
+        return la.localeCompare(lb, 'nl');
+    });
+    if (ungrouped.length > 0) groups.push(ungrouped);
+
+    const nodes: Node[] = [];
+    const colStep = NODE_WIDTH + COL_GAP;
+
+    groups.forEach((group, colIndex) => {
+        const x = START_X + colIndex * colStep;
+        group.forEach((claim, rowIndex) => {
+            nodes.push({
+                id: claim.tessera_id,
+                type: 'valueClaim',
+                // Altijd auto-layout — geslagen stored positions veroorzaken verstrooide canvas
+                position: {
+                    x,
+                    y: START_Y + GROUP_HEADER_H + rowIndex * (NODE_HEIGHT + NODE_GAP),
+                },
+                data: { claim },
+                style: { width: NODE_WIDTH },
+            });
+        });
+    });
+    return nodes;
+}
+
+// ---------------------------------------------------------------------------
+// ValueCanvas
+// ---------------------------------------------------------------------------
 
 interface ValueCanvasProps {
     designSpaceId: string;
+    refreshTrigger?: number;
+    onEdit?: (claim: ValueClaimItem) => void;
 }
 
-export function ValueCanvas({ designSpaceId }: ValueCanvasProps) {
-    const [data, setData] = useState<ValueCanvasResponse | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: ValueCanvasProps) {
+    const [nodes, setNodes, onNodesChange] = useNodesState<ValueClaimNodeData>([]);
+    const shouldFitRef = useRef(false);
 
     const load = useCallback(async () => {
-        setLoading(true);
-        setError(null);
         try {
             const result = await api.getValueClaims(designSpaceId);
-            setData(result);
+            const flat: ValueClaimItem[] = Object.values(result.groups).flat();
+            shouldFitRef.current = true;
+            setNodes(buildNodes(flat));
         } catch {
-            setError('Kon waardeclaims niet laden.');
-        } finally {
-            setLoading(false);
+            // keep canvas empty on error
         }
-    }, [designSpaceId]);
+    }, [designSpaceId, setNodes]);
 
     useEffect(() => {
         load();
-    }, [load]);
+    // refreshTrigger intentionally included to reload when new claims are created
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [load, refreshTrigger]);
 
-    if (loading) {
-        return (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                Waardeclaims laden...
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="flex items-center justify-center h-full text-destructive text-sm">
-                {error}
-            </div>
-        );
-    }
-
-    if (!data || Object.keys(data.groups).length === 0) {
-        return (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm italic">
-                Geen waardeclaims gevonden voor deze DesignSpace.
-            </div>
-        );
-    }
-
-    const groups = Object.entries(data.groups);
-
-    return (
-        <div className="h-full w-full overflow-x-auto">
-            <div className="flex gap-4 p-4 min-h-full">
-                {groups.map(([valueTypeUri, claims]) => (
-                    <ValueTypeColumn
-                        key={valueTypeUri}
-                        designSpaceId={designSpaceId}
-                        valueTypeUri={valueTypeUri}
-                        valueTypeLabel={claims[0]?.value_type_label ?? valueTypeUri}
-                        claims={claims}
-                        onChanged={load}
-                    />
-                ))}
-            </div>
-        </div>
+    // Dubbelklik opent edit modal — exact zoals CAUSA (onNodeDoubleClick → onEdit)
+    const handleNodeDoubleClick = useCallback(
+        (_: React.MouseEvent, node: { data: ValueClaimNodeData }) => {
+            onEdit?.(node.data.claim);
+        },
+        [onEdit],
     );
-}
-
-interface ValueTypeColumnProps {
-    designSpaceId: string;
-    valueTypeUri: string;
-    valueTypeLabel: string;
-    claims: ValueClaimItem[];
-    onChanged: () => void;
-}
-
-function ValueTypeColumn({ designSpaceId, valueTypeLabel, claims, onChanged }: ValueTypeColumnProps) {
-    return (
-        <div className="flex flex-col gap-2 min-w-[220px] max-w-[280px]">
-            <div className="rounded-md bg-zinc-100 dark:bg-zinc-800 px-3 py-2">
-                <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-200 truncate" title={valueTypeLabel}>
-                    {valueTypeLabel}
-                </h3>
-                <span className="text-xs text-muted-foreground">{claims.length} claim{claims.length !== 1 ? 's' : ''}</span>
-            </div>
-            <div className="flex flex-col gap-2">
-                {claims.map((claim) => (
-                    <ValueClaimCard
-                        key={claim.tessera_id}
-                        claim={claim}
-                        designSpaceId={designSpaceId}
-                        onChanged={onChanged}
-                    />
-                ))}
-            </div>
-        </div>
-    );
-}
-
-interface ValueClaimCardProps {
-    claim: ValueClaimItem;
-    designSpaceId: string;
-    onChanged: () => void;
-}
-
-function ValueClaimCard({ claim, designSpaceId, onChanged }: ValueClaimCardProps) {
-    const [editing, setEditing] = useState(false);
-    const [content, setContent] = useState(claim.claim_content);
-    const [saving, setSaving] = useState(false);
-    const [deleting, setDeleting] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-
-    const handleSave = async () => {
-        if (!content.trim()) return;
-        setSaving(true);
-        setError(null);
-        try {
-            await api.updateValueClaim(designSpaceId, claim.tessera_uri, { claim_content: content.trim() });
-            setEditing(false);
-            onChanged();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Opslaan mislukt');
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    const handleDelete = async () => {
-        if (!confirm('Waardeclaim verwijderen?')) return;
-        setDeleting(true);
-        setError(null);
-        try {
-            await api.deleteValueClaim(designSpaceId, claim.tessera_uri);
-            onChanged();
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Verwijderen mislukt');
-            setDeleting(false);
-        }
-    };
-
-    const handleCancel = () => {
-        setContent(claim.claim_content);
-        setEditing(false);
-        setError(null);
-    };
 
     return (
-        <div className="group rounded-md border border-border bg-card p-3 shadow-sm">
-            {editing ? (
-                <div className="space-y-2">
-                    <Input
-                        value={content}
-                        onChange={(e) => setContent(e.target.value)}
-                        className="text-sm"
-                        autoFocus
-                    />
-                    {error && <p className="text-xs text-destructive">{error}</p>}
-                    <div className="flex gap-1 justify-end">
-                        <Button type="button" variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={handleCancel}>
-                            <X className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                            type="button"
-                            size="sm"
-                            className="h-6 w-6 p-0"
-                            onClick={handleSave}
-                            disabled={saving || !content.trim()}
-                        >
-                            <Check className="h-3.5 w-3.5" />
-                        </Button>
-                    </div>
-                </div>
-            ) : (
-                <>
-                    <p className="text-sm text-card-foreground leading-snug">{claim.claim_content}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                        Door {claim.claimed_by} &middot; {new Date(claim.claimed_at).toLocaleDateString('nl-NL')}
-                    </p>
-                    <div className="flex gap-1 mt-2 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                            onClick={() => setEditing(true)}
-                        >
-                            <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                            onClick={handleDelete}
-                            disabled={deleting}
-                        >
-                            <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                    </div>
-                    {error && <p className="text-xs text-destructive mt-1">{error}</p>}
-                </>
-            )}
+        <div className="h-full w-full">
+            <ReactFlow
+                nodes={nodes}
+                edges={[]}
+                onNodesChange={onNodesChange}
+                onNodeDoubleClick={handleNodeDoubleClick}
+                nodeTypes={NODE_TYPES}
+                proOptions={{ hideAttribution: true }}
+            >
+                <Background />
+                <AutoFitView shouldFitRef={shouldFitRef} />
+            </ReactFlow>
         </div>
     );
 }
