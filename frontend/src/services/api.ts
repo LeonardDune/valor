@@ -1065,6 +1065,28 @@ WHERE {
         return response.data;
     },
 
+    getValueTensions: async (dsId: string): Promise<ValueTensionListResponse> => {
+        const response = await apiClient.get<ValueTensionListResponse>(`/designspace/${dsId}/value-tensions`);
+        return response.data;
+    },
+
+    updateValueTension: async (dsId: string, tesseraUri: string, payload: { description?: string; tension_context?: string }): Promise<ValueTensionResponse> => {
+        const response = await apiClient.patch<ValueTensionResponse>(`/designspace/${dsId}/value-tension/${encodeURIComponent(tesseraUri)}`, payload);
+        return response.data;
+    },
+
+    deleteValueTension: async (dsId: string, tesseraUri: string): Promise<void> => {
+        await apiClient.delete(`/designspace/${dsId}/value-tension/${encodeURIComponent(tesseraUri)}`);
+    },
+
+    checkTransitiveTension: async (dsId: string, vtA: string, vtB: string): Promise<boolean> => {
+        const response = await apiClient.get<{ transitive: boolean }>(
+            `/designspace/${dsId}/value-tensions/transitive-check`,
+            { params: { value_type_a: vtA, value_type_b: vtB } },
+        );
+        return response.data.transitive;
+    },
+
     getValueImplications: async (dsId: string): Promise<DesignImplicationCount[]> => {
         const response = await apiClient.get<DesignImplicationCount[]>(`/designspace/${dsId}/value-implications`);
         return response.data;
@@ -1339,6 +1361,7 @@ export interface CreateValueTensionPayload {
     value_type_a_uri: string;
     value_type_b_uri: string;
     description: string;
+    tension_context?: string;
 }
 
 export interface ValueTensionResponse {
@@ -1347,8 +1370,13 @@ export interface ValueTensionResponse {
     value_type_a_uri: string;
     value_type_b_uri: string;
     description: string;
+    tension_context?: string | null;
     created_by: string;
     created_at: string;
+}
+
+export interface ValueTensionListResponse {
+    tensions: ValueTensionResponse[];
 }
 
 export interface DesignImplicationCount {
