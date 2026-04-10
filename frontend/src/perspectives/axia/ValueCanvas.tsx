@@ -10,7 +10,6 @@ import ReactFlow, {
     useNodesInitialized,
     useReactFlow,
     getBezierPath,
-    EdgeLabelRenderer,
     BaseEdge,
     type Node,
     type Edge,
@@ -152,8 +151,8 @@ interface ValueTensionEdgeData {
     tessera_uri?: string;
 }
 
-function ValueTensionEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, markerStart, data }: EdgeProps<ValueTensionEdgeData>) {
-    const [edgePath, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+function ValueTensionEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, markerStart }: EdgeProps<ValueTensionEdgeData>) {
+    const [edgePath] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
 
     return (
         <>
@@ -169,26 +168,6 @@ function ValueTensionEdge({ id, sourceX, sourceY, targetX, targetY, sourcePositi
                     opacity: 0.7,
                 }}
             />
-            {data?.description && (
-                <EdgeLabelRenderer>
-                    <div
-                        style={{
-                            position: 'absolute',
-                            transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
-                            pointerEvents: 'all',
-                            zIndex: 10,
-                        }}
-                        className="nodrag nopan"
-                    >
-                        <div
-                            className="bg-destructive/10 text-destructive border border-destructive/30 rounded px-1.5 py-0.5 text-[9px] font-medium max-w-[120px] text-center truncate"
-                            title={data.description}
-                        >
-                            {data.description}
-                        </div>
-                    </div>
-                </EdgeLabelRenderer>
-            )}
         </>
     );
 }
