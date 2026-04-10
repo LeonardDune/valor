@@ -85,7 +85,7 @@ export function HeatmapOverlay({ designSpaceId, rfInstance, nodeIds }: HeatmapOv
 
     // Map factor_uri → count (gebruik het trailing segment als node-id lookup)
     const countByFactorUri = new Map<string, number>(
-        implications.map((i) => [i.factor_uri, i.implication_count])
+        implications.map((i) => [i.tessera_uri, i.implication_count])
     );
 
     // Zoek count voor een node-id: probeer directe match, dan URI-suffix match

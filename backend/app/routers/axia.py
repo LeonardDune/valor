@@ -713,9 +713,78 @@ class ValueChainOut(BaseModel):
 
 
 class DesignImplicationCount(BaseModel):
-    factor_uri: str
+    tessera_uri: str
     implication_count: int
 
+
+class CreateDesignImplicationRequest(BaseModel):
+    tessera_uri: str
+    value_type_uri: str
+    polarity_uri: str
+
+
+class DesignImplicationOut(BaseModel):
+    implication_uri: str
+    tessera_uri: str
+    value_type_uri: str
+    polarity_uri: str
+    created_by: str
+    created_at: str
+
+
+# ---------------------------------------------------------------------------
+# US-7.05: POST value-implication
+# ---------------------------------------------------------------------------
+
+@router.post("/{ds_id}/value-implication", response_model=DesignImplicationOut, status_code=201)
+async def create_design_implication(
+    ds_id: str,
+    request: CreateDesignImplicationRequest,
+    user: dict = Depends(get_current_user),
+) -> DesignImplicationOut:
+    user_id = user["id"]
+
+    has_permission = await check_permission(user_id, ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
+    implication_id = str(uuid.uuid4())
+    implication_uri = f"urn:valor:ds:{ds_id}:design-implication:{implication_id}"
+    now = datetime.now(timezone.utc).isoformat()
+
+    sparql = f"""PREFIX axia: <{AXIA_NS}>
+PREFIX valor: <{VALOR_NS}>
+PREFIX xsd: <{XSD_NS}>
+
+INSERT DATA {{
+  GRAPH <{graph_uri}> {{
+    <{implication_uri}> a axia:DesignImplication ;
+                        axia:implicationSource <{request.tessera_uri}> ;
+                        axia:implicationTarget <{request.value_type_uri}> ;
+                        axia:implicationPolarity <{request.polarity_uri}> ;
+                        valor:createdBy <urn:valor:user:{user_id}> ;
+                        valor:createdAt "{now}"^^xsd:dateTime .
+  }}
+}}"""
+
+    await sparql_update(sparql, ds_id)
+    user_uri = f"urn:valor:user:{user_id}"
+    await record_provenance_activity(ds_id, "DesignImplicationCreated", user_uri, used=[request.tessera_uri])
+
+    return DesignImplicationOut(
+        implication_uri=implication_uri,
+        tessera_uri=request.tessera_uri,
+        value_type_uri=request.value_type_uri,
+        polarity_uri=request.polarity_uri,
+        created_by=user_uri,
+        created_at=now,
+    )
+
+
+# ---------------------------------------------------------------------------
+# US-7.05: GET value-implications (count per tessera)
+# ---------------------------------------------------------------------------
 
 @router.get("/{ds_id}/value-implications", response_model=list[DesignImplicationCount])
 async def get_value_implications(
@@ -732,21 +801,21 @@ async def get_value_implications(
 
     query = f"""PREFIX axia: <{AXIA_NS}>
 
-SELECT ?factor (COUNT(?implication) AS ?count) WHERE {{
+SELECT ?tessera (COUNT(?implication) AS ?count) WHERE {{
   GRAPH <{graph_uri}> {{
     ?implication a axia:DesignImplication ;
-                 axia:impliesFor ?factor .
+                 axia:implicationSource ?tessera .
   }}
 }}
-GROUP BY ?factor
+GROUP BY ?tessera
 ORDER BY DESC(?count)"""
 
     rows = await sparql_select_global(query)
 
     return [
         DesignImplicationCount(
-            factor_uri=row["factor"],
-            implication_count=int(row["count"]),
+            tessera_uri=row["tessera"],
+            implication_count=int(str(row["count"]).split("^^")[0].strip('"')),
         )
         for row in rows
     ]
