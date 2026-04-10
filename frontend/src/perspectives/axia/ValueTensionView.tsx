@@ -327,8 +327,9 @@ export function ValueTensionView({ designSpaceId }: ValueTensionViewProps) {
         <div className="flex flex-col h-full gap-4 p-4">
             <div className="flex items-center justify-between">
                 <h2 className="text-base font-semibold">Waardespanningen</h2>
-                <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => setIsModalOpen(true)}>
-                    <Plus className="h-4 w-4" />
+                <Button size="sm" onClick={() => setIsModalOpen(true)}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Spanning toevoegen
                 </Button>
             </div>
 
