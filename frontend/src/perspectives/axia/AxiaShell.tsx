@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, GitBranch, AlertTriangle, Loader2, AlertCircle, Save, Trash2 } from 'lucide-react';
+import { Plus, GitBranch, Loader2, AlertCircle, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,7 +35,6 @@ import {
 import { PerspectiveToolbar } from '@/components/shell/PerspectiveToolbar';
 import { ValueCanvas } from './ValueCanvas';
 import { ValueChain } from './ValueChain';
-import { ValueTensionView } from './ValueTensionView';
 import { api } from '@/services/api';
 import type { CreateValueClaimPayload, AxiaSchema, ValueClaimItem } from '@/services/api';
 import { useAxiaSchema } from './hooks/useAxiaSchema';
@@ -44,7 +43,7 @@ import { useAxiaSchema } from './hooks/useAxiaSchema';
 // Types
 // ---------------------------------------------------------------------------
 
-type AxiaView = 'canvas' | 'keten' | 'spanningen';
+type AxiaView = 'canvas' | 'keten';
 
 interface AxiaShellProps {
     designSpaceId: string;
@@ -351,16 +350,6 @@ function AxiaViewToggle({ value, onChange }: AxiaViewToggleProps) {
                 </Tooltip>
             </TooltipProvider>
 
-            <TooltipProvider>
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <ToggleGroupItem value="spanningen" size="sm" aria-label="Waardespanningen">
-                            <AlertTriangle className="h-4 w-4" />
-                        </ToggleGroupItem>
-                    </TooltipTrigger>
-                    <TooltipContent>Waardespanningen</TooltipContent>
-                </Tooltip>
-            </TooltipProvider>
         </ToggleGroup>
     );
 }
@@ -446,7 +435,6 @@ export function AxiaShell({ designSpaceId }: AxiaShellProps) {
                     />
                 )}
                 {view === 'keten' && <ValueChain key={`keten-${refreshKey}`} designSpaceId={designSpaceId} />}
-                {view === 'spanningen' && <ValueTensionView key={`spanningen-${refreshKey}`} designSpaceId={designSpaceId} />}
             </div>
 
             <CreateValueClaimModal
