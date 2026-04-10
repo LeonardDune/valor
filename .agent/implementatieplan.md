@@ -82,7 +82,7 @@ Epic 6 en Epic 7 zijn heropend met volledige v2 User Stories op basis van VALOR-
 | US-7.02 | #529 | Waardekaart laden + fix axia:concernsValueType | ✅ gemerged |
 | US-7.03 | #530 | ValueClaim aanmaken via waardepalet | ✅ gemerged |
 | US-7.04 | #531 | ValueTensionClaim aanmaken | ✅ gemerged |
-| US-7.05 | #532 | DesignImplication aanmaken | ⬜ open |
+| US-7.05 | #532 | DesignImplication aanmaken | ⏳ deferred — zinloos zonder cross-perspectief Tessera-koppeling (CAUSA/ACTOR) |
 | US-7.06 | #533 | ValueType-palet met live filtering | ⬜ open |
 | US-7.07 | #534 | Alternatief-filter op canvas | ⏳ geblokkeerd: Epic 17 (#456) |
 | US-7.08 | #535 | Heatmap-overlay via SPARQL-aggregatie | ⬜ open |
