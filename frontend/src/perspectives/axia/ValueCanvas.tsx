@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import ReactFlow, {
     Background,
+    ConnectionMode,
     Handle,
     Position,
     useNodesState,
@@ -28,6 +29,7 @@ import {
 } from '@/components/ui/dialog';
 import { api } from '@/services/api';
 import type { ValueClaimItem } from '@/services/api';
+import { useAxiaSchema } from './hooks/useAxiaSchema';
 
 // ---------------------------------------------------------------------------
 // Layout constants
@@ -69,62 +71,30 @@ interface ValueClaimNodeData {
 function ValueClaimNode({ data }: { data: ValueClaimNodeData }) {
     const { claim } = data;
     const colors = polarityColors(claim.polarity_uri);
+    const [hovered, setHovered] = useState(false);
 
-    const handleStyle: React.CSSProperties = {
-        width: 8,
-        height: 8,
-        background: '#94a3b8',
-        border: '1px solid #cbd5e1',
-        opacity: 0,
+    const handleStyle = (visible: boolean): React.CSSProperties => ({
+        width: 10,
+        height: 10,
+        background: '#475569',
+        border: '2px solid #94a3b8',
+        borderRadius: '50%',
+        opacity: visible ? 1 : 0,
         transition: 'opacity 0.15s',
-    };
+        zIndex: 10,
+    });
 
     return (
         <div
-            className="group"
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
             style={{ width: HEX_W, height: HEX_H, position: 'relative' }}
         >
-            {/* Handles — zichtbaar bij hover via CSS group */}
-            <Handle
-                id="source-left" type="source" position={Position.Left}
-                style={{ ...handleStyle, left: 4 }}
-                className="!opacity-0 group-hover:!opacity-100"
-            />
-            <Handle
-                id="target-left" type="target" position={Position.Left}
-                style={{ ...handleStyle, left: 4 }}
-                className="!opacity-0 group-hover:!opacity-100"
-            />
-            <Handle
-                id="source-right" type="source" position={Position.Right}
-                style={{ ...handleStyle, right: 4 }}
-                className="!opacity-0 group-hover:!opacity-100"
-            />
-            <Handle
-                id="target-right" type="target" position={Position.Right}
-                style={{ ...handleStyle, right: 4 }}
-                className="!opacity-0 group-hover:!opacity-100"
-            />
-            <Handle
-                id="source-top" type="source" position={Position.Top}
-                style={{ ...handleStyle, top: 4 }}
-                className="!opacity-0 group-hover:!opacity-100"
-            />
-            <Handle
-                id="target-top" type="target" position={Position.Top}
-                style={{ ...handleStyle, top: 4 }}
-                className="!opacity-0 group-hover:!opacity-100"
-            />
-            <Handle
-                id="source-bottom" type="source" position={Position.Bottom}
-                style={{ ...handleStyle, bottom: 4 }}
-                className="!opacity-0 group-hover:!opacity-100"
-            />
-            <Handle
-                id="target-bottom" type="target" position={Position.Bottom}
-                style={{ ...handleStyle, bottom: 4 }}
-                className="!opacity-0 group-hover:!opacity-100"
-            />
+            {/* 4 handles — één per kant, alleen source (RF laat elk handle als target toe) */}
+            <Handle id="left"   type="source" position={Position.Left}   style={handleStyle(hovered)} />
+            <Handle id="right"  type="source" position={Position.Right}  style={handleStyle(hovered)} />
+            <Handle id="top"    type="source" position={Position.Top}    style={handleStyle(hovered)} />
+            <Handle id="bottom" type="source" position={Position.Bottom} style={handleStyle(hovered)} />
 
             {/* Hexagon */}
             <div
@@ -353,6 +323,7 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const shouldFitRef = useRef(false);
     const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null);
+    useAxiaSchema(); // schema preloaden voor ValueTensionView
 
     // Houd een map bij van tessera_id → claim voor snelle lookup bij onConnect
     const claimsMapRef = useRef<Map<string, ValueClaimItem>>(new Map());
@@ -425,8 +396,8 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
             setPendingConnection({
                 sourceNodeId: connection.source,
                 targetNodeId: connection.target,
-                sourceLabel: sourceNode.value_type_label || sourceNode.value_type_uri.split('#').pop() || '',
-                targetLabel: targetNode.value_type_label || targetNode.value_type_uri.split('#').pop() || '',
+                sourceLabel: sourceNode.claim_content,
+                targetLabel: targetNode.claim_content,
                 sourceVtUri: sourceNode.value_type_uri,
                 targetVtUri: targetNode.value_type_uri,
             });
@@ -476,6 +447,7 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
                 onNodeDoubleClick={handleNodeDoubleClick}
                 nodeTypes={NODE_TYPES}
                 edgeTypes={EDGE_TYPES}
+                connectionMode={ConnectionMode.Loose}
                 proOptions={{ hideAttribution: true }}
             >
                 <Background />

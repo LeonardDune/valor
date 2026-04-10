@@ -559,21 +559,6 @@ async def check_transitive_tensions(
         raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
 
     graph_uri = f"urn:valor:ds:{ds_id}/baseline"
-    ask_query = f"""PREFIX axia: <{AXIA_NS}>
-ASK {{
-  GRAPH <{graph_uri}> {{
-    ?t1 a axia:ValueTensionClaim ;
-        axia:tensionBetween <{value_type_a}> ;
-        axia:tensionBetween ?mid .
-    ?t2 a axia:ValueTensionClaim ;
-        axia:tensionBetween ?mid ;
-        axia:tensionBetween <{value_type_b}> .
-    FILTER(?mid != <{value_type_a}> && ?mid != <{value_type_b}>)
-  }}
-}}"""
-
-    result = await sparql_select_global(ask_query.replace("ASK", "SELECT (COUNT(*) AS ?count)").replace("}", "} LIMIT 1}"))
-    # Gebruik een directe ASK via sparql_select_global workaround: check via COUNT
     count_query = f"""PREFIX axia: <{AXIA_NS}>
 SELECT (COUNT(*) AS ?cnt) WHERE {{
   GRAPH <{graph_uri}> {{
@@ -587,7 +572,10 @@ SELECT (COUNT(*) AS ?cnt) WHERE {{
   }}
 }}"""
     rows = await sparql_select_global(count_query)
-    count = int(rows[0].get("cnt", "0")) if rows else 0
+    try:
+        count = int(str(rows[0].get("cnt", "0")).split("^^")[0].strip('"')) if rows else 0
+    except (ValueError, TypeError):
+        count = 0
     return {"transitive": count > 0}
 
 
