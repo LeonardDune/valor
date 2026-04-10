@@ -1092,6 +1092,11 @@ WHERE {
         return response.data;
     },
 
+    createDesignImplication: async (dsId: string, payload: CreateDesignImplicationPayload): Promise<DesignImplicationResponse> => {
+        const response = await apiClient.post<DesignImplicationResponse>(`/designspace/${dsId}/value-implication`, payload);
+        return response.data;
+    },
+
     createValueCriterion: async (dsId: string, payload: CreateValueCriterionPayload): Promise<ValueCriterionResponse> => {
         const response = await apiClient.post<ValueCriterionResponse>(`/designspace/${dsId}/value-criterion`, payload);
         return response.data;
@@ -1380,8 +1385,23 @@ export interface ValueTensionListResponse {
 }
 
 export interface DesignImplicationCount {
-    factor_uri: string;
+    tessera_uri: string;
     implication_count: number;
+}
+
+export interface CreateDesignImplicationPayload {
+    tessera_uri: string;
+    value_type_uri: string;
+    polarity_uri: string;
+}
+
+export interface DesignImplicationResponse {
+    implication_uri: string;
+    tessera_uri: string;
+    value_type_uri: string;
+    polarity_uri: string;
+    created_by: string;
+    created_at: string;
 }
 
 export interface CreateValueClaimPayload {

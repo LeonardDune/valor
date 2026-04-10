@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
+import { createPortal } from 'react-dom';
+import { Link } from 'lucide-react';
 import ReactFlow, {
     Background,
     ConnectionMode,
@@ -29,6 +31,13 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/select';
 import { api } from '@/services/api';
 import type { ValueClaimItem, ValueTensionResponse } from '@/services/api';
 import { useAxiaSchema } from './hooks/useAxiaSchema';
@@ -69,10 +78,11 @@ function polarityColors(uri?: string | null): { bg: string; text: string; label:
 
 interface ValueClaimNodeData {
     claim: ValueClaimItem;
+    implicationCount?: number;
 }
 
 function ValueClaimNode({ data }: { data: ValueClaimNodeData }) {
-    const { claim } = data;
+    const { claim, implicationCount } = data;
     const colors = polarityColors(claim.polarity_uri);
     const [hovered, setHovered] = useState(false);
 
@@ -102,6 +112,18 @@ function ValueClaimNode({ data }: { data: ValueClaimNodeData }) {
             <Handle id="target-right"  type="target" position={Position.Right}  style={handleStyle(hovered)} />
             <Handle id="target-top"    type="target" position={Position.Top}    style={handleStyle(hovered)} />
             <Handle id="target-bottom" type="target" position={Position.Bottom} style={handleStyle(hovered)} />
+
+            {/* Implicatie-badge — buiten clip-path */}
+            {(implicationCount ?? 0) > 0 && (
+                <div style={{
+                    position: 'absolute', top: 4, right: 12, zIndex: 20,
+                    background: '#2563eb', color: '#fff',
+                    borderRadius: '9999px', fontSize: 9, fontWeight: 700,
+                    padding: '1px 5px', lineHeight: 1.4, pointerEvents: 'none',
+                }}>
+                    {implicationCount}
+                </div>
+            )}
 
             {/* Hexagon */}
             <div
@@ -417,10 +439,158 @@ function EditTensionDialog({ tension, onClose, onSaved, designSpaceId }: EditTen
 }
 
 // ---------------------------------------------------------------------------
+// NodeContextMenu — rechtsklik op een ValueClaimNode
+// ---------------------------------------------------------------------------
+
+interface NodeContextMenuState {
+    claim: ValueClaimItem;
+    x: number;
+    y: number;
+}
+
+interface NodeContextMenuProps {
+    menu: NodeContextMenuState;
+    onImplication: (claim: ValueClaimItem) => void;
+    onClose: () => void;
+}
+
+function NodeContextMenu({ menu, onImplication, onClose }: NodeContextMenuProps) {
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handler = (e: MouseEvent) => {
+            if (ref.current && !ref.current.contains(e.target as unknown as globalThis.Node)) onClose();
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [onClose]);
+
+    return createPortal(
+        <div
+            ref={ref}
+            style={{ top: menu.y, left: menu.x }}
+            className="fixed z-50 min-w-[200px] p-1.5 rounded-lg bg-background/95 backdrop-blur-md border shadow-lg animate-in fade-in zoom-in-95 duration-100"
+        >
+            <div className="px-2 py-1.5 border-b mb-1">
+                <span className="text-xs font-medium text-muted-foreground truncate block max-w-[160px]">
+                    {menu.claim.claim_content}
+                </span>
+            </div>
+            <button
+                className="flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent text-left"
+                onClick={() => { onImplication(menu.claim); onClose(); }}
+            >
+                <Link className="h-4 w-4 text-blue-500" />
+                Waarde-implicatie koppelen
+            </button>
+        </div>,
+        document.body,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// CreateDesignImplicationModal
+// ---------------------------------------------------------------------------
+
+interface CreateDesignImplicationModalProps {
+    claim: ValueClaimItem | null;
+    designSpaceId: string;
+    onClose: () => void;
+    onCreated: () => void;
+}
+
+function CreateDesignImplicationModal({ claim, designSpaceId, onClose, onCreated }: CreateDesignImplicationModalProps) {
+    const { schema } = useAxiaSchema();
+    const [valueTypeUri, setValueTypeUri] = useState('');
+    const [polarityUri, setPolarityUri] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
+
+    useEffect(() => {
+        if (!claim) { setValueTypeUri(''); setPolarityUri(''); }
+    }, [claim]);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!claim || !valueTypeUri || !polarityUri) return;
+        setIsSaving(true);
+        try {
+            await api.createDesignImplication(designSpaceId, {
+                tessera_uri: claim.tessera_uri,
+                value_type_uri: valueTypeUri,
+                polarity_uri: polarityUri,
+            });
+            toast.success('Waarde-implicatie gekoppeld.');
+            onCreated();
+            onClose();
+        } catch {
+            toast.error('Koppelen mislukt.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const valueTypes = schema?.value_types ?? [];
+    const polarities = schema?.claim_polarities ?? [];
+
+    return (
+        <Dialog open={!!claim} onOpenChange={(open) => { if (!open) onClose(); }}>
+            <DialogContent className="sm:max-w-[400px]">
+                <DialogHeader>
+                    <DialogTitle>Waarde-implicatie koppelen</DialogTitle>
+                    <DialogDescription>
+                        {claim ? `Koppel een waardetype aan "${claim.claim_content}"` : ''}
+                    </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="grid gap-4 py-2">
+                    <div className="grid gap-2">
+                        <Label>Waardetype</Label>
+                        <Select value={valueTypeUri} onValueChange={setValueTypeUri}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Kies een waardetype" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {valueTypes.map((v) => (
+                                    <SelectItem key={v.uri} value={v.uri}>
+                                        {v.label_nl || v.label_en}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="grid gap-2">
+                        <Label>Polariteit</Label>
+                        <Select value={polarityUri} onValueChange={setPolarityUri}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Kies een polariteit" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {polarities.map((p) => (
+                                    <SelectItem key={p.uri} value={p.uri}>
+                                        {p.label_nl || p.label_en}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <DialogFooter>
+                        <Button type="button" variant="outline" onClick={onClose} disabled={isSaving}>
+                            Annuleren
+                        </Button>
+                        <Button type="submit" disabled={!valueTypeUri || !polarityUri || isSaving}>
+                            {isSaving ? 'Opslaan...' : 'Koppelen'}
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// ---------------------------------------------------------------------------
 // buildNodes — auto-layout
 // ---------------------------------------------------------------------------
 
-function buildNodes(claims: ValueClaimItem[]): Node[] {
+function buildNodes(claims: ValueClaimItem[], implicationCounts: Map<string, number> = new Map()): Node[] {
     const named: Record<string, ValueClaimItem[]> = {};
     const ungrouped: ValueClaimItem[] = [];
     for (const claim of claims) {
@@ -444,7 +614,7 @@ function buildNodes(claims: ValueClaimItem[]): Node[] {
                 id: claim.tessera_id,
                 type: 'valueClaim',
                 position: { x, y: START_Y + GROUP_HEADER_H + rowIndex * (NODE_HEIGHT + NODE_GAP) },
-                data: { claim },
+                data: { claim, implicationCount: implicationCounts.get(claim.tessera_uri) ?? 0 },
                 style: { width: HEX_W, height: HEX_H },
             });
         });
@@ -468,7 +638,9 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
     const shouldFitRef = useRef(false);
     const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null);
     const [editingTension, setEditingTension] = useState<ValueTensionResponse | null>(null);
-    useAxiaSchema(); // schema preloaden voor ValueTensionView
+    const [contextMenu, setContextMenu] = useState<NodeContextMenuState | null>(null);
+    const [implicationClaim, setImplicationClaim] = useState<ValueClaimItem | null>(null);
+    useAxiaSchema(); // schema preloaden
 
     // Houd een map bij van tessera_id → claim voor snelle lookup bij onConnect
     const claimsMapRef = useRef<Map<string, ValueClaimItem>>(new Map());
@@ -479,15 +651,17 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
 
     const load = useCallback(async () => {
         try {
-            const [claimsResult, tensionsResult] = await Promise.all([
+            const [claimsResult, tensionsResult, implicationCounts] = await Promise.all([
                 api.getValueClaims(designSpaceId),
                 api.getValueTensions(designSpaceId),
+                api.getValueImplications(designSpaceId),
             ]);
 
             const flat: ValueClaimItem[] = Object.values(claimsResult.groups).flat();
             claimsMapRef.current = new Map(flat.map((c) => [c.tessera_id, c]));
 
-            const builtNodes = buildNodes(flat);
+            const implicationMap = new Map(implicationCounts.map((i) => [i.tessera_uri, i.implication_count]));
+            const builtNodes = buildNodes(flat, implicationMap);
             nodePositionsRef.current = new Map(builtNodes.map((n) => [n.id, n.position]));
             shouldFitRef.current = true;
             setNodes(builtNodes);
@@ -543,6 +717,14 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
             onEdit?.(node.data.claim);
         },
         [onEdit],
+    );
+
+    const handleNodeContextMenu = useCallback(
+        (event: React.MouseEvent, node: { data: ValueClaimNodeData }) => {
+            event.preventDefault();
+            setContextMenu({ claim: node.data.claim, x: event.clientX, y: event.clientY });
+        },
+        [],
     );
 
     const handleEdgeDoubleClick = useCallback(
@@ -620,6 +802,7 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
                 onConnect={handleConnect}
                 onNodeDoubleClick={handleNodeDoubleClick}
                 onEdgeDoubleClick={handleEdgeDoubleClick}
+                onNodeContextMenu={handleNodeContextMenu}
                 nodeTypes={NODE_TYPES}
                 edgeTypes={EDGE_TYPES}
                 connectionMode={ConnectionMode.Loose}
@@ -641,6 +824,21 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
                 designSpaceId={designSpaceId}
                 onClose={() => setEditingTension(null)}
                 onSaved={load}
+            />
+
+            {contextMenu && (
+                <NodeContextMenu
+                    menu={contextMenu}
+                    onImplication={(claim) => setImplicationClaim(claim)}
+                    onClose={() => setContextMenu(null)}
+                />
+            )}
+
+            <CreateDesignImplicationModal
+                claim={implicationClaim}
+                designSpaceId={designSpaceId}
+                onClose={() => setImplicationClaim(null)}
+                onCreated={load}
             />
         </div>
     );
