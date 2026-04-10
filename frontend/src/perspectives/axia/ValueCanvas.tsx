@@ -9,6 +9,8 @@ import ReactFlow, {
     useNodesInitialized,
     useReactFlow,
     getBezierPath,
+    EdgeLabelRenderer,
+    BaseEdge,
     type Node,
     type Edge,
     type EdgeProps,
@@ -28,8 +30,9 @@ import {
     DialogTitle,
 } from '@/components/ui/dialog';
 import { api } from '@/services/api';
-import type { ValueClaimItem } from '@/services/api';
+import type { ValueClaimItem, ValueTensionResponse } from '@/services/api';
 import { useAxiaSchema } from './hooks/useAxiaSchema';
+import { getGeometricHandles } from '../causa/layout/edgeUtils';
 
 // ---------------------------------------------------------------------------
 // Layout constants
@@ -61,7 +64,7 @@ function polarityColors(uri?: string | null): { bg: string; text: string; label:
 }
 
 // ---------------------------------------------------------------------------
-// Custom node — hexagonale vorm met handles
+// Custom node — hexagonale vorm met CAUSA-stijl handles
 // ---------------------------------------------------------------------------
 
 interface ValueClaimNodeData {
@@ -90,11 +93,15 @@ function ValueClaimNode({ data }: { data: ValueClaimNodeData }) {
             onMouseLeave={() => setHovered(false)}
             style={{ width: HEX_W, height: HEX_H, position: 'relative' }}
         >
-            {/* 4 handles — één per kant, alleen source (RF laat elk handle als target toe) */}
-            <Handle id="left"   type="source" position={Position.Left}   style={handleStyle(hovered)} />
-            <Handle id="right"  type="source" position={Position.Right}  style={handleStyle(hovered)} />
-            <Handle id="top"    type="source" position={Position.Top}    style={handleStyle(hovered)} />
-            <Handle id="bottom" type="source" position={Position.Bottom} style={handleStyle(hovered)} />
+            {/* CAUSA-stijl handles: source-* en target-* per positie */}
+            <Handle id="source-left"   type="source" position={Position.Left}   style={handleStyle(hovered)} />
+            <Handle id="source-right"  type="source" position={Position.Right}  style={handleStyle(hovered)} />
+            <Handle id="source-top"    type="source" position={Position.Top}    style={handleStyle(hovered)} />
+            <Handle id="source-bottom" type="source" position={Position.Bottom} style={handleStyle(hovered)} />
+            <Handle id="target-left"   type="target" position={Position.Left}   style={handleStyle(hovered)} />
+            <Handle id="target-right"  type="target" position={Position.Right}  style={handleStyle(hovered)} />
+            <Handle id="target-top"    type="target" position={Position.Top}    style={handleStyle(hovered)} />
+            <Handle id="target-bottom" type="target" position={Position.Bottom} style={handleStyle(hovered)} />
 
             {/* Hexagon */}
             <div
@@ -136,32 +143,59 @@ function ValueClaimNode({ data }: { data: ValueClaimNodeData }) {
 const NODE_TYPES = { valueClaim: ValueClaimNode };
 
 // ---------------------------------------------------------------------------
-// Tension edge — gestippeld, bidirectioneel
+// Tension edge — CAUSA-stijl: BaseEdge + EdgeLabelRenderer + design tokens
 // ---------------------------------------------------------------------------
 
-function ValueTensionEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition }: EdgeProps) {
-    const [edgePath] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+interface ValueTensionEdgeData {
+    description?: string;
+    tessera_uri?: string;
+}
+
+function ValueTensionEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }: EdgeProps<ValueTensionEdgeData>) {
+    const [edgePath, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+
     return (
         <>
             <defs>
-                <marker id={`tension-arrow-${id}`} markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-                    <path d="M 0 0 L 6 3 L 0 6 z" fill="#dc2626" opacity="0.7" />
+                <marker id={`tension-arrow-end-${id}`} markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+                    <path d="M 0 0 L 6 3 L 0 6 z" fill="hsl(var(--destructive))" opacity="0.7" />
                 </marker>
                 <marker id={`tension-arrow-start-${id}`} markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto-start-reverse">
-                    <path d="M 0 0 L 6 3 L 0 6 z" fill="#dc2626" opacity="0.7" />
+                    <path d="M 0 0 L 6 3 L 0 6 z" fill="hsl(var(--destructive))" opacity="0.7" />
                 </marker>
             </defs>
-            <path
+            <BaseEdge
                 id={id}
-                d={edgePath}
-                fill="none"
-                stroke="#dc2626"
-                strokeWidth={2}
-                strokeDasharray="6 3"
-                opacity={0.7}
-                markerEnd={`url(#tension-arrow-${id})`}
-                markerStart={`url(#tension-arrow-start-${id})`}
+                path={edgePath}
+                style={{
+                    stroke: 'hsl(var(--destructive))',
+                    strokeWidth: 2,
+                    strokeDasharray: '6 3',
+                    opacity: 0.7,
+                    markerEnd: `url(#tension-arrow-end-${id})`,
+                    markerStart: `url(#tension-arrow-start-${id})`,
+                } as React.CSSProperties}
             />
+            {data?.description && (
+                <EdgeLabelRenderer>
+                    <div
+                        style={{
+                            position: 'absolute',
+                            transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+                            pointerEvents: 'all',
+                            zIndex: 10,
+                        }}
+                        className="nodrag nopan"
+                    >
+                        <div
+                            className="bg-destructive/10 text-destructive border border-destructive/30 rounded px-1.5 py-0.5 text-[9px] font-medium max-w-[120px] text-center truncate"
+                            title={data.description}
+                        >
+                            {data.description}
+                        </div>
+                    </div>
+                </EdgeLabelRenderer>
+            )}
         </>
     );
 }
@@ -273,6 +307,144 @@ function CreateTensionDialog({ pending, designSpaceId: _dsId, onConfirm, onClose
 }
 
 // ---------------------------------------------------------------------------
+// EditTensionDialog — opent bij dubbelklik op edge
+// ---------------------------------------------------------------------------
+
+interface EditTensionDialogProps {
+    tension: ValueTensionResponse | null;
+    onClose: () => void;
+    onSaved: () => void;
+    designSpaceId: string;
+}
+
+function EditTensionDialog({ tension, onClose, onSaved, designSpaceId }: EditTensionDialogProps) {
+    const [description, setDescription] = useState('');
+    const [context, setContext] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [confirmDelete, setConfirmDelete] = useState(false);
+
+    useEffect(() => {
+        if (tension) {
+            setDescription(tension.description ?? '');
+            setContext(tension.tension_context ?? '');
+            setConfirmDelete(false);
+        }
+    }, [tension]);
+
+    const handleSave = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!tension || !description.trim()) return;
+        setIsSaving(true);
+        try {
+            await api.updateValueTension(designSpaceId, tension.tessera_uri, {
+                description: description.trim(),
+                tension_context: context.trim() || undefined,
+            });
+            toast.success('Spanning bijgewerkt.');
+            onSaved();
+            onClose();
+        } catch {
+            toast.error('Opslaan mislukt.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleDelete = async () => {
+        if (!tension) return;
+        setIsDeleting(true);
+        try {
+            await api.deleteValueTension(designSpaceId, tension.tessera_uri);
+            toast.success('Spanning verwijderd.');
+            onSaved();
+            onClose();
+        } catch {
+            toast.error('Verwijderen mislukt.');
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
+    return (
+        <Dialog open={!!tension} onOpenChange={(open) => { if (!open) onClose(); }}>
+            <DialogContent className="sm:max-w-[420px]">
+                <DialogHeader>
+                    <DialogTitle>Waardespanning bewerken</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleSave} className="grid gap-4 py-2">
+                    <div className="grid gap-2">
+                        <Label htmlFor="edit-tension-desc">Omschrijving</Label>
+                        <Textarea
+                            id="edit-tension-desc"
+                            value={description}
+                            onChange={(e) => setDescription(e.target.value)}
+                            rows={3}
+                            autoFocus
+                        />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label htmlFor="edit-tension-ctx">
+                            Context <span className="text-muted-foreground text-xs">(optioneel)</span>
+                        </Label>
+                        <Textarea
+                            id="edit-tension-ctx"
+                            value={context}
+                            onChange={(e) => setContext(e.target.value)}
+                            rows={2}
+                        />
+                    </div>
+                    <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+                        <div>
+                            {!confirmDelete ? (
+                                <Button
+                                    type="button"
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => setConfirmDelete(true)}
+                                    disabled={isDeleting || isSaving}
+                                >
+                                    Verwijderen
+                                </Button>
+                            ) : (
+                                <div className="flex gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="destructive"
+                                        size="sm"
+                                        onClick={handleDelete}
+                                        disabled={isDeleting}
+                                    >
+                                        {isDeleting ? 'Verwijderen...' : 'Bevestigen'}
+                                    </Button>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setConfirmDelete(false)}
+                                        disabled={isDeleting}
+                                    >
+                                        Annuleren
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex gap-2">
+                            <Button type="button" variant="outline" onClick={onClose} disabled={isSaving || isDeleting}>
+                                Sluiten
+                            </Button>
+                            <Button type="submit" disabled={!description.trim() || isSaving || isDeleting}>
+                                {isSaving ? 'Opslaan...' : 'Opslaan'}
+                            </Button>
+                        </div>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+// ---------------------------------------------------------------------------
 // buildNodes — auto-layout
 // ---------------------------------------------------------------------------
 
@@ -323,10 +495,15 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
     const shouldFitRef = useRef(false);
     const [pendingConnection, setPendingConnection] = useState<PendingConnection | null>(null);
+    const [editingTension, setEditingTension] = useState<ValueTensionResponse | null>(null);
     useAxiaSchema(); // schema preloaden voor ValueTensionView
 
     // Houd een map bij van tessera_id → claim voor snelle lookup bij onConnect
     const claimsMapRef = useRef<Map<string, ValueClaimItem>>(new Map());
+    // Houd een map bij van edge-id → ValueTensionResponse voor dubbelklik
+    const tensionsMapRef = useRef<Map<string, ValueTensionResponse>>(new Map());
+    // Houd node positions bij voor getGeometricHandles
+    const nodePositionsRef = useRef<Map<string, { x: number; y: number }>>(new Map());
 
     const load = useCallback(async () => {
         try {
@@ -338,8 +515,10 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
             const flat: ValueClaimItem[] = Object.values(claimsResult.groups).flat();
             claimsMapRef.current = new Map(flat.map((c) => [c.tessera_id, c]));
 
+            const builtNodes = buildNodes(flat);
+            nodePositionsRef.current = new Map(builtNodes.map((n) => [n.id, n.position]));
             shouldFitRef.current = true;
-            setNodes(buildNodes(flat));
+            setNodes(builtNodes);
 
             // Bouw edges: per spanning → zoek één representatieve node per ValueType
             const vtToNodeId = new Map<string, string>();
@@ -349,16 +528,29 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
                 }
             }
 
+            tensionsMapRef.current = new Map(tensionsResult.tensions.map((t) => [t.tessera_id, t]));
+
             const newEdges: Edge[] = tensionsResult.tensions.flatMap((t) => {
                 const sourceId = vtToNodeId.get(t.value_type_a_uri);
                 const targetId = vtToNodeId.get(t.value_type_b_uri);
                 if (!sourceId || !targetId) return [];
+
+                // Gebruik getGeometricHandles voor slimme routing (CAUSA-patroon)
+                const sourcePos = nodePositionsRef.current.get(sourceId) ?? { x: 0, y: 0 };
+                const targetPos = nodePositionsRef.current.get(targetId) ?? { x: 0, y: 0 };
+                const { sourceHandle, targetHandle } = getGeometricHandles(sourcePos, targetPos);
+
                 return [{
                     id: t.tessera_id,
                     source: sourceId,
                     target: targetId,
+                    sourceHandle,
+                    targetHandle,
                     type: 'valueTension',
-                    data: { description: t.description },
+                    data: {
+                        description: t.description,
+                        tessera_uri: t.tessera_uri,
+                    },
                 }];
             });
             setEdges(newEdges);
@@ -377,6 +569,14 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
             onEdit?.(node.data.claim);
         },
         [onEdit],
+    );
+
+    const handleEdgeDoubleClick = useCallback(
+        (_: React.MouseEvent, edge: Edge) => {
+            const tension = tensionsMapRef.current.get(edge.id);
+            if (tension) setEditingTension(tension);
+        },
+        [],
     );
 
     const handleConnect = useCallback(
@@ -445,6 +645,7 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
                 onEdgesChange={onEdgesChange}
                 onConnect={handleConnect}
                 onNodeDoubleClick={handleNodeDoubleClick}
+                onEdgeDoubleClick={handleEdgeDoubleClick}
                 nodeTypes={NODE_TYPES}
                 edgeTypes={EDGE_TYPES}
                 connectionMode={ConnectionMode.Loose}
@@ -459,6 +660,13 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
                 designSpaceId={designSpaceId}
                 onConfirm={handleTensionConfirm}
                 onClose={() => setPendingConnection(null)}
+            />
+
+            <EditTensionDialog
+                tension={editingTension}
+                designSpaceId={designSpaceId}
+                onClose={() => setEditingTension(null)}
+                onSaved={load}
             />
         </div>
     );

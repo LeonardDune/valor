@@ -1070,6 +1070,15 @@ WHERE {
         return response.data;
     },
 
+    updateValueTension: async (dsId: string, tesseraUri: string, payload: { description?: string; tension_context?: string }): Promise<ValueTensionResponse> => {
+        const response = await apiClient.patch<ValueTensionResponse>(`/designspace/${dsId}/value-tension/${encodeURIComponent(tesseraUri)}`, payload);
+        return response.data;
+    },
+
+    deleteValueTension: async (dsId: string, tesseraUri: string): Promise<void> => {
+        await apiClient.delete(`/designspace/${dsId}/value-tension/${encodeURIComponent(tesseraUri)}`);
+    },
+
     checkTransitiveTension: async (dsId: string, vtA: string, vtB: string): Promise<boolean> => {
         const response = await apiClient.get<{ transitive: boolean }>(
             `/designspace/${dsId}/value-tensions/transitive-check`,

@@ -542,6 +542,79 @@ SELECT ?vt WHERE {{
 
 
 # ---------------------------------------------------------------------------
+# US-7.04: PATCH / DELETE value-tension
+# ---------------------------------------------------------------------------
+
+class UpdateValueTensionRequest(BaseModel):
+    description: str | None = None
+    tension_context: str | None = None
+
+
+@router.patch("/{ds_id}/value-tension/{tessera_uri:path}", status_code=200)
+async def update_value_tension(
+    ds_id: str,
+    tessera_uri: str,
+    request: UpdateValueTensionRequest,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    user_id = user["id"]
+    has_permission = await check_permission(user_id, ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
+    delete_parts, insert_parts, where_parts = [], [], []
+
+    if request.description is not None:
+        escaped = request.description.replace("\\", "\\\\").replace('"', '\\"')
+        delete_parts.append(f'    <{tessera_uri}> valor:claimContent ?oldContent .')
+        insert_parts.append(f'    <{tessera_uri}> valor:claimContent "{escaped}"@nl .')
+        where_parts.append(f'    OPTIONAL {{ <{tessera_uri}> valor:claimContent ?oldContent . }}')
+
+    if request.tension_context is not None:
+        escaped_ctx = request.tension_context.replace("\\", "\\\\").replace('"', '\\"')
+        delete_parts.append(f'    <{tessera_uri}> axia:tensionContext ?oldCtx .')
+        insert_parts.append(f'    <{tessera_uri}> axia:tensionContext "{escaped_ctx}"@nl .')
+        where_parts.append(f'    OPTIONAL {{ <{tessera_uri}> axia:tensionContext ?oldCtx . }}')
+
+    if not delete_parts:
+        raise HTTPException(status_code=422, detail="Minimaal één veld vereist.")
+
+    sparql = f"""PREFIX axia: <{AXIA_NS}>
+PREFIX valor: <{VALOR_NS}>
+
+DELETE {{ GRAPH <{graph_uri}> {{ {chr(10).join(delete_parts)} }} }}
+INSERT {{ GRAPH <{graph_uri}> {{ {chr(10).join(insert_parts)} }} }}
+WHERE  {{ GRAPH <{graph_uri}> {{ <{tessera_uri}> a axia:ValueTensionClaim . {chr(10).join(where_parts)} }} }}"""
+
+    await sparql_update(sparql, ds_id)
+    user_uri = f"urn:valor:user:{user_id}"
+    await record_provenance_activity(ds_id, "ValueTensionUpdated", user_uri, used=[tessera_uri])
+    return {"tessera_uri": tessera_uri, "updated": True}
+
+
+@router.delete("/{ds_id}/value-tension/{tessera_uri:path}", status_code=200)
+async def delete_value_tension(
+    ds_id: str,
+    tessera_uri: str,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    user_id = user["id"]
+    has_permission = await check_permission(user_id, ds_id, Role.MEMBER)
+    if not has_permission:
+        raise HTTPException(status_code=403, detail="Onvoldoende rechten voor deze DesignSpace.")
+
+    graph_uri = f"urn:valor:ds:{ds_id}/baseline"
+    sparql = f"""PREFIX valor: <{VALOR_NS}>
+DELETE {{ GRAPH <{graph_uri}> {{ <{tessera_uri}> ?p ?o . }} }}
+WHERE  {{ GRAPH <{graph_uri}> {{ <{tessera_uri}> ?p ?o . }} }}"""
+    await sparql_update(sparql, ds_id)
+    user_uri = f"urn:valor:user:{user_id}"
+    await record_provenance_activity(ds_id, "ValueTensionDeleted", user_uri, used=[tessera_uri])
+    return {"tessera_uri": tessera_uri, "deleted": True}
+
+
+# ---------------------------------------------------------------------------
 # US-7.04: SPARQL ASK — transitieve spanningsdetectie
 # ---------------------------------------------------------------------------
 
