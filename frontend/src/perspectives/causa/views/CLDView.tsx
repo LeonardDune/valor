@@ -18,6 +18,8 @@ import CLDEdge from './edges/CLDEdge';
 import { getGeometricHandles } from '../layout/edgeUtils';
 import { CanvasContextMenu } from '@/components/shell/CanvasContextMenu';
 import { ViewControls } from '@/components/shell/ViewControls';
+import { Link } from 'lucide-react';
+import { DesignImplicationModal } from '@/perspectives/axia/DesignImplicationModal';
 import type { ConversationContext } from '@/types/conversation';
 // api import verwijderd — disc thread stats worden later via disc endpoints geladen
 import { FloatingThreadPanel } from '@/components/Chat/FloatingThreadPanel';
@@ -100,6 +102,9 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
 
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{ visible: boolean; x: number; y: number; nodeId: string; type: string; label?: string; data?: any } | null>(null);
+
+    // DesignImplication modal state
+    const [implicationTarget, setImplicationTarget] = useState<{ uri: string; label: string } | null>(null);
 
     const onNodeContextMenu = (event: React.MouseEvent, node: any) => {
         event.preventDefault();
@@ -444,9 +449,29 @@ export const CLDView: FunctionComponent<CLDViewProps> = ({
                         onOpenObjectConversation={handleOpenObjectConversation}
                         onOpenThread={(obj) => handleOpenThread(obj.version_id || obj.id, obj.label || 'Discussie', { x: contextMenu.x, y: contextMenu.y })}
                         onEdit={(obj) => onEdit && onEdit({ type: obj.type as any, data: contextMenu.data || obj })}
+                        additionalActions={!isReadOnly ? [{
+                            id: 'design-implication',
+                            label: 'Waarde-implicatie koppelen',
+                            icon: <Link className="h-4 w-4 text-blue-500" />,
+                            onClick: (obj) => {
+                                const uri = contextMenu.data?.tessera_uri || contextMenu.data?.version_id || obj.id;
+                                const label = obj.label || contextMenu.label || obj.id;
+                                setImplicationTarget({ uri, label });
+                            },
+                        }] : []}
                     />
                 )
             }
+
+            {implicationTarget && (
+                <DesignImplicationModal
+                    tesseraUri={implicationTarget.uri}
+                    tesseraLabel={implicationTarget.label}
+                    designSpaceId={designSpaceId ?? ''}
+                    onClose={() => setImplicationTarget(null)}
+                    onCreated={() => setImplicationTarget(null)}
+                />
+            )}
 
             {floatingThread && (
                 <FloatingThreadPanel
