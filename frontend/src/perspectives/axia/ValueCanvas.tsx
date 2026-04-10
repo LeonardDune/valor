@@ -3,6 +3,7 @@ import ReactFlow, {
     Background,
     ConnectionMode,
     Handle,
+    MarkerType,
     Position,
     useNodesState,
     useEdgesState,
@@ -151,30 +152,22 @@ interface ValueTensionEdgeData {
     tessera_uri?: string;
 }
 
-function ValueTensionEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data }: EdgeProps<ValueTensionEdgeData>) {
+function ValueTensionEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, markerEnd, markerStart, data }: EdgeProps<ValueTensionEdgeData>) {
     const [edgePath, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
 
     return (
         <>
-            <defs>
-                <marker id={`tension-arrow-end-${id}`} markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-                    <path d="M 0 0 L 6 3 L 0 6 z" fill="hsl(var(--destructive))" opacity="0.7" />
-                </marker>
-                <marker id={`tension-arrow-start-${id}`} markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto-start-reverse">
-                    <path d="M 0 0 L 6 3 L 0 6 z" fill="hsl(var(--destructive))" opacity="0.7" />
-                </marker>
-            </defs>
             <BaseEdge
                 id={id}
                 path={edgePath}
+                markerEnd={markerEnd}
+                markerStart={markerStart}
                 style={{
-                    stroke: 'hsl(var(--destructive))',
+                    stroke: '#dc2626',
                     strokeWidth: 2,
                     strokeDasharray: '6 3',
                     opacity: 0.7,
-                    markerEnd: `url(#tension-arrow-end-${id})`,
-                    markerStart: `url(#tension-arrow-start-${id})`,
-                } as React.CSSProperties}
+                }}
             />
             {data?.description && (
                 <EdgeLabelRenderer>
@@ -547,6 +540,8 @@ export function ValueCanvas({ designSpaceId, refreshTrigger = 0, onEdit }: Value
                     sourceHandle,
                     targetHandle,
                     type: 'valueTension',
+                    markerEnd: { type: MarkerType.ArrowClosed, color: '#dc2626', width: 16, height: 16 },
+                    markerStart: { type: MarkerType.ArrowClosed, color: '#dc2626', width: 16, height: 16 },
                     data: {
                         description: t.description,
                         tessera_uri: t.tessera_uri,
